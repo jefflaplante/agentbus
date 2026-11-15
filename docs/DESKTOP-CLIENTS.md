@@ -90,6 +90,7 @@ a2a/v1/
 ├── tasks/textstats            task requests (one per coordinator task)
 └── events/worker/jobs/done    broadcast after each task
 $SYS/broker/...                mochi-mqtt stats: clients, messages, uptime
+$SYS/agentbus/status           agentbus's own snapshot (what `agentbus status` shows)
 ```
 
 Run the coordinator again (`source demo/.run/coordinator.env &&

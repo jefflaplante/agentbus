@@ -1,0 +1,328 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"sync/atomic"
+	"text/tabwriter"
+	"time"
+
+	tea "charm.land/bubbletea/v2"
+	"github.com/spf13/cobra"
+
+	"github.com/jefflaplante/mqtt/a2a"
+	"github.com/jefflaplante/mqtt/broker"
+	"github.com/jefflaplante/mqtt/client"
+	"github.com/jefflaplante/mqtt/internal/tui"
+)
+
+// runTUI runs a full-screen Bubble Tea program on the app's terminal.
+func (a *app) runTUI(ctx context.Context, m tea.Model) error {
+	p := tea.NewProgram(m, tea.WithContext(ctx), tea.WithInput(a.stdin), tea.WithOutput(a.stdout))
+	_, err := p.Run()
+	if errors.Is(err, tea.ErrProgramKilled) && ctx.Err() != nil {
+		return nil // interrupted
+	}
+	return err
+}
+
+// feed is a bounded channel of items for a TUI; it drops rather than
+// blocking the MQTT client when the UI falls behind.
+type feed chan tui.Item
+
+func (f feed) push(it tui.Item) {
+	select {
+	case f <- it:
+	default:
+	}
+}
+
+func newAgentsCmd(a *app) *cobra.Command {
+	var once bool
+	c := &cobra.Command{
+		Use:   "agents",
+		Short: "List agents and their presence",
+		Long: `Show every agent's presence card. On a terminal this is a live table
+that updates as agents come and go (q to quit). With --once, --plain or
+when piped, print the table once.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			live := a.interactive() && !once
+			c, err := a.connect(cmd.Context(), live, nil)
+			if err != nil {
+				return err
+			}
+			defer c.Close()
+			if live {
+				return a.runTUI(cmd.Context(), tui.NewAgents(c.Agents))
+			}
+			time.Sleep(500 * time.Millisecond) // let retained presence cards arrive
+			tw := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
+			fmt.Fprintln(tw, "AGENT\tSTATUS\tSINCE\tCAPABILITIES\tKEYS\tDESCRIPTION")
+			for _, row := range tui.AgentRows(c.Agents()) {
+				fmt.Fprintln(tw, strings.Join(row, "\t"))
+			}
+			return tw.Flush()
+		},
+	}
+	c.Flags().BoolVar(&once, "once", false, "print the table once instead of the live view")
+	return c
+}
+
+func newWatchCmd(a *app) *cobra.Command {
+	var filter string
+	c := &cobra.Command{
+		Use:   "watch [--filter FILTER]",
+		Short: "Watch broadcast events (or, for observers, any traffic)",
+		Long: `Watch messages matching an MQTT filter. Any agent can watch events
+(a2a/v1/events/...). An agent configured as an observer can watch any
+filter, such as "a2a/v1/#" for all agent traffic.
+
+On a terminal this is a live feed (q quit, p pause, c clear). Piped or
+with --plain, each message is one JSON line: the envelope for event
+filters, or {"topic":...,"payload":...} for other filters.`,
+		Example: `  agentbus watch
+  agentbus watch --filter 'a2a/v1/events/+/jobs/#'
+  agentbus watch --filter 'a2a/v1/#'     # observers only`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			tuiMode := a.interactive()
+			c, err := a.connect(cmd.Context(), tuiMode, nil)
+			if err != nil {
+				return err
+			}
+			defer c.Close()
+			ctx := cmd.Context()
+			items := make(feed, 1024)
+			enc := json.NewEncoder(a.stdout)
+
+			t, perr := a2a.ParseTopic(filter)
+			if perr == nil && t.Kind == a2a.KindEvent {
+				err = c.WatchEvents(ctx, filter, func(e *a2a.Envelope) {
+					if tuiMode {
+						items.push(tui.ItemFromEnvelope(a2a.EventTopic(e.From, ""), e))
+					} else {
+						_ = enc.Encode(e)
+					}
+				})
+			} else {
+				err = c.Observe(ctx, filter, func(topic string, payload []byte) {
+					if tuiMode {
+						items.push(tui.ItemFromMessage(topic, payload))
+						return
+					}
+					_ = enc.Encode(rawLine(topic, payload))
+				})
+			}
+			if err != nil {
+				return fmt.Errorf("watch %s: %w (filters outside a2a/v1/events need an observer identity)", filter, err)
+			}
+			if tuiMode {
+				return a.runTUI(ctx, tui.NewFeed("agentbus · watch "+filter, items))
+			}
+			<-ctx.Done()
+			return nil
+		},
+	}
+	c.Flags().StringVarP(&filter, "filter", "f", a2a.Root+"/events/#", "MQTT topic filter")
+	return c
+}
+
+// rawLine is the JSON-lines form of a message seen through Observe.
+func rawLine(topic string, payload []byte) map[string]any {
+	line := map[string]any{"topic": topic}
+	if json.Valid(payload) {
+		line["payload"] = json.RawMessage(payload)
+	} else {
+		line["payload"] = string(payload)
+	}
+	return line
+}
+
+func newListenCmd(a *app) *cobra.Command {
+	c := &cobra.Command{
+		Use:   "listen",
+		Short: "Show messages arriving in this agent's inbox",
+		Long: `Show messages delivered to this agent's inbox. Requests are answered
+with an error, since a listener can't handle them; use handle for that.
+The session is persistent, so messages sent while it wasn't running
+arrive when it starts.
+
+On a terminal this is a live feed; piped or with --plain, JSON lines.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			tuiMode := a.interactive()
+			items := make(feed, 1024)
+			enc := json.NewEncoder(a.stdout)
+			c, err := a.connect(cmd.Context(), tuiMode, func(o *client.Options) {
+				o.CleanSession = false
+				o.Inbox = func(_ context.Context, e *a2a.Envelope) (any, error) {
+					if tuiMode {
+						items.push(tui.ItemFromEnvelope(a2a.InboxTopic(o.AgentID), e))
+					} else {
+						_ = enc.Encode(e)
+					}
+					if e.Type == a2a.TypeRequest {
+						return nil, errors.New("listener does not answer requests")
+					}
+					return nil, nil
+				}
+			})
+			if err != nil {
+				return err
+			}
+			defer c.Close()
+			if tuiMode {
+				return a.runTUI(cmd.Context(), tui.NewFeed("agentbus · inbox of "+a.agent, items))
+			}
+			<-cmd.Context().Done()
+			return nil
+		},
+	}
+	return c
+}
+
+func newDashboardCmd(a *app) *cobra.Command {
+	return &cobra.Command{
+		Use:   "dashboard",
+		Short: "Live view of agents and traffic",
+		Long: `A full-screen view with every agent's presence on the left and live
+traffic on the right. Connected as an observer it shows all agent
+traffic; otherwise it shows broadcast events and this agent's inbox.
+Needs a terminal.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if !a.interactive() {
+				return errors.New("dashboard needs a terminal; for scripts use watch --plain")
+			}
+			ctx := cmd.Context()
+			items := make(feed, 4096)
+			var observing atomic.Bool
+			c, err := a.connect(ctx, true, func(o *client.Options) {
+				o.Inbox = func(_ context.Context, e *a2a.Envelope) (any, error) {
+					if !observing.Load() { // an observer already sees its inbox via Observe
+						items.push(tui.ItemFromEnvelope(a2a.InboxTopic(o.AgentID), e))
+					}
+					if e.Type == a2a.TypeRequest {
+						return nil, errors.New("dashboard does not answer requests")
+					}
+					return nil, nil
+				}
+			})
+			if err != nil {
+				return err
+			}
+			defer c.Close()
+
+			scope := "all agent traffic (observer)"
+			observing.Store(true)
+			err = c.Observe(ctx, a2a.Root+"/#", func(topic string, payload []byte) {
+				items.push(tui.ItemFromMessage(topic, payload))
+			})
+			if err != nil {
+				observing.Store(false)
+				scope = "events and your inbox (not an observer)"
+				err = c.WatchEvents(ctx, a2a.Root+"/events/#", func(e *a2a.Envelope) {
+					items.push(tui.ItemFromEnvelope(a2a.EventTopic(e.From, ""), e))
+				})
+				if err != nil {
+					return err
+				}
+			}
+			d := tui.NewDashboard(a.agent, scope, c.Agents, items)
+			if observing.Load() {
+				statuses := make(chan broker.Status, 4)
+				if err := observeStatus(ctx, c, statuses); err == nil {
+					d.Status = statuses
+				}
+			}
+			return a.runTUI(ctx, d)
+		},
+	}
+}
+
+// observeStatus subscribes to the broker's status topic and decodes each
+// snapshot into out (dropping snapshots if the reader is behind).
+func observeStatus(ctx context.Context, c *client.Client, out chan<- broker.Status) error {
+	return c.Observe(ctx, broker.StatusTopic, func(_ string, payload []byte) {
+		var st broker.Status
+		if json.Unmarshal(payload, &st) != nil {
+			return
+		}
+		select {
+		case out <- st:
+		default:
+		}
+	})
+}
+
+func newStatusCmd(a *app) *cobra.Command {
+	return &cobra.Command{
+		Use:     "status",
+		Aliases: []string{"top"},
+		Short:   "Live view of the running broker",
+		Long: `Connect to a running broker and show what it's doing: uptime, listener,
+TLS, data_dir and audit settings, limits, traffic and message rates,
+accept and reject counts by code, and every configured agent with its
+state, address, queued messages and counts.
+
+The broker publishes this every status_interval (default 2s) to
+$SYS/agentbus/status, which only observer identities can read; connect
+as one (for example the demo's "explorer").
+
+On a terminal this is a live view (q to quit). Piped or with --plain,
+print one status snapshot as JSON and exit.`,
+		Example: `  agentbus status --agent explorer --token-file explorer.token
+  agentbus status --plain | jq '.decisions'`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx := cmd.Context()
+			tuiMode := a.interactive()
+			c, err := a.connect(ctx, tuiMode, nil)
+			if err != nil {
+				return err
+			}
+			defer c.Close()
+			statuses := make(chan broker.Status, 16)
+			if err := observeStatus(ctx, c, statuses); err != nil {
+				return fmt.Errorf("broker status needs an observer identity (\"observer\": true in the broker config): %w", err)
+			}
+			if tuiMode {
+				return a.runTUI(ctx, tui.NewStatus(statuses))
+			}
+			// The retained snapshot can be up to status_interval old. Wait
+			// for one that shows this agent online: it was taken after we
+			// connected, whatever the broker's clock says.
+			timeout := time.After(10 * time.Second)
+			for {
+				select {
+				case st := <-statuses:
+					if !showsOnline(st, a.agent) {
+						continue
+					}
+					enc := json.NewEncoder(a.stdout)
+					if isTerminal(a.stdout) {
+						enc.SetIndent("", "  ")
+					}
+					return enc.Encode(st)
+				case <-timeout:
+					return errors.New("no broker status within 10s; is this an older broker?")
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
+		},
+	}
+}
+
+func showsOnline(st broker.Status, agent string) bool {
+	for _, as := range st.Agents {
+		if as.ID == agent {
+			return as.State == "online"
+		}
+	}
+	return false
+}

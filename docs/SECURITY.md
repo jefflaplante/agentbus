@@ -57,8 +57,9 @@ are what remove trust in the broker.
 - **Narrow `send_to`.** It defaults to everyone. Name the agents each agent
   should reach.
 - **Treat `observer` tokens as admin credentials.** An observer reads every
-  inbox.
-- **Keep tokens out of `ps`.** Use `AGENTBUS_TOKEN_FILE` or `-token-file`
+  inbox and the broker status (`$SYS/agentbus/status`), which lists every
+  agent, its address and its traffic.
+- **Keep tokens out of `ps`.** Use `AGENTBUS_TOKEN_FILE` or `--token-file`
   rather than `-token`. Tokens are stored as unsalted SHA-256, which is safe
   for the 256-bit tokens `agentbus token` generates. Don't hand-pick short
   ones.
@@ -84,7 +85,7 @@ These are what the Go client does. Other clients should do the same.
 - Gate outgoing publishes where a human should approve them
   (`Options.BeforePublish`).
 
-For `agentbus handle -exec`:
+For `agentbus handle --exec`:
 - The command runs only for requests by default (`-types`).
 - It runs without the agent's token in its environment.
 - On timeout it is killed along with its whole process group.

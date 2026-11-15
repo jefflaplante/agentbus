@@ -165,7 +165,7 @@ func TestAgentsOverRunningBroker(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, brokerLog := start(t, "broker", nil, b.agentbus, "serve", "-config", cfgPath)
+	_, brokerLog := start(t, "broker", nil, b.agentbus, "serve", "--config", cfgPath)
 	url := "tcp://" + brokerLog.waitFor(t, addrRE, "broker to listen")
 
 	workerCmd, workerLog := start(t, "worker", work.env(url), b.worker)
@@ -200,8 +200,8 @@ func TestAgentsOverRunningBroker(t *testing.T) {
 	})
 
 	t.Run("cli task to worker", func(t *testing.T) {
-		stdout, stderr, err := run(t, cli.env(url), b.agentbus, "task", "-capability", "textstats",
-			"-body", `{"text":"one two two three three three"}`, "-timeout", "10s")
+		stdout, stderr, err := run(t, cli.env(url), b.agentbus, "task", "--capability", "textstats",
+			"--body", `{"text":"one two two three three three"}`, "--timeout", "10s")
 		if err != nil {
 			t.Fatalf("%v\n%s", err, stderr)
 		}
@@ -218,14 +218,14 @@ func TestAgentsOverRunningBroker(t *testing.T) {
 	})
 
 	t.Run("cli request to worker", func(t *testing.T) {
-		stdout, stderr, err := run(t, cli.env(url), b.agentbus, "request", "-to", "worker", "-body", `{"op":"ping"}`, "-timeout", "10s")
+		stdout, stderr, err := run(t, cli.env(url), b.agentbus, "request", "--to", "worker", "--body", `{"op":"ping"}`, "--timeout", "10s")
 		if err != nil || !strings.Contains(stdout, `"op":"pong"`) {
 			t.Errorf("err %v stdout %s stderr %s", err, stdout, stderr)
 		}
 	})
 
 	t.Run("broker enforces send_to", func(t *testing.T) {
-		_, stderr, err := run(t, cli.env(url), b.agentbus, "request", "-to", "coordinator", "-body", `{}`, "-timeout", "10s")
+		_, stderr, err := run(t, cli.env(url), b.agentbus, "request", "--to", "coordinator", "--body", `{}`, "--timeout", "10s")
 		if err == nil || !strings.Contains(stderr, `not allowed to send to "coordinator"`) {
 			t.Errorf("want broker rejection; err %v stderr %s", err, stderr)
 		}

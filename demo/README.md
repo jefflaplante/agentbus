@@ -55,6 +55,22 @@ conversation, with the coordinator's exit status.
 
 ## Kick the tires
 
+Look inside the running broker. The demo's `explorer` identity is an
+observer, which the broker status needs:
+
+```bash
+source demo/.run/explorer.env
+bin/agentbus status       # live broker view; q to quit
+bin/agentbus dashboard    # agents and traffic side by side
+```
+
+![agentbus status during the demo](../docs/images/status.svg)
+
+![agentbus dashboard during the demo](../docs/images/dashboard.svg)
+
+Run the coordinator again in another terminal and watch the traffic and
+counters move. [docs/CLI.md](../docs/CLI.md) covers every command.
+
 In a second terminal, from the repo root, while `make demo` is running:
 
 ```bash
@@ -69,23 +85,25 @@ worker       online   2026-11-15 10:38:34  textstats     Demo worker: text stati
 you          online   2026-11-15 10:38:36
 ```
 
+![a shell session against the demo](../docs/images/cli.svg)
+
 Talk to the worker directly:
 
 ```bash
-bin/agentbus request -to worker -body '{"op":"ping"}'
-bin/agentbus request -to worker -body '{"op":"reverse","text":"hello bus"}'
+bin/agentbus request --to worker --body '{"op":"ping"}'
+bin/agentbus request --to worker --body '{"op":"reverse","text":"hello bus"}'
 ```
 
 Send work through the queue (any worker with the capability takes it):
 
 ```bash
-bin/agentbus task -capability textstats -body '{"text":"to be or not to be"}'
+bin/agentbus task --capability textstats --body '{"text":"to be or not to be"}'
 ```
 
 See the broker enforce the rules. `you` may only message the workers:
 
 ```bash
-bin/agentbus request -to coordinator -body '{}'
+bin/agentbus request --to coordinator --body '{}'
 # agentbus: $broker: not authorized: not allowed to send to "coordinator"
 ```
 
@@ -119,7 +137,7 @@ the envelope on stdin and the reply body on stdout:
 
 ```bash
 source demo/.run/worker-2.env
-bin/agentbus handle -capability textstats \
+bin/agentbus handle --capability textstats \
   -exec 'jq -c "{words: (.body.text | split(\" \") | length), worker: \"shell\"}"'
 ```
 
@@ -140,7 +158,7 @@ pkill -f 'bin/worker -delay'
 Send a task. It blocks, waiting:
 
 ```bash
-bin/agentbus task -capability textstats -body '{"text":"queued while you were out"}' -timeout 60s
+bin/agentbus task --capability textstats --body '{"text":"queued while you were out"}' --timeout 60s
 ```
 
 In another terminal, start the worker again. The waiting task is answered

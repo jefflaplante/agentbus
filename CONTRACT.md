@@ -58,6 +58,8 @@ stripped; their equivalents live in the envelope.
 
 An identity configured as an **observer** may subscribe to any filter
 (`#`, `$SYS/#`, other agents' inboxes) but not to shared subscriptions.
+Observers can also read `$SYS/agentbus/status`, a retained JSON snapshot
+of the broker that is republished every `status_interval`.
 The broker grants observer subscriptions at QoS 0. Observers exist for
 debugging tools; see [docs/DESKTOP-CLIENTS.md](docs/DESKTOP-CLIENTS.md).
 

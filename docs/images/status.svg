@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1064" height="418" viewBox="0 0 1064 418">
+<style>text{font-family:"SF Mono",Menlo,Monaco,Consolas,"DejaVu Sans Mono",monospace;font-size:14px;white-space:pre}</style>
+<rect width="1064" height="418" rx="10" fill="#16161E"/>
+<path d="M0 10a10 10 0 0 1 10-10h1044a10 10 0 0 1 10 10v20H0z" fill="#24242E"/>
+<circle cx="20" cy="15" r="6" fill="#FF5F57"/>
+<circle cx="40" cy="15" r="6" fill="#FEBC2E"/>
+<circle cx="60" cy="15" r="6" fill="#28C840"/>
+<text x="532" y="20" fill="#9A9AAA" text-anchor="middle">agentbus status</text>
+<clipPath id="term-dc726125"><rect x="16.0" y="44" width="1032.0" height="374"/></clipPath><g clip-path="url(#term-dc726125)">
+<rect x="16.0" y="44.0" width="8.6" height="18" fill="#9F86FF"/>
+<rect x="24.6" y="44.0" width="146.2" height="18" fill="#9F86FF"/>
+<text x="24.6" y="57.0" fill="#FFFFFF" font-weight="bold" textLength="146.2" lengthAdjust="spacingAndGlyphs">agentbus · broker</text>
+<rect x="170.8" y="44.0" width="8.6" height="18" fill="#9F86FF"/>
+<text x="188.0" y="57.0" fill="#9F86FF" font-weight="bold" textLength="129.0" lengthAdjust="spacingAndGlyphs">127.0.0.1:53890</text>
+<text x="317.0" y="57.0" fill="#6C6C6C" textLength="266.6" lengthAdjust="spacingAndGlyphs">  up 4s · (devel) · mochi 2.7.9</text>
+<text x="16.0" y="75.0" fill="#6C6C6C" textLength="344.0" lengthAdjust="spacingAndGlyphs">╭──────────────────────────────────────╮</text>
+<text x="360.0" y="75.0" fill="#6C6C6C" textLength="344.0" lengthAdjust="spacingAndGlyphs">╭──────────────────────────────────────╮</text>
+<text x="704.0" y="75.0" fill="#6C6C6C" textLength="344.0" lengthAdjust="spacingAndGlyphs">╭──────────────────────────────────────╮</text>
+<text x="16.0" y="93.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="33.2" y="93.0" fill="#9F86FF" font-weight="bold" textLength="51.6" lengthAdjust="spacingAndGlyphs">Server</text>
+<text x="351.4" y="93.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="360.0" y="93.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="377.2" y="93.0" fill="#9F86FF" font-weight="bold" textLength="60.2" lengthAdjust="spacingAndGlyphs">Traffic</text>
+<text x="695.4" y="93.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="704.0" y="93.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="721.2" y="93.0" fill="#9F86FF" font-weight="bold" textLength="77.4" lengthAdjust="spacingAndGlyphs">Decisions</text>
+<text x="1039.4" y="93.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="16.0" y="111.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="33.2" y="111.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">tls        </text>
+<text x="127.8" y="111.0" fill="#6C6C6C" textLength="25.8" lengthAdjust="spacingAndGlyphs">off</text>
+<text x="351.4" y="111.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="360.0" y="111.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="377.2" y="111.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">clients    </text>
+<text x="471.8" y="111.0" fill="#E4E4E4" textLength="206.4" lengthAdjust="spacingAndGlyphs">4 connected · 4 sessions</text>
+<text x="695.4" y="111.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="704.0" y="111.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="721.2" y="111.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">accepted   </text>
+<text x="815.8" y="111.0" fill="#3DD68C" font-weight="bold" textLength="17.2" lengthAdjust="spacingAndGlyphs">69</text>
+<text x="1039.4" y="111.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="16.0" y="129.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="33.2" y="129.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">data_dir   </text>
+<text x="127.8" y="129.0" fill="#3DD68C" font-weight="bold" textLength="34.4" lengthAdjust="spacingAndGlyphs">data</text>
+<text x="351.4" y="129.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="360.0" y="129.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="377.2" y="129.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">messages   </text>
+<text x="471.8" y="129.0" fill="#E4E4E4" textLength="129.0" lengthAdjust="spacingAndGlyphs">95 in · 199 out</text>
+<text x="695.4" y="129.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="704.0" y="129.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="721.2" y="129.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">duplicates </text>
+<text x="815.8" y="129.0" fill="#E4E4E4" textLength="8.6" lengthAdjust="spacingAndGlyphs">0</text>
+<text x="1039.4" y="129.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="16.0" y="147.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="33.2" y="147.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">audit      </text>
+<text x="127.8" y="147.0" fill="#3DD68C" font-weight="bold" textLength="94.6" lengthAdjust="spacingAndGlyphs">audit.jsonl</text>
+<text x="351.4" y="147.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="360.0" y="147.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="377.2" y="147.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">rate       </text>
+<text x="471.8" y="147.0" fill="#E4E4E4" textLength="189.2" lengthAdjust="spacingAndGlyphs">20.0/s in · 43.9/s out</text>
+<text x="695.4" y="147.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="704.0" y="147.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="721.2" y="147.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">rejected   </text>
+<text x="815.8" y="147.0" fill="#FF6B6B" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">1</text>
+<text x="824.4" y="147.0" fill="#6C6C6C" textLength="154.8" lengthAdjust="spacingAndGlyphs">  not_authorized 1</text>
+<text x="1039.4" y="147.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="16.0" y="165.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="33.2" y="165.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">started    </text>
+<text x="127.8" y="165.0" fill="#E4E4E4" textLength="129.0" lengthAdjust="spacingAndGlyphs">Nov 15 14:42:50</text>
+<text x="351.4" y="165.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="360.0" y="165.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="377.2" y="165.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">bytes      </text>
+<text x="471.8" y="165.0" fill="#E4E4E4" textLength="215.0" lengthAdjust="spacingAndGlyphs">20.9 KiB in · 67.7 KiB o…</text>
+<text x="695.4" y="165.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="704.0" y="165.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="721.2" y="165.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">auth fails </text>
+<text x="815.8" y="165.0" fill="#E4E4E4" textLength="8.6" lengthAdjust="spacingAndGlyphs">0</text>
+<text x="1039.4" y="165.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="16.0" y="183.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="33.2" y="183.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">memory     </text>
+<text x="127.8" y="183.0" fill="#E4E4E4" textLength="197.8" lengthAdjust="spacingAndGlyphs">4.3 MiB · 55 goroutines</text>
+<text x="351.4" y="183.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="360.0" y="183.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="377.2" y="183.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">queued     </text>
+<text x="471.8" y="183.0" fill="#E4E4E4" textLength="197.8" lengthAdjust="spacingAndGlyphs">0 in flight · 0 dropped</text>
+<text x="695.4" y="183.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="704.0" y="183.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="721.2" y="183.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">wills      </text>
+<text x="815.8" y="183.0" fill="#E4E4E4" textLength="77.4" lengthAdjust="spacingAndGlyphs">0 refused</text>
+<text x="1039.4" y="183.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="16.0" y="201.0" fill="#6C6C6C" textLength="344.0" lengthAdjust="spacingAndGlyphs">╰──────────────────────────────────────╯</text>
+<text x="360.0" y="201.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="377.2" y="201.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">store      </text>
+<text x="471.8" y="201.0" fill="#E4E4E4" textLength="180.6" lengthAdjust="spacingAndGlyphs">12 subs · 26 retained</text>
+<text x="695.4" y="201.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="704.0" y="201.0" fill="#6C6C6C" textLength="344.0" lengthAdjust="spacingAndGlyphs">╰──────────────────────────────────────╯</text>
+<text x="360.0" y="219.0" fill="#6C6C6C" textLength="344.0" lengthAdjust="spacingAndGlyphs">╰──────────────────────────────────────╯</text>
+<text x="16.0" y="237.0" fill="#6C6C6C" textLength="920.2" lengthAdjust="spacingAndGlyphs">limits: 256.0 KiB/envelope · 20/s burst 50 · queue 1024 · session 168h0m0s · skew 2m0s · conns 1024 (64/ip)</text>
+<text x="24.6" y="273.0" fill="#D6D6E0" font-weight="bold" textLength="137.6" lengthAdjust="spacingAndGlyphs">AGENT           </text>
+<text x="179.4" y="273.0" fill="#D6D6E0" font-weight="bold" textLength="68.8" lengthAdjust="spacingAndGlyphs">STATE   </text>
+<text x="265.4" y="273.0" fill="#D6D6E0" font-weight="bold" textLength="189.2" lengthAdjust="spacingAndGlyphs">REMOTE                </text>
+<text x="471.8" y="273.0" fill="#D6D6E0" font-weight="bold" textLength="60.2" lengthAdjust="spacingAndGlyphs">QUEUED </text>
+<text x="549.2" y="273.0" fill="#D6D6E0" font-weight="bold" textLength="77.4" lengthAdjust="spacingAndGlyphs">ACCEPTED </text>
+<text x="643.8" y="273.0" fill="#D6D6E0" font-weight="bold" textLength="77.4" lengthAdjust="spacingAndGlyphs">REJECTED </text>
+<text x="738.4" y="273.0" fill="#D6D6E0" font-weight="bold" textLength="120.4" lengthAdjust="spacingAndGlyphs">LAST SEEN     </text>
+<text x="876.0" y="273.0" fill="#D6D6E0" font-weight="bold" textLength="163.4" lengthAdjust="spacingAndGlyphs">ROLE               </text>
+<text x="16.0" y="291.0" fill="#6C6C6C" textLength="154.8" lengthAdjust="spacingAndGlyphs">──────────────────</text>
+<text x="170.8" y="291.0" fill="#6C6C6C" textLength="86.0" lengthAdjust="spacingAndGlyphs">──────────</text>
+<text x="256.8" y="291.0" fill="#6C6C6C" textLength="206.4" lengthAdjust="spacingAndGlyphs">────────────────────────</text>
+<text x="463.2" y="291.0" fill="#6C6C6C" textLength="77.4" lengthAdjust="spacingAndGlyphs">─────────</text>
+<text x="540.6" y="291.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">───────────</text>
+<text x="635.2" y="291.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">───────────</text>
+<text x="729.8" y="291.0" fill="#6C6C6C" textLength="137.6" lengthAdjust="spacingAndGlyphs">────────────────</text>
+<text x="867.4" y="291.0" fill="#6C6C6C" textLength="180.6" lengthAdjust="spacingAndGlyphs">─────────────────────</text>
+<rect x="16.0" y="296.0" width="1032.0" height="18" fill="#9F86FF"/>
+<text x="16.0" y="309.0" fill="#FFFFFF" textLength="1032.0" lengthAdjust="spacingAndGlyphs"> coordinator       none                              0        16         0          14:42:53                            </text>
+<text x="16.0" y="327.0" fill="#D6D6E0" textLength="1032.0" lengthAdjust="spacingAndGlyphs"> worker            online    127.0.0.1:53891         0        28         0          14:42:54        textstats           </text>
+<text x="16.0" y="345.0" fill="#D6D6E0" textLength="1032.0" lengthAdjust="spacingAndGlyphs"> worker-2          online    127.0.0.1:53892         0        12         0          14:42:53        textstats           </text>
+<text x="16.0" y="363.0" fill="#D6D6E0" textLength="1032.0" lengthAdjust="spacingAndGlyphs"> you               online    127.0.0.1:53897         0        13         1          14:42:54         → worker,worker-2  </text>
+<text x="16.0" y="381.0" fill="#D6D6E0" textLength="1032.0" lengthAdjust="spacingAndGlyphs"> explorer          online    127.0.0.1:53893         0        0          0          14:42:50        observer            </text>
+<text x="24.6" y="399.0" fill="#6C6C6C" textLength="326.8" lengthAdjust="spacingAndGlyphs">↑/↓ select · q quit · updated 14:42:54</text>
+</g>
+</svg>

@@ -3,6 +3,8 @@
 An agent-to-agent message bus over MQTT for conduit and other AI agents.
 One Go binary runs the broker and also works as a CLI client.
 
+![agentbus dashboard: agents and live traffic](docs/images/dashboard.svg)
+
 - **[CONTRACT.md](CONTRACT.md)** is the language-neutral spec: topics, the
   envelope, request/reply, presence and rejection rules. Any MQTT client
   that follows it can join.
@@ -13,8 +15,9 @@ One Go binary runs the broker and also works as a CLI client.
 - **`broker`** is a broker that enforces the contract, built on
   [mochi-mqtt](https://github.com/mochi-mqtt/server). It can run standalone
   or be embedded.
-- **`cmd/agentbus`** is the binary: `serve`, plus client commands for
-  scripts and for agents that aren't written in Go.
+- **`cmd/agentbus`** is the binary: `serve`, client commands for scripts
+  and for agents that aren't written in Go, and terminal UIs (Cobra and
+  Bubble Tea) for watching a running broker. See [docs/CLI.md](docs/CLI.md).
 
 ## Try it
 
@@ -29,25 +32,42 @@ for the walkthrough, [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md) for
 the diagrams, and [docs/DESKTOP-CLIENTS.md](docs/DESKTOP-CLIENTS.md) to watch
 the bus in MQTT Explorer, MQTTX or `mosquitto_sub`.
 
+To look inside the running broker from the same binary:
+
+```bash
+source demo/.run/explorer.env
+bin/agentbus status      # live broker view: traffic, decisions, every agent
+bin/agentbus dashboard   # agents and live traffic side by side
+```
+
+![agentbus status](docs/images/status.svg)
+
+[docs/CLI.md](docs/CLI.md) covers every command, with screenshots and usage
+recipes.
+
 ## Quick start (your own agents)
 
 ```bash
 go build -o bin/agentbus ./cmd/agentbus
 bin/agentbus token            # once per agent; put token_sha256 in the config
 cp examples/broker.json broker.json   # then edit agents and hashes
-bin/agentbus serve -config broker.json
+bin/agentbus serve --config broker.json
 ```
 
 ```bash
-export AGENTBUS_URL=tcp://localhost:1883 AGENTBUS_AGENT=researcher AGENTBUS_TOKEN=...
-bin/agentbus handle -capability summarize -exec './summarize.sh'   # stdin: envelope, stdout: reply body
+export AGENTBUS_URL=tcp://localhost:1883 AGENTBUS_AGENT=researcher AGENTBUS_TOKEN_FILE=~/.agentbus/researcher.token
+bin/agentbus handle --capability summarize --exec './summarize.sh'   # stdin: envelope, stdout: reply body
 ```
 
 ```bash
-export AGENTBUS_AGENT=cli-ops AGENTBUS_TOKEN=...
-bin/agentbus task -capability summarize -body '{"text":"..."}'
+export AGENTBUS_AGENT=cli-ops AGENTBUS_TOKEN_FILE=~/.agentbus/cli-ops.token
+bin/agentbus task --capability summarize --body '{"text":"..."}'
 bin/agentbus agents
 ```
+
+On a terminal, `status`, `agents`, `watch`, `listen`, `request`, `task` and
+`dashboard` are interactive. Piped, or with `--plain`, they print JSON or
+plain text for scripts.
 
 From Go:
 
@@ -62,7 +82,8 @@ c, err := client.Connect(ctx, client.Options{
 })
 reply, err := c.Request(ctx, "researcher", map[string]string{"q": "..."})
 reply, err = c.RequestTask(ctx, "summarize", doc)   // any worker with the capability
-err = c.ServeTasks(ctx, "summarize", handler)       // become a worker
+// become a worker: pass client.Options{Tasks: map[string]client.Handler{"summarize": h}}
+// to Connect (or call c.ServeTasks for a capability added later)
 err = c.Emit(ctx, "jobs/finished", result)          // broadcast
 ```
 
@@ -94,6 +115,9 @@ Mosquitto can't do these things on its own:
 - **Observers.** An identity marked `observer` can subscribe to anything,
   including `#` and other agents' inboxes, for debugging tools. It still
   can't take tasks or send as another agent.
+- **Live status for operators.** Every 2 seconds the broker publishes a
+  snapshot of itself to `$SYS/agentbus/status`, readable only by observers.
+  `agentbus status` and `agentbus dashboard` show it.
 - **Retention and audit (optional).** With `data_dir`, sessions, queued
   messages, subscriptions, presence and the dedupe window survive restarts
   (bbolt, embedded). With `audit_file`, every decision goes to a rotated JSONL
@@ -156,14 +180,27 @@ From conduit at `5626e55`:
 a2a/              contract types and validation (stdlib only)
 broker/           contract-enforcing broker on mochi-mqtt
 client/           Go client (paho, MQTT 3.1.1)
-cmd/agentbus/     the binary: serve + CLI client
+cmd/agentbus/     the binary: Cobra commands (serve, client, TUIs)
+internal/tui/     Bubble Tea views: status, agents, feed, dashboard
 demo/agents/      worker and coordinator agents (library)
 demo/cmd/         their binaries
 test/e2e/         functional tests over real processes
 scripts/demo.sh   the demo
 CONTRACT.md       the spec; contract/envelope.schema.json
-docs/             how it works; security; retention and audit; desktop clients
+docs/             CLI; how it works; security; retention and audit; desktop clients
 ```
+
+## Docs
+
+| | |
+|---|---|
+| [CONTRACT.md](CONTRACT.md) | The a2a/v1 contract: topics, envelope, request/reply, presence, rejections |
+| [docs/CLI.md](docs/CLI.md) | Every command, the terminal UIs, usage recipes |
+| [demo/README.md](demo/README.md) | The demo, step by step |
+| [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md) | Diagrams: layers, publish checks, request/reply, task queues, status, retention |
+| [docs/SECURITY.md](docs/SECURITY.md) | Threat model, guarantees, limits, operator checklist, review history |
+| [docs/RETENTION.md](docs/RETENTION.md) | `data_dir` persistence and the JSONL audit log |
+| [docs/DESKTOP-CLIENTS.md](docs/DESKTOP-CLIENTS.md) | MQTT Explorer, MQTTX and mosquitto against the bus |
 
 ## Testing
 
@@ -172,6 +209,7 @@ docs/             how it works; security; retention and audit; desktop clients
 | `make test` | Unit tests (`a2a`) and in-process broker tests (`broker/e2e_test.go`: auth, ACLs, spoofing, dedupe, TTL, rate limits, task queues, presence) | ~2s |
 | `make test-e2e` | Functional test (`test/e2e`). Builds the three binaries and runs the broker, worker and coordinator as separate processes over TCP. Checks the coordinator's six steps, CLI `task` and `request` against the live worker, a `send_to` rejection, a bad-token login, and the worker showing online then offline in `agentbus agents`. | ~5s |
 | `make test-all` | `go vet` and everything, with `-race` | ~10s |
+| `make screenshots` | Regenerates `docs/images` from a live in-process bus (see [docs/CLI.md](docs/CLI.md#screenshots)) | ~3s |
 | `make demo-once` | The demo conversation, non-interactive. The exit status is the result. | ~3s |
 
 `go test` without `-short` includes the functional test. It needs the Go

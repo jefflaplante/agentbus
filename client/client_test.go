@@ -25,10 +25,13 @@ func startBus(t *testing.T) *testBus {
 	t.Helper()
 	b := &testBus{tokens: map[string]string{}}
 	cfg := &broker.Config{Listen: "127.0.0.1:0"}
-	for _, id := range []string{"alice", "bob", "carol"} {
+	for _, a := range []broker.AgentConfig{
+		{ID: "alice"}, {ID: "bob", Capabilities: []string{"summarize"}}, {ID: "carol"}, {ID: "ops", Observer: true},
+	} {
 		tok, hash := broker.NewToken()
-		b.tokens[id] = tok
-		cfg.Agents = append(cfg.Agents, broker.AgentConfig{ID: id, TokenSHA256: hash})
+		b.tokens[a.ID] = tok
+		a.TokenSHA256 = hash
+		cfg.Agents = append(cfg.Agents, a)
 	}
 	srv, err := broker.New(cfg, quiet())
 	if err != nil {
@@ -210,5 +213,48 @@ func safeClose(ch chan struct{}) {
 	case <-ch:
 	default:
 		close(ch)
+	}
+}
+
+// An observer sees other agents' requests and tasks but must never answer
+// them; only the addressed agent or a real worker does.
+func TestObserveSeesButNeverAnswers(t *testing.T) {
+	b := startBus(t)
+	b.connect(t, "bob", func(o *client.Options) {
+		o.Inbox = func(context.Context, *a2a.Envelope) (any, error) { return "from bob", nil }
+		o.Tasks = map[string]client.Handler{"summarize": func(context.Context, *a2a.Envelope) (any, error) { return "task by bob", nil }}
+	})
+	seen := make(chan string, 64)
+	ops := b.connect(t, "ops", nil)
+	if err := ops.Observe(ctx5(t), "a2a/v1/#", func(topic string, _ []byte) { seen <- topic }); err != nil {
+		t.Fatal(err)
+	}
+	alice := b.connect(t, "alice", nil)
+	if err := alice.Observe(ctx5(t), "#", func(string, []byte) {}); err == nil {
+		t.Error("non-observer allowed to observe #")
+	}
+
+	for range 5 {
+		r, err := alice.Request(ctx5(t), "bob", "hi")
+		if err != nil || r.From != "bob" {
+			t.Fatalf("request answered by %v: %v", r, err)
+		}
+		r, err = alice.RequestTask(ctx5(t), "summarize", "work")
+		if err != nil || r.From != "bob" {
+			t.Fatalf("task answered by %v: %v", r, err)
+		}
+	}
+	want := map[string]bool{a2a.InboxTopic("bob"): false, a2a.TaskTopic("summarize"): false, a2a.InboxTopic("alice"): false}
+	deadline := time.After(3 * time.Second)
+	for missing := len(want); missing > 0; {
+		select {
+		case topic := <-seen:
+			if done, tracked := want[topic]; tracked && !done {
+				want[topic] = true
+				missing--
+			}
+		case <-deadline:
+			t.Fatalf("observer missed topics: %v", want)
+		}
 	}
 }

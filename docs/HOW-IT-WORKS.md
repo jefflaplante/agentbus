@@ -142,6 +142,20 @@ Close
 
 See [RETENTION.md](RETENTION.md) for what is kept and the audit log format.
 
+## Broker status
+
+```text
+every status_interval (default 2s)
+  Broker.Status()                   # mochi traffic counters + the hook's decision counters
+                                    # + config, limits, and every agent's state and queue
+  publish retained -> $SYS/agentbus/status
+                                    # readable only by observers (OnACLCheck)
+                                    # not written to broker.db
+```
+
+`agentbus status` and `agentbus dashboard` subscribe to it with
+`client.Observe`. See [CLI.md](CLI.md).
+
 ## Presence
 
 ```text

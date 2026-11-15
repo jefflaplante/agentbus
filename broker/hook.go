@@ -44,6 +44,8 @@ type contractHook struct {
 	skew  time.Duration
 	audit *auditLog // nil when audit_file is unset
 
+	counters *counters // decision counts for Status
+
 	mu       sync.Mutex
 	presence map[string]a2a.Presence // last card per agent, for offline cards and refresh
 }
@@ -61,6 +63,7 @@ func newContractHook(cfg *Config, server *mqtt.Server, log *slog.Logger) *contra
 		dedup:    newDedupe(time.Duration(cfg.DedupeWindow)),
 		skew:     time.Duration(cfg.MaxClockSkew),
 		presence: map[string]a2a.Presence{},
+		counters: newCounters(),
 	}
 	for i := range cfg.Agents {
 		a := &cfg.Agents[i]
@@ -106,6 +109,7 @@ func (h *contractHook) OnConnect(cl *mqtt.Client, pk packets.Packet) error {
 	}
 	_ = h.server.SendConnack(cl, code, false, nil)
 	h.audit.write(AuditRecord{Action: "refused", Agent: trunc(cl.ID), Remote: cl.Net.Remote, Reason: "will message"})
+	h.counters.inc(&h.counters.decisions.WillsRefused)
 	return code
 }
 
@@ -137,6 +141,7 @@ func (h *contractHook) OnConnectAuthenticate(cl *mqtt.Client, pk packets.Packet)
 // authFailed logs a failed login, throttled per remote IP so a flood of
 // bad logins can't flood the log.
 func (h *contractHook) authFailed(cl *mqtt.Client, user, reason string) {
+	h.counters.inc(&h.counters.decisions.AuthFailures)
 	ip := hostOf(cl.Net.Remote)
 	if h.noise.allow("ip:"+ip, h.now(), 1, 10) {
 		h.log.Warn("auth rejected", "client", trunc(cl.ID), "username", trunc(user), "remote", cl.Net.Remote, "reason", reason)
@@ -343,6 +348,7 @@ func (h *contractHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Pa
 	if !h.dedup.firstSeen(env.From+"/"+env.ID, now) {
 		h.log.Info("duplicate dropped", "action", "duplicate", "from", env.From, "id", env.ID, "topic", pk.TopicName)
 		h.audit.write(envelopeRecord("duplicate", pk.TopicName, env, len(pk.Payload)))
+		h.counters.inc(&h.counters.decisions.Duplicates)
 		return pk, packets.CodeSuccessIgnore
 	}
 	data, err := env.Marshal()
@@ -354,6 +360,7 @@ func (h *contractHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Pa
 		"correlation_id", env.CorrelationID, "priority", env.Priority, "event", env.Event,
 		"topic", pk.TopicName, "bytes", len(data))
 	h.audit.write(envelopeRecord("accept", pk.TopicName, env, len(data)))
+	h.counters.accept(cl.ID, now)
 	return pk, nil
 }
 
@@ -492,6 +499,7 @@ func peek(payload []byte, limit int) envRef {
 // envelopes are throttled per agent, so a stream of bad publishes can't
 // turn into a stream of log lines and broker messages.
 func (h *contractHook) reject(cl *mqtt.Client, pk packets.Packet, ref envRef, rj rejection, reason string) error {
+	h.counters.reject(cl.ID, rj.code, h.now())
 	if h.noise.allow("agent:"+cl.ID, h.now(), 2, 20) {
 		h.log.Warn("publish rejected", "action", "reject", "agent", cl.ID, "topic", trunc(pk.TopicName),
 			"id", trunc(ref.ID), "type", trunc(string(ref.Type)), "code", rj.code, "reason", reason)
@@ -560,6 +568,7 @@ func (h *contractHook) OnSessionEstablished(cl *mqtt.Client, pk packets.Packet) 
 	h.log.Info("agent connected", "action", "connect", "agent", cl.ID, "remote", cl.Net.Remote, "mqtt", cl.Properties.ProtocolVersion,
 		"clean", cl.Properties.Clean, "observer", h.agents[cl.ID].Observer)
 	h.audit.write(AuditRecord{Action: "connect", Agent: cl.ID, Remote: cl.Net.Remote})
+	h.counters.seen(cl.ID, h.now())
 }
 
 // OnDisconnect publishes the agent's retained offline card, unless the
@@ -583,6 +592,7 @@ func (h *contractHook) OnDisconnect(cl *mqtt.Client, err error, expire bool) {
 	}
 	h.log.Info("agent disconnected", "action", "disconnect", "agent", cl.ID, "err", errString(err))
 	h.audit.write(AuditRecord{Action: "disconnect", Agent: cl.ID, Remote: cl.Net.Remote, Reason: errString(err)})
+	h.counters.seen(cl.ID, h.now())
 
 	h.mu.Lock()
 	p, ok := h.presence[cl.ID]

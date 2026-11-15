@@ -60,9 +60,12 @@ type Config struct {
 	// (accept, reject, duplicate, connect, disconnect). Bodies are never
 	// written, only their SHA-256. Rotated at AuditMaxBytes, keeping
 	// AuditKeep old files.
-	AuditFile     string `json:"audit_file,omitempty"`
-	AuditMaxBytes int64  `json:"audit_max_bytes"`
-	AuditKeep     int    `json:"audit_keep"`
+	AuditFile string `json:"audit_file,omitempty"`
+	// StatusInterval is how often the broker publishes its Status to
+	// $SYS/agentbus/status for observers (agentbus status, dashboard).
+	StatusInterval Duration `json:"status_interval"`
+	AuditMaxBytes  int64    `json:"audit_max_bytes"`
+	AuditKeep      int      `json:"audit_keep"`
 
 	Agents []AgentConfig `json:"agents"`
 }
@@ -127,6 +130,7 @@ const (
 	DefaultMaxQueued        = 1024
 	DefaultAuditMaxBytes    = 64 << 20
 	DefaultAuditKeep        = 3
+	DefaultStatusInterval   = 2 * time.Second
 )
 
 // LoadConfig reads, defaults and validates a JSON config file.
@@ -186,6 +190,9 @@ func (c *Config) applyDefaults() {
 	if c.AuditKeep == 0 {
 		c.AuditKeep = DefaultAuditKeep
 	}
+	if c.StatusInterval == 0 {
+		c.StatusInterval = Duration(DefaultStatusInterval)
+	}
 }
 
 // isLoopback reports whether a listen address binds only to loopback.
@@ -212,6 +219,9 @@ func (c *Config) Validate() error {
 	}
 	if c.MaxConnections < 1 || c.MaxConnectionsPerIP < 1 || c.MaxQueued < 1 {
 		return errors.New("max_connections, max_connections_per_ip and max_queued must be positive")
+	}
+	if time.Duration(c.StatusInterval) < 100*time.Millisecond {
+		return errors.New("status_interval must be at least 100ms")
 	}
 	if c.AuditMaxBytes < 1024 || c.AuditKeep < 1 {
 		return errors.New("audit_max_bytes must be at least 1024 and audit_keep at least 1")

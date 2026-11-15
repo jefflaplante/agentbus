@@ -23,7 +23,8 @@ import (
 //     here holds a read lock, Stop holds the write lock, and calls after
 //     Stop do nothing.
 //
-// $SYS statistics aren't persisted; agentbus doesn't need them.
+// $SYS statistics and the retained broker status aren't persisted;
+// they're regenerated after a restart.
 type boltStore struct {
 	*bolt.Hook
 	mu      sync.RWMutex
@@ -75,6 +76,9 @@ func (s *boltStore) OnUnsubscribed(cl *mqtt.Client, pk packets.Packet) {
 }
 
 func (s *boltStore) OnRetainMessage(cl *mqtt.Client, pk packets.Packet, r int64) {
+	if strings.HasPrefix(pk.TopicName, "$SYS/") {
+		return // broker status is regenerated every few seconds; don't write it to disk
+	}
 	s.guard(func() { s.Hook.OnRetainMessage(cl, pk, r) })
 }
 

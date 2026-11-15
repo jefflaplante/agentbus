@@ -106,6 +106,7 @@ type Client struct {
 	pending  map[string]pendingReq
 	tasks    map[string]Handler
 	watchers []watcher
+	raw      []rawWatcher
 	agents   map[string]a2a.Presence
 }
 
@@ -114,6 +115,11 @@ type Client struct {
 type pendingReq struct {
 	ch   chan *a2a.Envelope
 	from string
+}
+
+type rawWatcher struct {
+	filter string
+	fn     func(topic string, payload []byte)
 }
 
 type watcher struct {
@@ -220,6 +226,9 @@ func (c *Client) onConnect() {
 		filters[a2a.TaskShareFilter(capability)] = c.qos
 	}
 	for _, w := range c.watchers {
+		filters[w.filter] = c.qos
+	}
+	for _, w := range c.raw {
 		filters[w.filter] = c.qos
 	}
 	c.mu.Unlock()
@@ -411,6 +420,25 @@ func (c *Client) WatchEvents(ctx context.Context, filter string, fn func(*a2a.En
 	return c.subscribe(ctx, map[string]byte{filter: c.qos})
 }
 
+// Observe calls fn with the topic and raw payload of every message
+// matching filter, any MQTT filter such as "#" or "a2a/v1/#". It's for
+// monitoring tools: only agents configured as observers may subscribe
+// outside their own inbox, presence, events and granted task queues, and
+// the broker refuses the rest. Messages seen this way are not handled as
+// this agent's own: another agent's request is never answered here.
+func (c *Client) Observe(ctx context.Context, filter string, fn func(topic string, payload []byte)) error {
+	c.mu.Lock()
+	c.raw = append(c.raw, rawWatcher{filter: filter, fn: fn})
+	c.mu.Unlock()
+	if err := c.subscribe(ctx, map[string]byte{filter: c.qos}); err != nil {
+		c.mu.Lock()
+		c.raw = c.raw[:len(c.raw)-1]
+		c.mu.Unlock()
+		return err
+	}
+	return nil
+}
+
 // Agents returns the last known presence card of every agent, sorted by ID.
 func (c *Client) Agents() []a2a.Presence {
 	c.mu.Lock()
@@ -425,9 +453,21 @@ func (c *Client) Agents() []a2a.Presence {
 
 // dispatch routes an incoming MQTT message by topic.
 func (c *Client) dispatch(m paho.Message) {
+	c.mu.Lock()
+	raws := slices.Clone(c.raw)
+	c.mu.Unlock()
+	observed := false
+	for _, w := range raws {
+		if topicMatches(w.filter, m.Topic()) {
+			observed = true
+			c.safelyRaw(w, m)
+		}
+	}
 	t, err := a2a.ParseTopic(m.Topic())
 	if err != nil {
-		c.log.Warn("message on unknown topic", "topic", m.Topic())
+		if !observed { // topics outside a2a/v1 are expected through Observe
+			c.log.Warn("message on unknown topic", "topic", m.Topic())
+		}
 		return
 	}
 	if t.Kind == a2a.KindPresence {
@@ -456,14 +496,20 @@ func (c *Client) dispatch(m paho.Message) {
 	}
 	switch t.Kind {
 	case a2a.KindInbox:
+		if t.Owner != c.opts.AgentID {
+			return // another agent's inbox, seen through Observe
+		}
 		if c.resolve(env) {
 			return
 		}
 		c.handle(env, c.opts.Inbox)
 	case a2a.KindTask:
 		c.mu.Lock()
-		h := c.tasks[t.Capability]
+		h, serving := c.tasks[t.Capability]
 		c.mu.Unlock()
+		if !serving {
+			return // a task seen through Observe; it belongs to the workers
+		}
 		c.handle(env, h)
 	case a2a.KindEvent:
 		c.mu.Lock()
@@ -500,6 +546,15 @@ func (c *Client) resolve(env *a2a.Envelope) bool {
 	default:
 	}
 	return true
+}
+
+func (c *Client) safelyRaw(w rawWatcher, m paho.Message) {
+	defer func() {
+		if r := recover(); r != nil {
+			c.log.Error("observer panicked", "topic", m.Topic(), "panic", fmt.Sprint(r))
+		}
+	}()
+	w.fn(m.Topic(), m.Payload())
 }
 
 // safely runs fn, turning a panic into a log line so one bad message

@@ -78,7 +78,7 @@ echo "agents: coordinator, worker, worker-2 (both serve textstats), you (may onl
 echo "        explorer (read-only observer for MQTT Explorer and other desktop clients)"
 
 step "Starting the broker on 127.0.0.1:$PORT (log: demo/.run/broker.log)"
-"$BIN/agentbus" serve -config "$RUN/broker.json" >"$RUN/broker.log" 2>&1 &
+"$BIN/agentbus" serve --config "$RUN/broker.json" >"$RUN/broker.log" 2>&1 &
 PIDS+=($!)
 wait_for_log "$RUN/broker.log" 'agentbus broker listening' "the broker"
 
@@ -104,10 +104,10 @@ cat <<'EOF'
   source demo/.run/you.env                  # act as agent "you"
 
   bin/agentbus agents                       # who's online, with what capabilities
-  bin/agentbus request -to worker -body '{"op":"ping"}'
-  bin/agentbus request -to worker -body '{"op":"reverse","text":"hello bus"}'
-  bin/agentbus task -capability textstats -body '{"text":"to be or not to be"}'
-  bin/agentbus request -to coordinator -body '{}'     # refused: "you" may only message workers
+  bin/agentbus request --to worker --body '{"op":"ping"}'
+  bin/agentbus request --to worker --body '{"op":"reverse","text":"hello bus"}'
+  bin/agentbus task --capability textstats --body '{"text":"to be or not to be"}'
+  bin/agentbus request --to coordinator --body '{}'     # refused: "you" may only message workers
   bin/agentbus watch                        # live events (jobs/done) from every agent
 
   # Load-balancing: start a second worker, then rerun the coordinator and
@@ -120,8 +120,12 @@ cat <<'EOF'
 
   # Retention: stop the worker, send a task (it waits), restart the worker
   pkill -f 'bin/worker -delay'
-  bin/agentbus task -capability textstats -body '{"text":"queued"}' -timeout 60s &
+  bin/agentbus task --capability textstats --body '{"text":"queued"}' --timeout 60s &
   (source demo/.run/worker.env && bin/worker -delay 300ms)
+
+  # Look inside the running broker (explorer is an observer)
+  (source demo/.run/explorer.env && bin/agentbus status)
+  (source demo/.run/explorer.env && bin/agentbus dashboard)
 
   # Desktop MQTT client (MQTT Explorer, MQTTX): see docs/DESKTOP-CLIENTS.md
   cat demo/.run/explorer.env                # host 127.0.0.1, port below, client ID = username = explorer

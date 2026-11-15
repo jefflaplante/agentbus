@@ -22,8 +22,9 @@ type Broker struct {
 	log        *slog.Logger
 	dedupePath string // "" without data_dir
 
-	closeOnce sync.Once
-	closeErr  error
+	closeOnce  sync.Once
+	closeErr   error
+	statusDone chan struct{}
 }
 
 // New builds a broker from cfg. Call Start to begin listening.
@@ -49,7 +50,7 @@ func New(cfg *Config, log *slog.Logger) (*Broker, error) {
 	})
 
 	hook := newContractHook(cfg, server, log)
-	b := &Broker{server: server, hook: hook, log: log}
+	b := &Broker{server: server, hook: hook, log: log, statusDone: make(chan struct{})}
 	if cfg.DataDir != "" {
 		if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
 			return nil, fmt.Errorf("data_dir: %w", err)
@@ -106,6 +107,7 @@ func (b *Broker) Start() error {
 	}
 	b.hook.restorePresence()
 	b.ln.open()
+	go b.publishStatus(time.Duration(b.hook.cfg.StatusInterval), b.statusDone)
 	return nil
 }
 
@@ -121,6 +123,7 @@ func (b *Broker) Close() error {
 }
 
 func (b *Broker) close() error {
+	close(b.statusDone)
 	b.ln.stopAccepting(time.Second)
 	err := b.server.Close() // also closes the bbolt store
 	if b.dedupePath != "" {
