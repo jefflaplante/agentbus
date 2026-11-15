@@ -1,0 +1,147 @@
+# agentbus demo
+
+Two Go agents talk over a running agentbus broker:
+
+- **worker** ([cmd/worker](cmd/worker/main.go)) serves the `textstats`
+  capability from the shared task queue. Its inbox answers `ping` and
+  `reverse` requests and replies to `hello` notes. It emits a `jobs/done`
+  event after every task.
+- **coordinator** ([cmd/coordinator](cmd/coordinator/main.go)) runs a
+  scripted conversation with the worker. It checks every reply against a
+  local computation and exits non-zero if any step fails.
+
+Both are thin wrappers around [agents/](agents/), which uses the public
+[`client`](../client/) package the same way conduit would.
+
+## Run it
+
+```bash
+make demo        # or: scripts/demo.sh
+```
+
+The script:
+1. Builds `bin/agentbus`, `bin/worker` and `bin/coordinator`.
+2. Mints a token per agent and writes `demo/.run/broker.json` and one
+   `demo/.run/<agent>.env` per agent.
+3. Starts the broker on `127.0.0.1:18830` and the worker.
+4. Runs the coordinator.
+
+Expected output:
+
+```text
+coordinator "coordinator" connected; talking to "worker"
+
+  [ok  ] presence  worker online, capabilities [textstats] (0ms)
+  [ok  ] hello     sent hello, got back "hi coordinator, worker here" (0ms)
+  [ok  ] ping      pong from worker (0ms)
+  [ok  ] reverse   "agentbus" -> "subtnega" (0ms)
+  [ok  ] tasks     5 tasks answered and verified, 5 jobs/done events, handled by map[worker:5] (304ms)
+  [ok  ] acl       broker refused: broker refused subscription to "$share/textstats/..." (code 0x80) (0ms)
+
+PASS: 6/6 steps
+```
+
+| Step | What crosses the bus |
+|---|---|
+| presence | The coordinator reads the worker's retained presence card. |
+| hello | A one-way event to the worker's inbox. The worker sends a one-way event back to the coordinator's inbox. |
+| ping, reverse | Request/response through the worker's inbox. |
+| tasks | 5 concurrent requests through the shared `textstats` queue. Each answer is verified, and the coordinator waits for one `jobs/done` broadcast per task. |
+| acl | The coordinator tries to consume `textstats`. The broker refuses, because only the workers are granted it. |
+
+After the run, the broker and worker stay up until you press Ctrl-C.
+`make demo-once` (`scripts/demo.sh --once`) exits right after the
+conversation, with the coordinator's exit status.
+
+## Kick the tires
+
+In a second terminal, from the repo root, while `make demo` is running:
+
+```bash
+source demo/.run/you.env     # act as agent "you"
+bin/agentbus agents
+```
+
+```text
+AGENT        STATUS   SINCE                CAPABILITIES  DESCRIPTION
+coordinator  offline  2026-11-15 10:38:35                Demo coordinator
+worker       online   2026-11-15 10:38:34  textstats     Demo worker: text statistics and ping/reverse
+you          online   2026-11-15 10:38:36
+```
+
+Talk to the worker directly:
+
+```bash
+bin/agentbus request -to worker -body '{"op":"ping"}'
+bin/agentbus request -to worker -body '{"op":"reverse","text":"hello bus"}'
+```
+
+Send work through the queue (any worker with the capability takes it):
+
+```bash
+bin/agentbus task -capability textstats -body '{"text":"to be or not to be"}'
+```
+
+See the broker enforce the rules. `you` may only message the workers:
+
+```bash
+bin/agentbus request -to coordinator -body '{}'
+# agentbus: $broker: not authorized: not allowed to send to "coordinator"
+```
+
+Watch broadcasts live:
+
+```bash
+bin/agentbus watch           # prints jobs/done events as JSON lines
+```
+
+See load balancing by starting a second worker (it has its own identity and
+the same capability) and rerunning the coordinator:
+
+```bash
+(source demo/.run/worker-2.env && bin/worker -delay 300ms)
+```
+
+```bash
+(source demo/.run/coordinator.env && bin/coordinator > /dev/null)
+#  [ok  ] tasks  5 tasks answered and verified, ... handled by map[worker:4 worker-2:1]
+```
+
+Stop a worker with Ctrl-C and run `bin/agentbus agents` again. The broker
+has marked it offline and kept its card.
+
+Write a worker in shell. `handle -exec` runs a command per message, with
+the envelope on stdin and the reply body on stdout:
+
+```bash
+source demo/.run/worker-2.env
+bin/agentbus handle -capability textstats \
+  -exec 'jq -c "{words: (.body.text | split(\" \") | length), worker: \"shell\"}"'
+```
+
+Watch the bus in a desktop app. The demo creates a read-only observer
+called `explorer`, and `cat demo/.run/explorer.env` prints its token. In
+MQTT Explorer, connect to `127.0.0.1:18830` with username **and client ID**
+`explorer` and the token as the password. The full guide, including MQTTX
+and `mosquitto_sub`, is [docs/DESKTOP-CLIENTS.md](../docs/DESKTOP-CLIENTS.md).
+
+Read the audit log, one line per envelope with no bodies:
+
+```bash
+tail -f demo/.run/broker.log
+```
+
+## Files the demo writes
+
+```text
+demo/.run/            gitignored; recreated on every run
+├── broker.json       broker config with token hashes
+├── <agent>.env       AGENTBUS_URL / AGENTBUS_AGENT / AGENTBUS_TOKEN per agent
+│                     (coordinator, worker, worker-2, you, explorer)
+├── broker.log        broker audit log
+├── worker.log        worker log
+└── summary.json      coordinator's JSON result
+```
+
+Each run mints new tokens, so `.env` files from an earlier run stop
+working once the demo restarts.

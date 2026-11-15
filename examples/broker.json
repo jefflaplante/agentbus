@@ -1,0 +1,29 @@
+{
+  "listen": ":1883",
+  "max_envelope_bytes": 262144,
+  "rate_per_second": 20,
+  "rate_burst": 50,
+  "dedupe_window": "10m",
+  "agents": [
+    {
+      "id": "conduit-home",
+      "token_sha256": "replace-with-output-of-agentbus-token-0000000000000000000000000",
+      "send_to": ["*"]
+    },
+    {
+      "id": "researcher",
+      "token_sha256": "replace-with-output-of-agentbus-token-0000000000000000000000000",
+      "capabilities": ["research", "summarize"]
+    },
+    {
+      "id": "cli-ops",
+      "token_sha256": "replace-with-output-of-agentbus-token-0000000000000000000000000",
+      "send_to": ["conduit-home", "researcher"]
+    },
+    {
+      "id": "explorer",
+      "token_sha256": "replace-with-output-of-agentbus-token-0000000000000000000000000",
+      "observer": true
+    }
+  ]
+}

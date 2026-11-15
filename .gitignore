@@ -1,0 +1,24 @@
+# Binaries
+/bin/
+*.exe
+*.test
+*.out
+
+# Coverage / profiling
+coverage.*
+*.pprof
+
+# Local broker state
+/data/
+*.db
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Demo runtime state (tokens, logs)
+/demo/.run/
