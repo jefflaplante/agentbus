@@ -36,31 +36,43 @@ a2a/v1/events/{id}/{name...}   broadcasts                    write: owner only
 ## Every publish goes through OnPublish
 
 ```text
+OnConnect                              # refuse a CONNECT that carries a Will
+OnConnectAuthenticate                  # client ID == username == agent; token hash
+
 OnPublish(client, packet)
   ref = peek(payload)                  # id + type, for a correlated error
+  rate.allow(agent)                    # first, so rejected publishes cost tokens too
   authorizeWrite(agent, topic)         # own presence/events; inbox allowed by send_to
-  rate.allow(agent)                    # token bucket per agent
+  strip MQTT 5 properties
   if presence topic
     validate card, agent == client
+    drop ungranted capabilities; check keys against pinned keys
     stamp status=online, ts=now, force retain
-    remember card                      # reused for the offline card
+    remember card                      # reused for offline and 24h refresh
     deliver
+  clear retain                         # only presence is retained
   size <= max_envelope_bytes
   Parse + Validate envelope
   ValidateFor(topic, agent)            # from == agent, to == inbox owner,
-                                       # tasks are requests, events are events
-  not expired (ts + ttl_ms)
+                                       # reply_to == own inbox, task/event types
+  ts within max_clock_skew; not expired
+  route: recipient configured and has a session; task has a worker
   dedupe(from/id)  -> duplicate: ack, drop silently
-  log one line (no body), deliver
+  payload = re-encoded envelope        # receivers see exactly what was checked
+  log one line (action=accept, no body), deliver
 
-on any failure: reject()
+on any failure: reject(code)
   ack and drop                         # a QoS 1 sender won't retry
-  send an error envelope from $broker to the sender's inbox,
-  with correlation_id = the rejected id
+  throttled per agent:
+    log action=reject with the code
+    send an error envelope from $broker to the sender's inbox,
+    with correlation_id = the rejected id
 ```
 
 Reads are checked in `OnACLCheck`, at subscribe time and again for each
-delivery. Observer identities pass every read check except shared
+delivery. `OnSubscribe` adds two rules the ACL can't express: task queues
+only through the exact `$share/{cap}/...` filter, and at most 256
+subscriptions per client. Observer identities pass every read check except shared
 subscriptions, and `OnSubscribe` grants them QoS 0. That's how MQTT
 Explorer can show the whole bus
 ([DESKTOP-CLIENTS.md](DESKTOP-CLIENTS.md)). Writes are authorized in `OnPublish` rather than the ACL hook,
@@ -112,6 +124,23 @@ coordinator               broker                    worker      worker-2
 The broker grants a capability per agent (`capabilities` in the config).
 An agent without the grant can send tasks but can't consume them, which is
 what the demo's `acl` step checks.
+
+## Retention
+
+With `data_dir` set, mochi's bbolt storage hook saves sessions,
+subscriptions, queued messages and retained presence cards. On startup:
+
+```text
+Start
+  server.Serve()           # load broker.db: sessions, subscriptions, queues, retained
+  restorePresence()        # restored cards -> offline (nobody is connected yet)
+  listener.open()          # only now accept connections (they waited in the backlog)
+Close
+  stop accepting; server.Close()   # closes broker.db
+  save dedupe.json; close the audit file
+```
+
+See [RETENTION.md](RETENTION.md) for what is kept and the audit log format.
 
 ## Presence
 

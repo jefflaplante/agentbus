@@ -4,16 +4,26 @@ import (
 	"crypto/tls"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
 
 	mqtt "github.com/mochi-mqtt/server/v2"
-	"github.com/mochi-mqtt/server/v2/listeners"
+	"github.com/mochi-mqtt/server/v2/hooks/storage/bolt"
+	"go.etcd.io/bbolt"
 )
 
 // Broker is a running a2a/v1 broker.
 type Broker struct {
-	server *mqtt.Server
-	hook   *contractHook
-	ln     *listeners.TCP
+	server     *mqtt.Server
+	hook       *contractHook
+	ln         *guardedListener
+	log        *slog.Logger
+	dedupePath string // "" without data_dir
+
+	closeOnce sync.Once
+	closeErr  error
 }
 
 // New builds a broker from cfg. Call Start to begin listening.
@@ -28,6 +38,10 @@ func New(cfg *Config, log *slog.Logger) (*Broker, error) {
 
 	caps := mqtt.NewDefaultServerCapabilities()
 	caps.MaximumPacketSize = uint32(cfg.MaxEnvelopeBytes + 1024) // payload plus headers
+	caps.MaximumInflight = uint16(min(cfg.MaxQueued, 65535))
+	caps.MaximumSessionExpiryInterval = uint32(time.Duration(cfg.SessionExpiry).Seconds())
+	caps.MaximumClientWritesPending = 1024
+	caps.MaximumQos = 1 // the contract uses QoS 1; mochi mishandles some QoS 2 rejections
 	server := mqtt.New(&mqtt.Options{
 		InlineClient: true, // the broker publishes presence and error envelopes
 		Capabilities: caps,
@@ -35,31 +49,85 @@ func New(cfg *Config, log *slog.Logger) (*Broker, error) {
 	})
 
 	hook := newContractHook(cfg, server, log)
+	b := &Broker{server: server, hook: hook, log: log}
+	if cfg.DataDir != "" {
+		if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
+			return nil, fmt.Errorf("data_dir: %w", err)
+		}
+		// mochi's bbolt hook persists sessions, subscriptions, queued
+		// (in-flight) messages and retained presence cards.
+		store := &bolt.Options{
+			Path:    filepath.Join(cfg.DataDir, "broker.db"),
+			Options: &bbolt.Options{Timeout: 2 * time.Second}, // fail fast if another broker holds the file
+		}
+		if err := server.AddHook(newBoltStore(), store); err != nil {
+			return nil, fmt.Errorf("open %s (is another broker using this data_dir?): %w", store.Path, err)
+		}
+		b.dedupePath = filepath.Join(cfg.DataDir, "dedupe.json")
+		if err := hook.dedup.load(b.dedupePath, time.Now()); err != nil {
+			log.Warn("dedupe state not restored", "err", err)
+		}
+	}
+	if cfg.AuditFile != "" {
+		audit, err := openAudit(cfg.AuditFile, cfg.AuditMaxBytes, cfg.AuditKeep, log)
+		if err != nil {
+			return nil, err
+		}
+		hook.audit = audit
+	}
 	if err := server.AddHook(hook, nil); err != nil {
 		return nil, err
 	}
 
-	lc := listeners.Config{ID: "tcp", Address: cfg.Listen}
+	var tlsConfig *tls.Config
 	if cfg.TLSCert != "" {
 		cert, err := tls.LoadX509KeyPair(cfg.TLSCert, cfg.TLSKey)
 		if err != nil {
 			return nil, fmt.Errorf("load TLS key pair: %w", err)
 		}
-		lc.TLSConfig = &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}
+		tlsConfig = &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}
+	} else if !isLoopback(cfg.Listen) {
+		log.Warn("plaintext listener on a non-loopback address: agent tokens cross the network in clear",
+			"listen", cfg.Listen, "fix", "set tls_cert and tls_key")
 	}
-	ln := listeners.NewTCP(lc)
+	ln := newGuardedListener("tcp", cfg.Listen, tlsConfig, cfg)
 	if err := server.AddListener(ln); err != nil {
 		return nil, err
 	}
-	return &Broker{server: server, hook: hook, ln: ln}, nil
+	b.ln = ln
+	return b, nil
 }
 
-// Start begins serving. It returns once the listener is bound.
-func (b *Broker) Start() error { return b.server.Serve() }
+// Start loads any stored state, then begins accepting connections. It
+// returns once the listener is bound.
+func (b *Broker) Start() error {
+	if err := b.server.Serve(); err != nil { // reads the store before returning
+		return err
+	}
+	b.hook.restorePresence()
+	b.ln.open()
+	return nil
+}
 
 // Addr is the bound listener address ("host:port"), useful when Listen
 // used port 0.
 func (b *Broker) Addr() string { return b.ln.Address() }
 
 // Close stops the broker and disconnects all clients.
-func (b *Broker) Close() error { return b.server.Close() }
+// Calling it more than once is safe.
+func (b *Broker) Close() error {
+	b.closeOnce.Do(func() { b.closeErr = b.close() })
+	return b.closeErr
+}
+
+func (b *Broker) close() error {
+	b.ln.stopAccepting(time.Second)
+	err := b.server.Close() // also closes the bbolt store
+	if b.dedupePath != "" {
+		if serr := b.hook.dedup.save(b.dedupePath, time.Now()); serr != nil {
+			b.log.Warn("dedupe state not saved", "err", serr)
+		}
+	}
+	b.hook.audit.close()
+	return err
+}

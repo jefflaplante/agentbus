@@ -71,22 +71,34 @@ err = c.Emit(ctx, "jobs/finished", result)          // broadcast
 Mosquitto can't do these things on its own:
 
 - **Sender identity.** The envelope's `from` must match the authenticated
-  agent, so no agent can impersonate another.
+  agent, so no agent can impersonate another. The broker forwards its own
+  re-encoding of each envelope, and refuses MQTT Will messages, so neither
+  JSON tricks nor side channels get around this.
 - **Contract ACLs.** Only the owner can read an inbox. `send_to` lists who
-  each agent may message. Task queues require a granted capability. An
-  agent can write only its own presence and events.
+  each agent may message. Task queues require a granted capability and the
+  exact shared subscription, so each task reaches one worker. An agent can
+  write only its own presence and events.
 - **Rejections are reported, not just dropped.** A refused publish is
   acknowledged, so it isn't retried, and the sender gets a correlated
-  `error` envelope. Pending requests fail fast instead of timing out.
-- **Per-agent rate limits, dedupe by envelope ID, and TTL checks.** These
-  matter when every message can start a paid LLM call.
-- **Presence.** Agents publish retained cards. The broker stamps them, and
-  when an agent disconnects it writes the offline card itself, keeping the
-  agent's description and capabilities.
+  `error` envelope with a stable code. That includes `no_route` (the
+  recipient is offline with no session) and `no_consumer` (nobody serves
+  the task). Pending requests fail fast instead of timing out.
+- **Limits on everything.** Per-agent rate limits (overridable per agent),
+  dedupe by envelope ID, clock-skew and TTL checks, connection caps and a
+  CONNECT deadline, and bounded offline queues. These matter when every
+  message can start a paid LLM call. See [docs/SECURITY.md](docs/SECURITY.md).
+- **Presence.** Agents publish retained cards. The broker stamps them,
+  drops ungranted capabilities, checks public keys against pinned ones
+  (`keys_pinned`), and writes the offline card itself when an agent
+  disconnects.
 - **Observers.** An identity marked `observer` can subscribe to anything,
   including `#` and other agents' inboxes, for debugging tools. It still
   can't take tasks or send as another agent.
-- **Audit log.** One structured line per envelope, without bodies.
+- **Retention and audit (optional).** With `data_dir`, sessions, queued
+  messages, subscriptions, presence and the dedupe window survive restarts
+  (bbolt, embedded). With `audit_file`, every decision goes to a rotated JSONL
+  log with a hash of each body but never the body itself. See
+  [docs/RETENTION.md](docs/RETENTION.md).
 
 `body` is never inspected, so payloads can be end-to-end encrypted (`enc`),
 as conduit-1gkv plans.
@@ -113,9 +125,30 @@ From conduit at `5626e55`:
   spawner already starts a sub-agent session from an untrusted payload, and
   an inbox handler can do the same with a request body. Its "evidence, not
   instructions" preamble applies here too.
-- **conduit-23a (Unified Inbox) fits this contract.** Publishers send
-  `event` envelopes to `a2a/v1/agents/conduit-home/inbox`, and
-  `headers.priority` drives the spawn/queue/log routing.
+- **conduit-23a (Unified Inbox) maps onto the envelope.** Publishers send
+  `event` envelopes to `a2a/v1/agents/conduit-home/inbox`:
+
+  | 23a field | Envelope field |
+  |---|---|
+  | `source` | `from`, checked by the broker |
+  | `event` | `event` |
+  | `priority` | `priority`, which drives conduit's spawn/queue/log routing |
+  | `message`, `context` | `body` |
+
+  23a's security list is mostly broker-enforced: ACLs, schema validation,
+  size limits, per-source rate limits, dedupe, and audit lines with an
+  `action` field. conduit still owns its global spawn budget and circuit
+  breaker. The client's `MaxConcurrent` and `busy` replies are the agent-side
+  backstop.
+- **Approval gating.** `client.Options.BeforePublish` runs before every
+  publish. conduit can route agent-initiated sends through its approval
+  flow there, the way it gates the `mqtt` tool today.
+- **Prompt injection.** Put `a2a.UntrustedPreamble(env)` in front of any
+  envelope an LLM sees, matching conduit's MQTT-event preamble.
+- **Federation keys (conduit-1gkv phase 3).** Presence cards carry
+  `keys.sign` (Ed25519) and `keys.kex` (X25519), and the broker pins them
+  from config. Signing and sealed bodies are the next step; see
+  [docs/SECURITY.md](docs/SECURITY.md#not-done-yet).
 
 ## Layout
 
@@ -129,7 +162,7 @@ demo/cmd/         their binaries
 test/e2e/         functional tests over real processes
 scripts/demo.sh   the demo
 CONTRACT.md       the spec; contract/envelope.schema.json
-docs/             how it works; desktop MQTT clients
+docs/             how it works; security; retention and audit; desktop clients
 ```
 
 ## Testing
@@ -150,10 +183,12 @@ directly.
 
 ## Not done yet
 
-- Persistent sessions and retained messages live in memory, so a broker
-  restart loses queued inbox messages. mochi has bolt, badger and redis
-  storage hooks to wire in.
-- No mTLS client auth yet, only tokens over optional server TLS.
+- End-to-end signatures and sealed (encrypted) bodies. Keys are
+  distributed and pinned, but nothing signs or encrypts yet.
+- Searchable message history with bodies (an opt-in SQLite store). The
+  audit log records decisions, not contents.
+- No token rotation or config reload without a restart.
+- No mTLS client auth yet, only tokens over TLS.
 - Late replies to a Request that already timed out go to the Inbox handler.
 - No metrics endpoint yet.
 - mochi shares one in-flight packet ID table across both directions, so a

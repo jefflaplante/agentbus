@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -45,6 +46,13 @@ type Options struct {
 	// an error and everything else is dropped.
 	Inbox Handler
 
+	// Tasks maps capabilities to handlers for this agent's work queues.
+	// Long-running workers should register here rather than with
+	// ServeTasks: with a persistent session the broker redelivers queued
+	// tasks the moment the agent connects, before any ServeTasks call
+	// could run, and a task with no handler is answered "no_handler".
+	Tasks map[string]Handler
+
 	// Description and Meta are published on this agent's presence card.
 	Description string
 	Meta        map[string]string
@@ -54,8 +62,26 @@ type Options struct {
 	// was offline are delivered when it returns.
 	CleanSession bool
 
+	// Keys are this agent's public keys, published on its presence card
+	// for other agents to verify signatures and encrypt to.
+	Keys *a2a.Keys
+
 	// QoS for publishes and subscriptions. Defaults to 1.
 	QoS byte
+
+	// MaxConcurrent caps handlers running at once (inbox and tasks
+	// together). When full, requests are answered with a "busy" error and
+	// other messages are dropped. Default 64.
+	MaxConcurrent int
+	// DefaultTimeout bounds a handler when the request has no ttl_ms.
+	// Default 5 minutes.
+	DefaultTimeout time.Duration
+
+	// BeforePublish, if set, runs before every envelope this client
+	// publishes, replies included. Returning an error stops the publish.
+	// Use it for approval gating, e.g. conduit's approval flow for
+	// agent-initiated sends.
+	BeforePublish func(ctx context.Context, topic string, env *a2a.Envelope) error
 
 	Logger *slog.Logger
 }
@@ -71,12 +97,23 @@ type Client struct {
 	cancel    context.CancelFunc
 	ready     chan struct{}
 	readyOnce sync.Once
+	setupErr  error // from the first onConnect; read after ready closes
+
+	slots chan struct{} // MaxConcurrent handler slots
+	seen  *seenIDs      // client-side dedupe of redelivered envelopes
 
 	mu       sync.Mutex
-	pending  map[string]chan *a2a.Envelope
+	pending  map[string]pendingReq
 	tasks    map[string]Handler
 	watchers []watcher
 	agents   map[string]a2a.Presence
+}
+
+// pendingReq is a Request waiting for its reply. from is the agent the
+// reply must come from ("" for task requests, which any worker answers).
+type pendingReq struct {
+	ch   chan *a2a.Envelope
+	from string
 }
 
 type watcher struct {
@@ -90,13 +127,28 @@ func Connect(ctx context.Context, opts Options) (*Client, error) {
 	if !a2a.ValidName(opts.AgentID) {
 		return nil, fmt.Errorf("invalid agent id %q", opts.AgentID)
 	}
+	for capability := range opts.Tasks {
+		if !a2a.ValidName(capability) {
+			return nil, fmt.Errorf("invalid capability %q in Tasks", capability)
+		}
+	}
 	if opts.QoS == 0 {
 		opts.QoS = 1
 	}
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
 	}
+	if opts.MaxConcurrent <= 0 {
+		opts.MaxConcurrent = 64
+	}
+	if opts.DefaultTimeout <= 0 {
+		opts.DefaultTimeout = 5 * time.Minute
+	}
 	cctx, cancel := context.WithCancel(context.Background())
+	tasks := maps.Clone(opts.Tasks)
+	if tasks == nil {
+		tasks = map[string]Handler{}
+	}
 	c := &Client{
 		opts:    opts,
 		log:     opts.Logger.With("agent", opts.AgentID),
@@ -104,8 +156,10 @@ func Connect(ctx context.Context, opts Options) (*Client, error) {
 		ctx:     cctx,
 		cancel:  cancel,
 		ready:   make(chan struct{}),
-		pending: map[string]chan *a2a.Envelope{},
-		tasks:   map[string]Handler{},
+		slots:   make(chan struct{}, opts.MaxConcurrent),
+		seen:    newSeenIDs(10*time.Minute, 10000),
+		pending: map[string]pendingReq{},
+		tasks:   tasks,
 		agents:  map[string]a2a.Presence{},
 	}
 
@@ -139,6 +193,10 @@ func Connect(ctx context.Context, opts Options) (*Client, error) {
 		c.Close()
 		return nil, ctx.Err()
 	}
+	if c.setupErr != nil {
+		c.Close()
+		return nil, c.setupErr
+	}
 	return c, nil
 }
 
@@ -165,13 +223,18 @@ func (c *Client) onConnect() {
 		filters[w.filter] = c.qos
 	}
 	c.mu.Unlock()
-	if err := c.subscribe(c.ctx, filters); err != nil {
+	err := c.subscribe(c.ctx, filters)
+	if err != nil {
 		c.log.Error("subscribe", "err", err)
 	}
-	if err := c.announce(c.ctx); err != nil {
-		c.log.Error("announce presence", "err", err)
+	if aerr := c.announce(c.ctx); aerr != nil {
+		c.log.Error("announce presence", "err", aerr)
+		err = errors.Join(err, aerr)
 	}
-	c.readyOnce.Do(func() { close(c.ready) })
+	c.readyOnce.Do(func() {
+		c.setupErr = err
+		close(c.ready)
+	})
 }
 
 // announce publishes this agent's presence card.
@@ -185,7 +248,7 @@ func (c *Client) announce(ctx context.Context) error {
 	sort.Strings(caps)
 	p := a2a.Presence{
 		V: a2a.Version, Agent: c.opts.AgentID, Status: a2a.StatusOnline, TS: time.Now().UTC(),
-		Description: c.opts.Description, Capabilities: caps, Meta: c.opts.Meta,
+		Description: c.opts.Description, Capabilities: caps, Meta: c.opts.Meta, Keys: c.opts.Keys,
 	}
 	data, err := json.Marshal(p)
 	if err != nil {
@@ -200,6 +263,11 @@ func (c *Client) Publish(ctx context.Context, topic string, env *a2a.Envelope) e
 	if err := env.Validate(); err != nil {
 		return err
 	}
+	if c.opts.BeforePublish != nil {
+		if err := c.opts.BeforePublish(ctx, topic, env); err != nil {
+			return fmt.Errorf("publish blocked: %w", err)
+		}
+	}
 	data, err := env.Marshal()
 	if err != nil {
 		return err
@@ -207,45 +275,78 @@ func (c *Client) Publish(ctx context.Context, topic string, env *a2a.Envelope) e
 	return wait(ctx, c.mqtt.Publish(topic, c.qos, false, data))
 }
 
+// MsgOption sets optional envelope fields on Send, Request, RequestTask
+// and Emit.
+type MsgOption func(*a2a.Envelope)
+
+// WithPriority sets the envelope priority (high, normal, low, info).
+func WithPriority(p a2a.Priority) MsgOption { return func(e *a2a.Envelope) { e.Priority = p } }
+
+// WithEvent names what the message is about, e.g. "doorbell_ring".
+func WithEvent(name string) MsgOption { return func(e *a2a.Envelope) { e.Event = name } }
+
+// WithHeaders adds string headers, e.g. {"session": "tg:12345"}.
+func WithHeaders(h map[string]string) MsgOption {
+	return func(e *a2a.Envelope) {
+		if e.Headers == nil {
+			e.Headers = map[string]string{}
+		}
+		for k, v := range h {
+			e.Headers[k] = v
+		}
+	}
+}
+
+func (c *Client) build(ctx context.Context, typ a2a.Type, body any, opts []MsgOption) (*a2a.Envelope, error) {
+	env, err := a2a.New(typ, c.opts.AgentID, body)
+	if err != nil {
+		return nil, err
+	}
+	for _, o := range opts {
+		o(env)
+	}
+	setTTL(ctx, env)
+	return env, nil
+}
+
 // Send delivers a one-way event to another agent's inbox.
-func (c *Client) Send(ctx context.Context, to string, body any) error {
-	env, err := a2a.New(a2a.TypeEvent, c.opts.AgentID, body)
+func (c *Client) Send(ctx context.Context, to string, body any, opts ...MsgOption) error {
+	env, err := c.build(ctx, a2a.TypeEvent, body, opts)
 	if err != nil {
 		return err
 	}
 	env.To = to
-	setTTL(ctx, env)
 	return c.Publish(ctx, a2a.InboxTopic(to), env)
 }
 
 // Request sends a request to another agent's inbox and waits for the
 // response. The context deadline, if any, becomes the envelope TTL.
-// A TypeError reply is returned as a *RemoteError.
-func (c *Client) Request(ctx context.Context, to string, body any) (*a2a.Envelope, error) {
-	env, err := a2a.New(a2a.TypeRequest, c.opts.AgentID, body)
+// A TypeError reply is returned as a *RemoteError. Only a reply from the
+// addressed agent (or a $broker error) completes the request.
+func (c *Client) Request(ctx context.Context, to string, body any, opts ...MsgOption) (*a2a.Envelope, error) {
+	env, err := c.build(ctx, a2a.TypeRequest, body, opts)
 	if err != nil {
 		return nil, err
 	}
 	env.To = to
-	return c.roundTrip(ctx, a2a.InboxTopic(to), env)
+	return c.roundTrip(ctx, a2a.InboxTopic(to), env, to)
 }
 
 // RequestTask sends a request to the work queue for capability. Exactly
 // one worker consuming that capability handles it.
-func (c *Client) RequestTask(ctx context.Context, capability string, body any) (*a2a.Envelope, error) {
-	env, err := a2a.New(a2a.TypeRequest, c.opts.AgentID, body)
+func (c *Client) RequestTask(ctx context.Context, capability string, body any, opts ...MsgOption) (*a2a.Envelope, error) {
+	env, err := c.build(ctx, a2a.TypeRequest, body, opts)
 	if err != nil {
 		return nil, err
 	}
 	env.Capability = capability
-	return c.roundTrip(ctx, a2a.TaskTopic(capability), env)
+	return c.roundTrip(ctx, a2a.TaskTopic(capability), env, "")
 }
 
-func (c *Client) roundTrip(ctx context.Context, topic string, env *a2a.Envelope) (*a2a.Envelope, error) {
-	setTTL(ctx, env)
+func (c *Client) roundTrip(ctx context.Context, topic string, env *a2a.Envelope, from string) (*a2a.Envelope, error) {
 	ch := make(chan *a2a.Envelope, 1)
 	c.mu.Lock()
-	c.pending[env.ID] = ch
+	c.pending[env.ID] = pendingReq{ch: ch, from: from}
 	c.mu.Unlock()
 	defer func() {
 		c.mu.Lock()
@@ -271,12 +372,11 @@ func (c *Client) roundTrip(ctx context.Context, topic string, env *a2a.Envelope)
 
 // Emit publishes an event on this agent's event topic name (which may
 // contain '/'), for any agent watching it.
-func (c *Client) Emit(ctx context.Context, name string, body any) error {
-	env, err := a2a.New(a2a.TypeEvent, c.opts.AgentID, body)
+func (c *Client) Emit(ctx context.Context, name string, body any, opts ...MsgOption) error {
+	env, err := c.build(ctx, a2a.TypeEvent, body, opts)
 	if err != nil {
 		return err
 	}
-	setTTL(ctx, env)
 	return c.Publish(ctx, a2a.EventTopic(c.opts.AgentID, name), env)
 }
 
@@ -350,6 +450,10 @@ func (c *Client) dispatch(m paho.Message) {
 		c.log.Info("expired envelope dropped", "id", env.ID, "from", env.From)
 		return
 	}
+	// QoS 1 can redeliver after a reconnect; handle each envelope once.
+	if !c.seen.first(env.From+"/"+env.ID, time.Now()) {
+		return
+	}
 	switch t.Kind {
 	case a2a.KindInbox:
 		if c.resolve(env) {
@@ -367,52 +471,95 @@ func (c *Client) dispatch(m paho.Message) {
 		c.mu.Unlock()
 		for _, w := range ws {
 			if topicMatches(w.filter, m.Topic()) {
-				w.fn(env)
+				c.safely("watcher", env, func() { w.fn(env) })
 			}
 		}
 	}
 }
 
-// resolve hands a response or error to the Request waiting for it.
+// resolve hands a response or error to the Request waiting for it. A
+// reply only counts if it comes from the agent the request went to (any
+// agent for task requests) or from the broker; anything else could be
+// another agent racing a forged reply with a guessed correlation ID.
 func (c *Client) resolve(env *a2a.Envelope) bool {
 	if env.Type != a2a.TypeResponse && env.Type != a2a.TypeError {
 		return false
 	}
 	c.mu.Lock()
-	ch, ok := c.pending[env.CorrelationID]
+	p, ok := c.pending[env.CorrelationID]
 	c.mu.Unlock()
 	if !ok {
 		return false // e.g. the broker rejecting a Send; goes to the Inbox handler
 	}
+	if p.from != "" && env.From != p.from && env.From != a2a.BrokerID {
+		c.log.Warn("reply from unexpected agent ignored", "correlation_id", env.CorrelationID, "from", env.From, "want", p.from)
+		return true
+	}
 	select {
-	case ch <- env:
+	case p.ch <- env:
 	default:
 	}
 	return true
 }
 
+// safely runs fn, turning a panic into a log line so one bad message
+// can't take down the process hosting the agent.
+func (c *Client) safely(what string, env *a2a.Envelope, fn func()) (panicked bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			c.log.Error(what+" panicked", "id", env.ID, "from", env.From, "panic", fmt.Sprint(r))
+			panicked = true
+		}
+	}()
+	fn()
+	return false
+}
+
 func (c *Client) handle(env *a2a.Envelope, h Handler) {
-	if env.Type != a2a.TypeRequest {
-		if h != nil {
-			_, _ = h(c.ctx, env)
+	select {
+	case c.slots <- struct{}{}:
+		defer func() { <-c.slots }()
+	default:
+		c.log.Warn("handler limit reached", "id", env.ID, "from", env.From, "type", env.Type, "max", c.opts.MaxConcurrent)
+		if env.Type == a2a.TypeRequest {
+			c.reply(env, a2a.TypeError, ErrorBody{Code: "busy", Reason: "agent is at its concurrent handler limit; retry later"})
 		}
 		return
 	}
-	ctx, cancel := c.ctx, context.CancelFunc(func() {})
+
+	deadline := time.Now().Add(c.opts.DefaultTimeout)
 	if env.TTLMillis > 0 {
-		ctx, cancel = context.WithDeadline(c.ctx, env.TS.Add(time.Duration(env.TTLMillis)*time.Millisecond))
+		deadline = env.TS.Add(time.Duration(env.TTLMillis) * time.Millisecond)
 	}
+	ctx, cancel := context.WithDeadline(c.ctx, deadline)
 	defer cancel()
 
-	var reply *a2a.Envelope
-	var err error
-	if h == nil {
-		reply, err = env.Reply(a2a.TypeError, c.opts.AgentID, ErrorBody{Code: "no_handler", Reason: "agent does not accept this request"})
-	} else if body, herr := h(ctx, env); herr != nil {
-		reply, err = env.Reply(a2a.TypeError, c.opts.AgentID, ErrorBody{Code: "handler_error", Reason: herr.Error()})
-	} else {
-		reply, err = env.Reply(a2a.TypeResponse, c.opts.AgentID, body)
+	if env.Type != a2a.TypeRequest {
+		if h != nil {
+			c.safely("handler", env, func() { _, _ = h(ctx, env) })
+		}
+		return
 	}
+	if h == nil {
+		c.reply(env, a2a.TypeError, ErrorBody{Code: "no_handler", Reason: "agent does not accept this request"})
+		return
+	}
+	var body any
+	var herr error
+	if c.safely("handler", env, func() { body, herr = h(ctx, env) }) {
+		c.reply(env, a2a.TypeError, ErrorBody{Code: "handler_panic", Reason: "handler failed"})
+		return
+	}
+	if herr != nil {
+		c.reply(env, a2a.TypeError, ErrorBody{Code: "handler_error", Reason: herr.Error()})
+		return
+	}
+	c.reply(env, a2a.TypeResponse, body)
+}
+
+// reply answers env.
+func (c *Client) reply(env *a2a.Envelope, typ a2a.Type, body any) {
+	reply, err := env.Reply(typ, c.opts.AgentID, body)
 	if err != nil {
 		c.log.Error("build reply", "id", env.ID, "err", err)
 		return
@@ -450,7 +597,7 @@ func newRemoteError(env *a2a.Envelope) *RemoteError {
 // setTTL derives the envelope TTL from the context deadline.
 func setTTL(ctx context.Context, env *a2a.Envelope) {
 	if d, ok := ctx.Deadline(); ok && env.TTLMillis == 0 {
-		env.TTLMillis = max(1, time.Until(d).Milliseconds())
+		env.TTLMillis = min(max(1, time.Until(d).Milliseconds()), a2a.MaxTTL.Milliseconds())
 	}
 }
 
@@ -510,4 +657,36 @@ func topicMatches(filter, topic string) bool {
 		}
 	}
 	return len(fs) == len(ts)
+}
+
+// seenIDs remembers recent envelope keys, bounded in time and size.
+type seenIDs struct {
+	mu     sync.Mutex
+	window time.Duration
+	max    int
+	at     map[string]time.Time
+}
+
+func newSeenIDs(window time.Duration, max int) *seenIDs {
+	return &seenIDs{window: window, max: max, at: map[string]time.Time{}}
+}
+
+func (s *seenIDs) first(key string, now time.Time) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if t, ok := s.at[key]; ok && now.Sub(t) <= s.window {
+		return false
+	}
+	if len(s.at) >= s.max {
+		for k, t := range s.at {
+			if now.Sub(t) > s.window {
+				delete(s.at, k)
+			}
+		}
+		if len(s.at) >= s.max {
+			clear(s.at) // still full of recent IDs: start over rather than grow
+		}
+	}
+	s.at[key] = now
+	return true
 }

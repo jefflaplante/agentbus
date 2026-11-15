@@ -43,6 +43,7 @@ wait_for_log() { # file pattern what
 
 step "Building bin/agentbus, bin/worker, bin/coordinator"
 mkdir -p "$BIN" "$RUN"
+rm -rf "$RUN/data" "$RUN"/audit.jsonl*   # each run starts with fresh identities and state
 (cd "$ROOT" && go build -o "$BIN/agentbus" ./cmd/agentbus \
             && go build -o "$BIN/worker" ./demo/cmd/worker \
             && go build -o "$BIN/coordinator" ./demo/cmd/coordinator)
@@ -62,6 +63,8 @@ EOF
 cat >"$RUN/broker.json" <<EOF
 {
   "listen": "127.0.0.1:$PORT",
+  "data_dir": "$RUN/data",
+  "audit_file": "$RUN/audit.jsonl",
   "agents": [
     {"id": "coordinator", "token_sha256": "$(mint coordinator)"},
     {"id": "worker",      "token_sha256": "$(mint worker)",   "capabilities": ["textstats"]},
@@ -112,7 +115,13 @@ cat <<'EOF'
   (source demo/.run/worker-2.env && bin/worker -delay 300ms)
   (source demo/.run/coordinator.env && bin/coordinator > /dev/null)
 
-  tail -f demo/.run/broker.log              # the broker's audit log, one line per envelope
+  tail -f demo/.run/broker.log              # the broker's log
+  jq -c '{action, from, to, type, code}' demo/.run/audit.jsonl   # audit trail, no bodies
+
+  # Retention: stop the worker, send a task (it waits), restart the worker
+  pkill -f 'bin/worker -delay'
+  bin/agentbus task -capability textstats -body '{"text":"queued"}' -timeout 60s &
+  (source demo/.run/worker.env && bin/worker -delay 300ms)
 
   # Desktop MQTT client (MQTT Explorer, MQTTX): see docs/DESKTOP-CLIENTS.md
   cat demo/.run/explorer.env                # host 127.0.0.1, port below, client ID = username = explorer

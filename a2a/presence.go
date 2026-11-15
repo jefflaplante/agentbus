@@ -1,6 +1,7 @@
 package a2a
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -25,6 +26,34 @@ type Presence struct {
 	Description  string            `json:"description,omitempty"`
 	Capabilities []string          `json:"capabilities,omitempty"`
 	Meta         map[string]string `json:"meta,omitempty"`
+	// Keys are the agent's public keys, for end-to-end signing and
+	// encryption between agents (conduit-1gkv phase 3).
+	Keys *Keys `json:"keys,omitempty"`
+	// KeysPinned is set by the broker: true when Keys match the keys in
+	// the broker's config for this agent, false when they are only what
+	// the agent claims. Receivers should not encrypt to unpinned keys
+	// without some other way to trust them.
+	KeysPinned bool `json:"keys_pinned,omitempty"`
+}
+
+// Keys are base64 (standard, padded) 32-byte public keys.
+type Keys struct {
+	Sign string `json:"sign,omitempty"` // Ed25519
+	KEX  string `json:"kex,omitempty"`  // X25519
+}
+
+// Validate checks that each present key decodes to 32 bytes.
+func (k *Keys) Validate() error {
+	for name, v := range map[string]string{"sign": k.Sign, "kex": k.KEX} {
+		if v == "" {
+			continue
+		}
+		b, err := base64.StdEncoding.DecodeString(v)
+		if err != nil || len(b) != 32 {
+			return fmt.Errorf("%w: keys.%s must be base64 of 32 bytes", ErrInvalid, name)
+		}
+	}
+	return nil
 }
 
 // Limits on presence cards.
@@ -32,6 +61,8 @@ const (
 	MaxCapabilities  = 64
 	MaxDescription   = 1024
 	MaxPresenceBytes = 16 * 1024
+	MaxMeta          = 32
+	MaxMetaLen       = 256
 )
 
 // ParsePresence decodes and validates a presence card.
@@ -68,6 +99,17 @@ func (p *Presence) Validate() error {
 		if !ValidName(c) {
 			return bad("invalid capability %q", c)
 		}
+	}
+	if len(p.Meta) > MaxMeta {
+		return bad("more than %d meta entries", MaxMeta)
+	}
+	for k, v := range p.Meta {
+		if len(k)+len(v) > MaxMetaLen {
+			return bad("meta %q too long", k)
+		}
+	}
+	if p.Keys != nil {
+		return p.Keys.Validate()
 	}
 	return nil
 }

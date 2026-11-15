@@ -60,16 +60,15 @@ func RunWorker(ctx context.Context, opts WorkerOptions) error {
 	co := opts.Client
 	co.Description = "Demo worker: text statistics and ping/reverse"
 	co.Inbox = w.inbox
+	// Registered before connecting, so tasks queued while the worker was
+	// offline are handled when the broker redelivers them.
+	co.Tasks = map[string]client.Handler{opts.Capability: w.task}
 	c, err := client.Connect(ctx, co)
 	if err != nil {
-		return err
+		return fmt.Errorf("connect and serve %s: %w", opts.Capability, err)
 	}
 	defer c.Close()
 	w.c.Store(c)
-
-	if err := c.ServeTasks(ctx, opts.Capability, w.task); err != nil {
-		return fmt.Errorf("serve %s: %w", opts.Capability, err)
-	}
 	w.log.Info("worker ready", "agent", c.ID(), "capability", opts.Capability)
 	<-ctx.Done()
 	w.log.Info("worker stopping")

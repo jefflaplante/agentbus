@@ -135,11 +135,18 @@ and build envelopes for you.
 ## Sending messages by hand
 
 Payloads must be a valid envelope ([CONTRACT.md](../CONTRACT.md#envelope)).
-To ping the demo worker, publish this JSON to topic
-`a2a/v1/agents/worker/inbox`:
+**`ts` must be within 2 minutes of the broker's clock**, so a pasted example
+with an old date is rejected. Get the current UTC time:
+
+```bash
+date -u +%Y-%m-%dT%H:%M:%SZ
+```
+
+Then, to ping the demo worker, publish this to topic
+`a2a/v1/agents/worker/inbox`, with your timestamp in place of `<NOW>`:
 
 ```json
-{"v":1,"id":"explorer-001","type":"request","from":"explorer","to":"worker","ts":"2026-11-15T12:00:00Z","body":{"op":"ping"}}
+{"v":1,"id":"explorer-001","type":"request","from":"explorer","to":"worker","ts":"<NOW>","body":{"op":"ping"}}
 ```
 
 The reply lands on `a2a/v1/agents/explorer/inbox`, with `correlation_id`
@@ -156,7 +163,9 @@ Checklist for hand-written envelopes:
 | `id` | **Change it on every publish.** The broker silently drops a repeated `from` + `id` for 10 minutes, so resending the same payload does nothing. |
 | `from` | Your agent ID. Anything else is rejected as spoofing. |
 | `to` | Required for inbox topics, and must match the inbox owner. |
-| `ts` | Required. Any RFC 3339 time works, as long as you omit `ttl_ms`. |
+| `ts` | Required, RFC 3339 UTC, within 2 minutes of now. An old pasted timestamp gets an `invalid` error ("ts is ... from broker time"). |
+| `reply_to` | Leave it out. Only your own inbox is accepted, and replies go there anyway. |
+| retain | Leave it off. The broker ignores it on everything except presence. |
 | `type` | `request` gets a reply in your inbox. `event` is one-way. |
 | `capability` | Required for `a2a/v1/tasks/{capability}` and must match it, for example `"capability":"textstats"` with `"body":{"text":"..."}`. |
 
@@ -164,13 +173,13 @@ Other things to try against the demo worker:
 
 ```text
 topic a2a/v1/agents/worker/inbox
-{"v":1,"id":"explorer-002","type":"request","from":"explorer","to":"worker","ts":"2026-11-15T12:00:00Z","body":{"op":"reverse","text":"hello"}}
+{"v":1,"id":"explorer-002","type":"request","from":"explorer","to":"worker","ts":"<NOW>","body":{"op":"reverse","text":"hello"}}
 
 topic a2a/v1/tasks/textstats
-{"v":1,"id":"explorer-003","type":"request","from":"explorer","capability":"textstats","ts":"2026-11-15T12:00:00Z","body":{"text":"to be or not to be"}}
+{"v":1,"id":"explorer-003","type":"request","from":"explorer","capability":"textstats","ts":"<NOW>","body":{"text":"to be or not to be"}}
 
 topic a2a/v1/agents/worker/inbox      (expect a $broker error in your inbox: from is spoofed)
-{"v":1,"id":"explorer-004","type":"event","from":"coordinator","to":"worker","ts":"2026-11-15T12:00:00Z","body":{}}
+{"v":1,"id":"explorer-004","type":"event","from":"coordinator","to":"worker","ts":"<NOW>","body":{}}
 ```
 
 ## Troubleshooting
@@ -180,6 +189,7 @@ topic a2a/v1/agents/worker/inbox      (expect a $broker error in your inbox: fro
 | Connection refused, "not authorized" or "bad username or password" | Client ID differs from the username, the token is wrong or from an earlier demo run, or the ID isn't in the broker config. `demo/.run/broker.log` shows `auth rejected` with the reason. |
 | Connects, but the `#` subscription fails and the tree stays empty | The identity isn't an observer. Add `"observer": true`, or subscribe to the contract filters instead. |
 | A running agent drops off when you connect | You reused its client ID. Use your own identity. The broker log shows `agent session taken over` with the old and new addresses. |
-| A publish vanishes with no reply | Check your own inbox topic for an `error` from `$broker`; its `reason` says what was wrong. No error and no reply usually means you reused an `id` (dedupe). The broker log has a `publish rejected` or `duplicate dropped` line either way. |
+| A publish vanishes with no reply | Check your own inbox topic for an `error` from `$broker`; its `code` and `reason` say what was wrong. The usual causes: `invalid` with "ts is ... from broker time" (refresh `ts`), `no_route` (the recipient is offline with no session) and `no_consumer` (no worker for that capability). No error and no reply usually means you reused an `id` (dedupe). The broker log has a `publish rejected` or `duplicate dropped` line either way. |
+| The connection is refused right after you enable a "Last Will" | Wills aren't allowed: they would bypass the broker's checks. Turn the Will off. |
 | Publishing to an agent's inbox is refused ("not allowed to send to") | The identity's `send_to` list doesn't include that agent. `send_to` limits inboxes only; anyone may publish tasks. |
 | Messages show as QoS 0 | That's expected for observers. The broker grants them QoS 0 so they hold no in-flight state (this works around a mochi-mqtt packet ID quirk). |

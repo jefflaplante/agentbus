@@ -1,9 +1,11 @@
 {
-  "listen": ":1883",
+  "listen": "127.0.0.1:1883",
   "max_envelope_bytes": 262144,
   "rate_per_second": 20,
   "rate_burst": 50,
   "dedupe_window": "10m",
+  "data_dir": "/var/lib/agentbus",
+  "audit_file": "/var/log/agentbus/audit.jsonl",
   "agents": [
     {
       "id": "conduit-home",

@@ -377,7 +377,10 @@ func suback(t *testing.T, c paho.Client, filter string) byte {
 
 func TestObserverSeesAllButConsumesNothing(t *testing.T) {
 	b := startBus(t, nil)
-	b.connect("bob", nil)
+	bob := b.connect("bob", nil)
+	if err := bob.ServeTasks(ctxT(t), "summarize", func(context.Context, *a2a.Envelope) (any, error) { return nil, nil }); err != nil {
+		t.Fatal(err)
+	}
 	alice := b.connect("alice", nil)
 
 	seen := make(chan string, 64)
@@ -441,7 +444,9 @@ func TestSessionTakeoverWarns(t *testing.T) {
 func TestReconnectAfterCleanDisconnectDoesNotWarn(t *testing.T) {
 	b := startBus(t, nil)
 	b.connect("alice", nil).Close()
-	waitFor(t, func() bool { return strings.Contains(b.logs.String(), `msg="agent disconnected" agent=alice`) }, "disconnect")
+	waitFor(t, func() bool {
+		return strings.Contains(b.logs.String(), `msg="agent disconnected" action=disconnect agent=alice`)
+	}, "disconnect")
 	b.connect("alice", nil)
 	time.Sleep(100 * time.Millisecond)
 	if strings.Contains(b.logs.String(), "taken over") {

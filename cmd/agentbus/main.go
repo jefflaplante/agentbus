@@ -30,7 +30,8 @@ Broker:
   agentbus serve -config broker.json
   agentbus token                       print a new token and its sha256 for the config
 
-Client (connection from flags or AGENTBUS_URL, AGENTBUS_AGENT, AGENTBUS_TOKEN):
+Client (connection from flags or AGENTBUS_URL, AGENTBUS_AGENT, and
+AGENTBUS_TOKEN or AGENTBUS_TOKEN_FILE; prefer the file, -token shows in ps):
   agentbus send    -to AGENT -body JSON              one-way event to an inbox
   agentbus request -to AGENT -body JSON [-timeout]   request/response, prints the reply
   agentbus task    -capability CAP -body JSON        request via a capability work queue
@@ -40,9 +41,15 @@ Client (connection from flags or AGENTBUS_URL, AGENTBUS_AGENT, AGENTBUS_TOKEN):
   agentbus handle  -exec CMD [-capability CAP]       answer requests by running CMD
   agentbus agents                                    list agents and presence
 
-"handle" runs CMD with sh -c once per message, envelope JSON on stdin.
-For requests, stdout (JSON, or text wrapped as a string) is the response
-body; a non-zero exit sends an error with stderr as the reason.
+"handle" runs CMD with sh -c once per request (-types to include events),
+envelope JSON on stdin. stdout (JSON, or text wrapped as a string) is the
+response body. A non-zero exit sends a generic error; stderr is logged
+locally, not returned. CMD runs without AGENTBUS_TOKEN in its environment
+and is killed, with its children, when the request's TTL (or -timeout)
+runs out. Output over 1 MiB is an error.
+
+send, request, task and emit accept -priority (high|normal|low|info) and
+-event NAME.
 `
 
 func main() {
@@ -101,7 +108,11 @@ func runClient(ctx context.Context, log *slog.Logger, cmd string, args []string)
 	fs := flag.NewFlagSet(cmd, flag.ExitOnError)
 	url := fs.String("url", env("AGENTBUS_URL", "tcp://localhost:1883"), "broker URL")
 	agent := fs.String("agent", os.Getenv("AGENTBUS_AGENT"), "this agent's ID")
-	token := fs.String("token", os.Getenv("AGENTBUS_TOKEN"), "this agent's token")
+	token := fs.String("token", os.Getenv("AGENTBUS_TOKEN"), "this agent's token (visible in ps; prefer -token-file)")
+	tokenFile := fs.String("token-file", os.Getenv("AGENTBUS_TOKEN_FILE"), "file containing this agent's token")
+	priority := fs.String("priority", "", "message priority: high, normal, low or info")
+	event := fs.String("event", "", "event name carried on the message")
+	types := fs.String("types", "request", "handle: comma-separated envelope types to run CMD for (request,event)")
 	to := fs.String("to", "", "recipient agent (send, request)")
 	capability := fs.String("capability", "", "capability (task, handle)")
 	name := fs.String("name", "", "event name (emit)")
@@ -111,12 +122,31 @@ func runClient(ctx context.Context, log *slog.Logger, cmd string, args []string)
 	timeout := fs.Duration("timeout", 60*time.Second, "request timeout (request, task)")
 	_ = fs.Parse(args)
 
+	if *tokenFile != "" {
+		b, err := os.ReadFile(*tokenFile)
+		if err != nil {
+			return fmt.Errorf("read token file: %w", err)
+		}
+		*token = strings.TrimSpace(string(b))
+	}
 	if *agent == "" || *token == "" {
 		return errors.New("agent ID and token are required (-agent/-token or AGENTBUS_AGENT/AGENTBUS_TOKEN)")
 	}
 	raw, err := readBody(*body)
 	if err != nil {
 		return err
+	}
+
+	var msgOpts []client.MsgOption
+	if *priority != "" {
+		msgOpts = append(msgOpts, client.WithPriority(a2a.Priority(*priority)))
+	}
+	if *event != "" {
+		msgOpts = append(msgOpts, client.WithEvent(*event))
+	}
+	handleTypes := map[a2a.Type]bool{}
+	for _, t := range strings.Split(*types, ",") {
+		handleTypes[a2a.Type(strings.TrimSpace(t))] = true
 	}
 
 	opts := client.Options{BrokerURL: *url, AgentID: *agent, Token: *token, Logger: log}
@@ -138,8 +168,13 @@ func runClient(ctx context.Context, log *slog.Logger, cmd string, args []string)
 		if *execCmd == "" {
 			return errors.New("handle needs -exec")
 		}
+		h := execHandler(*execCmd, *timeout, handleTypes, log)
 		if *capability == "" {
-			opts.Inbox = execHandler(*execCmd)
+			opts.Inbox = h
+		} else {
+			// Registered before connecting so tasks queued while this
+			// worker was offline have a handler when they're redelivered.
+			opts.Tasks = map[string]client.Handler{*capability: h}
 		}
 	}
 
@@ -153,17 +188,17 @@ func runClient(ctx context.Context, log *slog.Logger, cmd string, args []string)
 
 	switch cmd {
 	case "send":
-		return c.Send(ctx, required(*to, "-to"), raw)
+		return c.Send(ctx, required(*to, "-to"), raw, msgOpts...)
 	case "emit":
-		return c.Emit(ctx, required(*name, "-name"), raw)
+		return c.Emit(ctx, required(*name, "-name"), raw, msgOpts...)
 	case "request", "task":
 		rctx, cancel := context.WithTimeout(ctx, *timeout)
 		defer cancel()
 		var reply *a2a.Envelope
 		if cmd == "request" {
-			reply, err = c.Request(rctx, required(*to, "-to"), raw)
+			reply, err = c.Request(rctx, required(*to, "-to"), raw, msgOpts...)
 		} else {
-			reply, err = c.RequestTask(rctx, required(*capability, "-capability"), raw)
+			reply, err = c.RequestTask(rctx, required(*capability, "-capability"), raw, msgOpts...)
 		}
 		if reply != nil {
 			_ = out.Encode(reply)
@@ -174,11 +209,6 @@ func runClient(ctx context.Context, log *slog.Logger, cmd string, args []string)
 			return err
 		}
 	case "handle":
-		if *capability != "" {
-			if err := c.ServeTasks(ctx, *capability, execHandler(*execCmd)); err != nil {
-				return err
-			}
-		}
 		log.Info("handling", "agent", *agent, "capability", *capability, "exec", *execCmd)
 	case "agents":
 		time.Sleep(500 * time.Millisecond) // let retained presence cards arrive
@@ -194,23 +224,48 @@ func runClient(ctx context.Context, log *slog.Logger, cmd string, args []string)
 	return nil
 }
 
-// execHandler runs command once per envelope; see usage.
-func execHandler(command string) client.Handler {
+// maxExecOutput caps what a handler command may write to stdout or stderr.
+const maxExecOutput = 1 << 20
+
+// execHandler runs command once per envelope of the given types; see usage.
+func execHandler(command string, timeout time.Duration, types map[a2a.Type]bool, log *slog.Logger) client.Handler {
 	return func(ctx context.Context, e *a2a.Envelope) (any, error) {
+		if !types[e.Type] {
+			if e.Type == a2a.TypeError {
+				log.Warn("error envelope", "from", e.From, "correlation_id", e.CorrelationID, "body", string(e.Body))
+			}
+			return nil, nil
+		}
 		in, err := e.Marshal()
 		if err != nil {
 			return nil, err
 		}
+		ctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
 		cmd := exec.CommandContext(ctx, "sh", "-c", command)
 		cmd.Stdin = bytes.NewReader(in)
-		var stdout, stderr bytes.Buffer
-		cmd.Stdout, cmd.Stderr = &stdout, &stderr
-		if err := cmd.Run(); err != nil {
-			reason := strings.TrimSpace(stderr.String())
-			if reason == "" {
-				reason = err.Error()
+		cmd.Env = scrubEnv(os.Environ())
+		// Own process group, so a timeout kills the command's children too.
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+		cmd.WaitDelay = 2 * time.Second
+		stdout := &capBuffer{max: maxExecOutput}
+		stderr := &capBuffer{max: maxExecOutput}
+		cmd.Stdout, cmd.Stderr = stdout, stderr
+		runErr := cmd.Run()
+		if stdout.over || stderr.over {
+			log.Warn("handler output too large", "id", e.ID, "max", maxExecOutput)
+			return nil, errors.New("handler output too large")
+		}
+		if runErr != nil {
+			// The details stay local: stderr can hold paths, secrets or
+			// stack traces that the requesting agent shouldn't see.
+			log.Warn("handler command failed", "id", e.ID, "from", e.From, "err", runErr,
+				"stderr", strings.TrimSpace(stderr.String()))
+			if ctx.Err() != nil {
+				return nil, errors.New("handler timed out")
 			}
-			return nil, errors.New(reason)
+			return nil, errors.New("handler failed")
 		}
 		outb := bytes.TrimSpace(stdout.Bytes())
 		if len(outb) == 0 {
@@ -222,6 +277,41 @@ func execHandler(command string) client.Handler {
 		return string(outb), nil
 	}
 }
+
+// scrubEnv drops agentbus credentials from a child's environment.
+func scrubEnv(env []string) []string {
+	out := env[:0:0]
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "AGENTBUS_TOKEN=") || strings.HasPrefix(kv, "AGENTBUS_TOKEN_FILE=") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
+}
+
+// capBuffer collects output up to max bytes. It wraps bytes.Buffer
+// instead of embedding it: an embedded Buffer's ReadFrom would let
+// io.Copy bypass the cap in Write.
+type capBuffer struct {
+	buf  bytes.Buffer
+	max  int
+	over bool
+}
+
+func (b *capBuffer) Write(p []byte) (int, error) {
+	if room := b.max - b.buf.Len(); len(p) > room {
+		b.over = true
+		if room > 0 {
+			b.buf.Write(p[:room])
+		}
+		return len(p), nil // keep draining so the child doesn't block
+	}
+	return b.buf.Write(p)
+}
+
+func (b *capBuffer) Bytes() []byte  { return b.buf.Bytes() }
+func (b *capBuffer) String() string { return b.buf.String() }
 
 func readBody(s string) (json.RawMessage, error) {
 	var b []byte

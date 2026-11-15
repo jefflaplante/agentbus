@@ -129,7 +129,34 @@ MQTT Explorer, connect to `127.0.0.1:18830` with username **and client ID**
 `explorer` and the token as the password. The full guide, including MQTTX
 and `mosquitto_sub`, is [docs/DESKTOP-CLIENTS.md](../docs/DESKTOP-CLIENTS.md).
 
-Read the audit log, one line per envelope with no bodies:
+See retention work. The demo's worker keeps a persistent session, so a task
+sent while it's down waits for it instead of failing. Stop the worker the
+demo started:
+
+```bash
+pkill -f 'bin/worker -delay'
+```
+
+Send a task. It blocks, waiting:
+
+```bash
+bin/agentbus task -capability textstats -body '{"text":"queued while you were out"}' -timeout 60s
+```
+
+In another terminal, start the worker again. The waiting task is answered
+right away:
+
+```bash
+(source demo/.run/worker.env && bin/worker -delay 300ms)
+```
+
+The audit trail shows each decision:
+
+```bash
+jq -c '{ts, action, from, to, type, code}' demo/.run/audit.jsonl
+```
+
+Read the broker's log:
 
 ```bash
 tail -f demo/.run/broker.log
@@ -142,7 +169,9 @@ demo/.run/            gitignored; recreated on every run
 ├── broker.json       broker config with token hashes
 ├── <agent>.env       AGENTBUS_URL / AGENTBUS_AGENT / AGENTBUS_TOKEN per agent
 │                     (coordinator, worker, worker-2, you, explorer)
-├── broker.log        broker audit log
+├── broker.log        broker log
+├── audit.jsonl       audit trail: one JSON line per decision, no bodies
+├── data/             retained broker state (bbolt), wiped each run
 ├── worker.log        worker log
 └── summary.json      coordinator's JSON result
 ```

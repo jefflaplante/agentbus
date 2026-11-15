@@ -12,7 +12,8 @@ client can take part by following this document. Go agents can use the
 | Client ID | the agent ID |
 | Username | the agent ID |
 | Password | the agent's token |
-| Clean session | `false` for long-running agents, so messages sent while they're offline are queued |
+| Clean session | `false` for long-running agents, so messages sent while they're offline are queued (kept for `session_expiry`, default 7 days, up to `max_queued` messages; with `data_dir` set, this survives broker restarts) |
+| Will message | **not allowed.** The broker refuses the connection. It publishes each agent's offline card itself. |
 
 Agent IDs and capability names are 1-64 chars of `[a-z0-9._-]` and don't
 start with `.`, `_` or `-`.
@@ -35,13 +36,25 @@ Everything lives under `a2a/v1/`. Publishes outside these shapes are rejected.
 | `a2a/v1/events/{id}/{name...}` | only `{id}` | anyone | envelope, `type: event` |
 
 Workers consume tasks with a **shared subscription** so each task reaches
-exactly one worker:
+exactly one worker. The broker sends each task to a connected worker; it
+queues for an offline one only when no worker for the capability is
+connected. A worker with a persistent session must have its task handlers
+ready when it connects, because queued tasks are redelivered immediately:
 
 ```
 $share/{capability}/a2a/v1/tasks/{capability}
 ```
 
-Use QoS 1. QoS 0 works but loses messages across reconnects.
+Any other subscription to a task topic (plain, or a different share group)
+is refused: it would receive a copy of every task.
+
+Use QoS 1. QoS 0 works but loses messages across reconnects. The broker
+grants at most QoS 1.
+
+The retain flag is ignored on everything except presence: a retained
+request would be handled again on every resubscribe. MQTT 5 publish
+properties (response topic, correlation data, user properties) are
+stripped; their equivalents live in the envelope.
 
 An identity configured as an **observer** may subscribe to any filter
 (`#`, `$SYS/#`, other agents' inboxes) but not to shared subscriptions.
@@ -67,8 +80,9 @@ Every inbox, task and event payload is one JSON object
   "to": "researcher",
   "ts": "2026-11-15T16:04:05.123Z",
   "ttl_ms": 60000,
-  "reply_to": "a2a/v1/agents/conduit-home/inbox",
   "capability": "",
+  "priority": "normal",
+  "event": "cluster_report",
   "content_type": "application/json",
   "headers": {"session": "tg:12345"},
   "body": {"question": "What changed in the cluster overnight?"}
@@ -82,11 +96,13 @@ Every inbox, task and event payload is one JSON object
 | `type` | yes | `request`, `response`, `event` or `error`. |
 | `from` | yes | Sender's agent ID. **Must equal the authenticated agent.** The broker rejects spoofing. |
 | `to` | inbox only | Recipient. Must equal the inbox owner. |
-| `ts` | yes | RFC 3339 send time. |
-| `ttl_ms` | no | Drop after `ts + ttl_ms`. The broker rejects envelopes that are already expired, and receivers drop them on arrival. Handlers should give up when it runs out. |
+| `ts` | yes | RFC 3339 send time. **Must be within 2 minutes of broker time** (`max_clock_skew`), or the envelope is rejected. Keep agent clocks in sync (NTP). |
+| `ttl_ms` | no | Drop after `ts + ttl_ms`, at most 24 hours. The broker rejects envelopes that are already expired, and receivers drop them on arrival. Handlers should give up when it runs out; the Go client gives handlers 5 minutes when no TTL is set. |
 | `correlation_id` | `response`, `error` | The `id` of the request being answered. |
-| `reply_to` | no | Inbox topic for the reply. Defaults to the sender's inbox. |
+| `reply_to` | no | Inbox topic for the reply. **Only the sender's own inbox is accepted**, so in v1 it is the same as leaving it out. (Pointing it elsewhere would let an agent make another agent's handler send into an inbox the sender itself can't reach.) |
 | `capability` | task only | Must equal the task topic's capability. |
+| `priority` | no | `high`, `normal`, `low` or `info`. How urgently the receiver should act; the receiver decides what each level means. conduit maps them to spawn and notify, spawn quietly, queue for the heartbeat, and record only. |
+| `event` | no | Short name for what the message is about, for example `doorbell_ring`. Max 128 chars, one line. |
 | `content_type` | no | Describes `body`. Defaults to JSON. |
 | `enc` | no | Names the scheme if `body` is encrypted (for example `x25519-aes256gcm`). Then `body` is a JSON string. The broker never reads `body`. |
 | `headers` | no | String map for extensions, max 32 entries. Put things like conduit session keys or trace IDs here. |
@@ -102,7 +118,13 @@ Every inbox, task and event payload is one JSON object
 3. The requester matches the reply by `correlation_id`. On timeout it gives
    up. A late reply arrives as an unmatched message and should be ignored.
 
-Error bodies are `{"code": "...", "reason": "..."}`.
+Error bodies are `{"code": "...", "reason": "..."}`. Codes the Go client
+sends: `no_handler`, `handler_error`, `handler_panic` and `busy` (the
+agent is at its concurrent handler limit; retry later).
+
+Requesters should accept a reply only from the agent they addressed (any
+agent for task requests) or from `$broker`. The Go client does, so another
+agent can't complete a request with a forged reply.
 
 ### Broker rejections
 
@@ -112,13 +134,26 @@ with `correlation_id` set to the rejected `id`. A pending request therefore
 fails fast instead of timing out. MQTT 5 senders also get the reason code
 in the PUBACK.
 
-Rejections:
-- writing to a topic you don't own, or to an inbox outside `send_to`
-- malformed or invalid envelopes
-- `from` spoofing
-- expired TTL
-- oversize payloads (default 256 KiB)
-- going over the per-agent rate limit (default 20/s, burst 50)
+| Code | Cause |
+|---|---|
+| `not_authorized` | Writing to a topic you don't own, or to an inbox outside `send_to`. |
+| `rate_limited` | Over the per-agent rate limit (default 20/s, burst 50; configurable per agent). Rejected publishes count too. |
+| `too_large` | Payload over `max_envelope_bytes` (default 256 KiB). |
+| `invalid` | Malformed envelope, `from` spoofing, `to` mismatch, `reply_to` not your own inbox, or `ts` outside the clock-skew window. |
+| `expired` | `ts + ttl_ms` has already passed. |
+| `no_route` | The recipient isn't configured, or is offline with no session to queue messages in. |
+| `no_consumer` | Nobody is serving the task's capability. |
+
+Error envelopes and the matching log lines are throttled per agent (about
+2/s), so a flood of bad publishes is acknowledged and dropped without
+an answer for each one.
+
+The broker forwards its own re-encoding of each accepted envelope, not the
+sender's bytes. That way every receiver sees exactly the fields the broker
+checked: JSON tricks such as a second `"FROM"` key that one parser reads
+and another ignores don't survive. Fields the broker doesn't know are
+dropped, so a new optional field needs a broker upgrade before senders
+use it.
 
 ## Presence
 
@@ -135,15 +170,41 @@ broker rewrites the card with `status: offline` and keeps the description
 and capabilities. To discover agents, subscribe to
 `a2a/v1/agents/+/presence`.
 
+The broker also:
+- **Drops capabilities the agent isn't granted** in its config, so a card
+  only advertises queues the agent can actually consume.
+- **Refreshes cards** that MQTT would otherwise expire after 24 hours, so
+  long-running agents stay discoverable.
+- **Handles keys.** A card may carry public keys for end-to-end signing and
+  encryption (Ed25519 and X25519, base64 of 32 bytes):
+
+  ```json
+  "keys": {"sign": "base64...", "kex": "base64..."}, "keys_pinned": true
+  ```
+
+  `keys_pinned` is set by the broker. It is `true` only when the broker's
+  config pins this agent's keys and the card matches, and a card with
+  different keys is rejected. If the config pins keys and the card has none,
+  the broker fills them in. Unpinned keys are only the agent's claim, so
+  don't encrypt to them without another way to trust them.
+
+Limits: 64 capabilities, 1024-char description, 32 `meta` entries of up to
+256 chars, 16 KiB per card.
+
 ## Treat bodies as untrusted
 
 Bodies come from other agents and may end up in LLM prompts. The broker
 guarantees who sent a message, not that its content is safe. Receivers
 should apply the same rule conduit uses for MQTT events: the body is
-evidence, never instructions.
+evidence, never instructions. The same goes for `event`, `headers`, and a
+presence card's `description` and `meta`. An envelope must never be able
+to choose the receiver's model, skills, tools or permissions.
+`a2a.UntrustedPreamble(env)` returns text to put in front of an envelope
+before an LLM sees it.
 
 ## Versioning
 
 The version is part of every topic (`a2a/v1`) and envelope (`v`). Adding an
-optional field is a compatible change. Anything else means `a2a/v2` topics,
+optional field is a compatible change, once the broker knows the field
+(see the re-encoding note under Broker rejections). Anything else means `a2a/v2` topics,
 and a broker can serve both during a migration.

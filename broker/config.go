@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"slices"
 	"time"
@@ -32,6 +33,36 @@ type Config struct {
 	RateBurst     int     `json:"rate_burst"`
 	// DedupeWindow is how long envelope IDs are remembered per sender.
 	DedupeWindow Duration `json:"dedupe_window"`
+	// MaxClockSkew is how far an envelope's ts may be from broker time.
+	MaxClockSkew Duration `json:"max_clock_skew"`
+
+	// AllowInsecure permits a plaintext (non-TLS) listener on a
+	// non-loopback address. Tokens then cross the network in clear.
+	AllowInsecure bool `json:"allow_insecure,omitempty"`
+	// ConnectTimeout is how long a new connection may take to send CONNECT.
+	ConnectTimeout Duration `json:"connect_timeout"`
+	// MaxConnections and MaxConnectionsPerIP cap open sockets, including
+	// ones that have not authenticated yet.
+	MaxConnections      int `json:"max_connections"`
+	MaxConnectionsPerIP int `json:"max_connections_per_ip"`
+	// SessionExpiry is how long the broker keeps a disconnected agent's
+	// persistent session and its queued messages.
+	SessionExpiry Duration `json:"session_expiry"`
+	// MaxQueued caps in-flight plus queued messages per agent session.
+	MaxQueued int `json:"max_queued"`
+
+	// DataDir, if set, makes broker state survive restarts: persistent
+	// sessions, subscriptions, queued messages and presence cards (in a
+	// bbolt file), and the dedupe window. Created with mode 0700.
+	DataDir string `json:"data_dir,omitempty"`
+
+	// AuditFile, if set, receives one JSON line per broker decision
+	// (accept, reject, duplicate, connect, disconnect). Bodies are never
+	// written, only their SHA-256. Rotated at AuditMaxBytes, keeping
+	// AuditKeep old files.
+	AuditFile     string `json:"audit_file,omitempty"`
+	AuditMaxBytes int64  `json:"audit_max_bytes"`
+	AuditKeep     int    `json:"audit_keep"`
 
 	Agents []AgentConfig `json:"agents"`
 }
@@ -47,6 +78,14 @@ type AgentConfig struct {
 	// SendTo lists the agents whose inbox this agent may publish to.
 	// Empty or "*" allows all.
 	SendTo []string `json:"send_to,omitempty"`
+	// RatePerSecond and RateBurst override the broker-wide publish rate
+	// for this agent, e.g. a higher limit for a busy gateway.
+	RatePerSecond float64 `json:"rate_per_second,omitempty"`
+	RateBurst     int     `json:"rate_burst,omitempty"`
+	// Keys pins this agent's public keys. When set, the broker rejects
+	// presence cards whose keys differ and marks matching cards
+	// keys_pinned, so other agents can trust them for encryption.
+	Keys *a2a.Keys `json:"keys,omitempty"`
 	// Observer lets this agent subscribe to any topic, including other
 	// agents' inboxes, "#" and $SYS, for debugging tools such as MQTT
 	// Explorer. It is read-only: shared subscriptions are still refused,
@@ -80,6 +119,14 @@ const (
 	DefaultRatePerSecond    = 20
 	DefaultRateBurst        = 50
 	DefaultDedupeWindow     = 10 * time.Minute
+	DefaultMaxClockSkew     = 2 * time.Minute
+	DefaultConnectTimeout   = 10 * time.Second
+	DefaultMaxConnections   = 1024
+	DefaultMaxConnsPerIP    = 64
+	DefaultSessionExpiry    = 7 * 24 * time.Hour
+	DefaultMaxQueued        = 1024
+	DefaultAuditMaxBytes    = 64 << 20
+	DefaultAuditKeep        = 3
 )
 
 // LoadConfig reads, defaults and validates a JSON config file.
@@ -115,12 +162,59 @@ func (c *Config) applyDefaults() {
 	if c.DedupeWindow == 0 {
 		c.DedupeWindow = Duration(DefaultDedupeWindow)
 	}
+	if c.MaxClockSkew == 0 {
+		c.MaxClockSkew = Duration(DefaultMaxClockSkew)
+	}
+	if c.ConnectTimeout == 0 {
+		c.ConnectTimeout = Duration(DefaultConnectTimeout)
+	}
+	if c.MaxConnections == 0 {
+		c.MaxConnections = DefaultMaxConnections
+	}
+	if c.MaxConnectionsPerIP == 0 {
+		c.MaxConnectionsPerIP = DefaultMaxConnsPerIP
+	}
+	if c.SessionExpiry == 0 {
+		c.SessionExpiry = Duration(DefaultSessionExpiry)
+	}
+	if c.MaxQueued == 0 {
+		c.MaxQueued = DefaultMaxQueued
+	}
+	if c.AuditMaxBytes == 0 {
+		c.AuditMaxBytes = DefaultAuditMaxBytes
+	}
+	if c.AuditKeep == 0 {
+		c.AuditKeep = DefaultAuditKeep
+	}
+}
+
+// isLoopback reports whether a listen address binds only to loopback.
+func isLoopback(listen string) bool {
+	host, _, err := net.SplitHostPort(listen)
+	if err != nil || host == "" {
+		return false // ":1883" binds every interface
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // Validate checks the config. It is called by LoadConfig and New.
 func (c *Config) Validate() error {
 	if (c.TLSCert == "") != (c.TLSKey == "") {
 		return errors.New("tls_cert and tls_key must be set together")
+	}
+	if c.TLSCert == "" && !c.AllowInsecure && !isLoopback(c.Listen) {
+		return fmt.Errorf("listen %q is not loopback and TLS is off: tokens would cross the network in clear; "+
+			"set tls_cert/tls_key, bind to 127.0.0.1, or set allow_insecure", c.Listen)
+	}
+	if c.MaxConnections < 1 || c.MaxConnectionsPerIP < 1 || c.MaxQueued < 1 {
+		return errors.New("max_connections, max_connections_per_ip and max_queued must be positive")
+	}
+	if c.AuditMaxBytes < 1024 || c.AuditKeep < 1 {
+		return errors.New("audit_max_bytes must be at least 1024 and audit_keep at least 1")
 	}
 	if c.MaxEnvelopeBytes < 1024 {
 		return errors.New("max_envelope_bytes must be at least 1024")
@@ -146,6 +240,14 @@ func (c *Config) Validate() error {
 		for _, cap := range a.Capabilities {
 			if cap != "*" && !a2a.ValidName(cap) {
 				return fmt.Errorf("agent %q: invalid capability %q", a.ID, cap)
+			}
+		}
+		if a.RatePerSecond < 0 || a.RateBurst < 0 {
+			return fmt.Errorf("agent %q: rate overrides must not be negative", a.ID)
+		}
+		if a.Keys != nil {
+			if err := a.Keys.Validate(); err != nil {
+				return fmt.Errorf("agent %q: %w", a.ID, err)
 			}
 		}
 		for _, to := range a.SendTo {
