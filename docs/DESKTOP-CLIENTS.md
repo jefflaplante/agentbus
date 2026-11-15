@@ -179,7 +179,7 @@ topic a2a/v1/agents/worker/inbox      (expect a $broker error in your inbox: fro
 |---|---|
 | Connection refused, "not authorized" or "bad username or password" | Client ID differs from the username, the token is wrong or from an earlier demo run, or the ID isn't in the broker config. `demo/.run/broker.log` shows `auth rejected` with the reason. |
 | Connects, but the `#` subscription fails and the tree stays empty | The identity isn't an observer. Add `"observer": true`, or subscribe to the contract filters instead. |
-| A running agent drops off when you connect | You reused its client ID. Use your own identity. |
+| A running agent drops off when you connect | You reused its client ID. Use your own identity. The broker log shows `agent session taken over` with the old and new addresses. |
 | A publish vanishes with no reply | Check your own inbox topic for an `error` from `$broker`; its `reason` says what was wrong. No error and no reply usually means you reused an `id` (dedupe). The broker log has a `publish rejected` or `duplicate dropped` line either way. |
 | Publishing to an agent's inbox is refused ("not allowed to send to") | The identity's `send_to` list doesn't include that agent. `send_to` limits inboxes only; anyone may publish tasks. |
 | Messages show as QoS 0 | That's expected for observers. The broker grants them QoS 0 so they hold no in-flight state (this works around a mochi-mqtt packet ID quirk). |

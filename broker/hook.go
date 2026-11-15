@@ -63,6 +63,7 @@ func (h *contractHook) Provides(b byte) bool {
 		mqtt.OnACLCheck,
 		mqtt.OnSubscribe,
 		mqtt.OnPublish,
+		mqtt.OnSessionEstablish,
 		mqtt.OnSessionEstablished,
 		mqtt.OnDisconnect,
 	}, []byte{b})
@@ -285,6 +286,24 @@ func (h *contractHook) sendError(agent, correlation string, code packets.Code, r
 	}
 }
 
+// OnSessionEstablish runs after authentication and before mochi takes over
+// any existing session with the same client ID. MQTT allows one connection
+// per client ID, so a second process using an agent's identity silently
+// disconnects the first; with auto-reconnect the two then take turns
+// knocking each other off. Warn so that's visible in the log.
+func (h *contractHook) OnSessionEstablish(cl *mqtt.Client, pk packets.Packet) {
+	if cl.Net.Inline {
+		return
+	}
+	old, ok := h.server.Clients.Get(cl.ID)
+	if !ok || old == cl || old.Closed() {
+		return
+	}
+	h.log.Warn("agent session taken over: another connection is using this agent ID",
+		"agent", cl.ID, "new_remote", cl.Net.Remote, "old_remote", old.Net.Remote,
+		"hint", "give each process its own agent ID; two processes sharing one will keep disconnecting each other")
+}
+
 func (h *contractHook) OnSessionEstablished(cl *mqtt.Client, pk packets.Packet) {
 	if cl.Net.Inline {
 		return
@@ -296,7 +315,11 @@ func (h *contractHook) OnSessionEstablished(cl *mqtt.Client, pk packets.Packet) 
 // OnDisconnect publishes the agent's retained offline card, unless the
 // connection was replaced by a new one for the same agent.
 func (h *contractHook) OnDisconnect(cl *mqtt.Client, err error, expire bool) {
-	if cl.Net.Inline || cl.IsTakenOver() {
+	if cl.Net.Inline {
+		return
+	}
+	if cl.IsTakenOver() {
+		h.log.Info("agent connection replaced", "agent", cl.ID, "remote", cl.Net.Remote)
 		return
 	}
 	if _, ok := h.agents[cl.ID]; !ok {

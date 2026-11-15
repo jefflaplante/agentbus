@@ -5,6 +5,8 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"regexp"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -21,13 +23,31 @@ type bus struct {
 	t      *testing.T
 	url    string
 	tokens map[string]string
+	logs   *syncBuffer // broker log output
+}
+
+type syncBuffer struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
 }
 
 // startBus runs a broker on a random port with agents alice, bob, carol.
 // bob and carol may consume "summarize"; carol may only send to alice.
 func startBus(t *testing.T, mutate func(*broker.Config)) *bus {
 	t.Helper()
-	b := &bus{t: t, tokens: map[string]string{}}
+	b := &bus{t: t, tokens: map[string]string{}, logs: &syncBuffer{}}
 	cfg := &broker.Config{Listen: "127.0.0.1:0"}
 	for _, a := range []broker.AgentConfig{
 		{ID: "alice"},
@@ -43,7 +63,7 @@ func startBus(t *testing.T, mutate func(*broker.Config)) *bus {
 	if mutate != nil {
 		mutate(cfg)
 	}
-	srv, err := broker.New(cfg, quietLog())
+	srv, err := broker.New(cfg, slog.New(slog.NewTextHandler(b.logs, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -403,5 +423,28 @@ func TestNonObserverCannotWiretap(t *testing.T) {
 		if code := suback(t, raw, f); code >= 0x80 {
 			t.Errorf("alice refused %q: 0x%02x", f, code)
 		}
+	}
+}
+
+func TestSessionTakeoverWarns(t *testing.T) {
+	b := startBus(t, nil)
+	b.connect("alice", nil)
+	b.rawConnect("alice", func(paho.Client, paho.Message) {}) // second process, same ID
+
+	warn := regexp.MustCompile(`level=WARN msg="agent session taken over[^\n]*agent=alice new_remote=\S+ old_remote=\S+`)
+	waitFor(t, func() bool {
+		return warn.MatchString(b.logs.String()) &&
+			strings.Contains(b.logs.String(), `msg="agent connection replaced" agent=alice`)
+	}, "takeover warning naming the agent and both remotes")
+}
+
+func TestReconnectAfterCleanDisconnectDoesNotWarn(t *testing.T) {
+	b := startBus(t, nil)
+	b.connect("alice", nil).Close()
+	waitFor(t, func() bool { return strings.Contains(b.logs.String(), `msg="agent disconnected" agent=alice`) }, "disconnect")
+	b.connect("alice", nil)
+	time.Sleep(100 * time.Millisecond)
+	if strings.Contains(b.logs.String(), "taken over") {
+		t.Errorf("warned on a normal reconnect:\n%s", b.logs.String())
 	}
 }

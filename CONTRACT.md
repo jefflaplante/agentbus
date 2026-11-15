@@ -19,7 +19,8 @@ start with `.`, `_` or `-`.
 
 The broker knows each agent ID and the SHA-256 of its token. One connection
 is one agent. If a second connection uses the same ID, it takes over the
-session and the broker disconnects the first. Give each process, including
+session and the broker disconnects the first, logging a warning
+(`agent session taken over`) with both addresses. Give each process, including
 CLI use, its own agent ID.
 
 ## Topics

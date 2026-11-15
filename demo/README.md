@@ -107,6 +107,10 @@ the same capability) and rerunning the coordinator:
 #  [ok  ] tasks  5 tasks answered and verified, ... handled by map[worker:4 worker-2:1]
 ```
 
+Each process needs its own identity. Start `worker-2` only once: a second
+copy with the same ID knocks the first off the bus, and they keep taking
+turns. `demo/.run/broker.log` then shows `agent session taken over`.
+
 Stop a worker with Ctrl-C and run `bin/agentbus agents` again. The broker
 has marked it offline and kept its card.
 
