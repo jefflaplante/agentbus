@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 
@@ -47,7 +48,7 @@ func current(ctx context.Context, e *a2a.Envelope) (any, error) {
 		} `json:"results"`
 	}
 	q := url.Values{"name": {strings.TrimSpace(city)}, "count": {"10"}, "language": {"en"}, "format": {"json"}}
-	if err := getJSON(ctx, "https://geocoding-api.open-meteo.com/v1/search?"+q.Encode(), &geo); err != nil {
+	if err := getJSON(ctx, apiURL("https://geocoding-api.open-meteo.com")+"/v1/search?"+q.Encode(), &geo); err != nil {
 		return nil, client.Errorf("upstream_error", "geocoding failed: %v", err)
 	}
 	for _, r := range geo.Results {
@@ -68,7 +69,7 @@ func current(ctx context.Context, e *a2a.Envelope) (any, error) {
 			"current":          {"temperature_2m,wind_speed_10m,weather_code"},
 			"temperature_unit": {"fahrenheit"}, "wind_speed_unit": {"mph"}, "timezone": {"auto"},
 		}
-		if err := getJSON(ctx, "https://api.open-meteo.com/v1/forecast?"+wq.Encode(), &w); err != nil {
+		if err := getJSON(ctx, apiURL("https://api.open-meteo.com")+"/v1/forecast?"+wq.Encode(), &w); err != nil {
 			return nil, client.Errorf("upstream_error", "weather lookup failed: %v", err)
 		}
 		return map[string]any{
@@ -81,6 +82,16 @@ func current(ctx context.Context, e *a2a.Envelope) (any, error) {
 		}, nil
 	}
 	return nil, client.Errorf("not_found", "no place called %q", body.Location)
+}
+
+// apiURL is the service's base URL, or WEATHER_API_URL when that's set:
+// one server that stands in for every service, such as the one
+// `labs/check.sh --mock` runs.
+func apiURL(real string) string {
+	if u := strings.TrimRight(os.Getenv("WEATHER_API_URL"), "/"); u != "" {
+		return u
+	}
+	return real
 }
 
 func getJSON(ctx context.Context, u string, v any) error {

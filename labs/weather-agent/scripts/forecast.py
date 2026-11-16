@@ -25,6 +25,13 @@ import urllib.parse
 import urllib.request
 
 USER_AGENT = "agentbus-weather-lab/1.0"  # api.weather.gov requires a User-Agent
+
+# WEATHER_API_URL sends every upstream call to one server instead, such as
+# the stand-in that `labs/check.sh --mock` runs. Unset, the real services.
+API = os.environ.get("WEATHER_API_URL", "").rstrip("/")
+GEOCODE_URL = API or "https://geocoding-api.open-meteo.com"
+NWS_URL = API or "https://api.weather.gov"
+OPEN_METEO_URL = API or "https://api.open-meteo.com"
 TIMEOUT = 10  # seconds per upstream call; the handler's own timeout is 30s
 
 US_STATES = {
@@ -90,7 +97,7 @@ def geocode(location):
     city, _, qualifier = (part.strip() for part in location.partition(","))
     qs = urllib.parse.urlencode({"name": city, "count": 10, "language": "en", "format": "json"})
     try:
-        results = get_json("https://geocoding-api.open-meteo.com/v1/search?" + qs).get("results") or []
+        results = get_json(GEOCODE_URL + "/v1/search?" + qs).get("results") or []
     except (urllib.error.URLError, TimeoutError, ValueError) as e:
         raise Refuse("upstream_error", f"geocoding failed: {e}")
     if qualifier:
@@ -107,7 +114,7 @@ def geocode(location):
 
 
 def nws_forecast(lat, lon, days):
-    point = get_json(f"https://api.weather.gov/points/{lat:.4f},{lon:.4f}",
+    point = get_json(f"{NWS_URL}/points/{lat:.4f},{lon:.4f}",
                      {"Accept": "application/geo+json"})
     forecast = get_json(point["properties"]["forecast"], {"Accept": "application/geo+json"})
     periods = forecast["properties"]["periods"][: days * 2]  # NWS gives day and night periods
@@ -127,7 +134,7 @@ def open_meteo_forecast(lat, lon, days):
         "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max",
         "temperature_unit": "fahrenheit", "wind_speed_unit": "mph",
     })
-    d = get_json("https://api.open-meteo.com/v1/forecast?" + qs)["daily"]
+    d = get_json(OPEN_METEO_URL + "/v1/forecast?" + qs)["daily"]
     out = []
     for i, day in enumerate(d["time"]):
         summary = WMO.get(d["weather_code"][i], "Unknown")

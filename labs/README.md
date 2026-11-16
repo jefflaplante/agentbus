@@ -50,6 +50,7 @@ labs/
   00-setup.md … 06-extend.md   the labs
   TEACHING.md                  instructor script
   check.sh                     runs every lab unattended; use it to check a machine
+  mock-weather.py              stand-in weather services, for check.sh --mock and CI
   weather-agent/               the finished weather agent (the solution)
   claude/                      .mcp.json and CLAUDE.md for lab 5
   video/                       the narrated lab video: storyboard, diagrams, build pipeline
@@ -60,10 +61,18 @@ labs/
 ```bash
 labs/check.sh             # labs 1-4 and 6, in a scratch workspace, ~2 minutes
 labs/check.sh --claude    # also lab 5, with headless Claude Code
+labs/check.sh --mock      # against stand-in weather services, no weather APIs needed
 ```
 
 It uses the same commands as the labs, and fails at the first step that
 doesn't work. It needs port 1883 free; set `PORT=1884` to use another.
+
+`--mock` runs [mock-weather.py](mock-weather.py) and sets
+`WEATHER_API_URL`, which points the weather agent's script and Go handler
+at it instead of the real services. Its forecasts are fixed and say
+they're mock data. CI uses it, so a weather service outage can't fail the
+build. To check that a machine can actually reach the weather services,
+run it without `--mock`.
 
 ## If you get stuck
 

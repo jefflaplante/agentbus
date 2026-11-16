@@ -4,8 +4,10 @@
 # a machine and the network (the weather agent calls api.weather.gov and
 # open-meteo.com).
 #
-#   labs/check.sh             labs 1-4 and 6
+#   labs/check.sh             labs 1-4 and 6, against the real weather services
 #   labs/check.sh --claude    also lab 5: ask Claude Code (claude -p) for the forecast
+#   labs/check.sh --mock      against labs/mock-weather.py instead: no internet
+#                             needed past the Go toolchain. CI runs this.
 #
 # Environment: LAB (workspace; default a new temp dir), PORT (default 1883),
 # CLAUDE_PROMPT (what lab 5 asks Claude).
@@ -14,7 +16,14 @@ set -euo pipefail
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 LAB=${LAB:-$(mktemp -d "${TMPDIR:-/tmp}/agentbus-lab.XXXXXX")}
 PORT=${PORT:-1883}
-WITH_CLAUDE=${1:-}
+WITH_CLAUDE= MOCK=
+for arg in "$@"; do
+  case $arg in
+    --claude) WITH_CLAUDE=--claude ;;
+    --mock) MOCK=1 ;;
+    *) echo "usage: labs/check.sh [--claude] [--mock]" >&2; exit 2 ;;
+  esac
+done
 CLAUDE_PROMPT=${CLAUDE_PROMPT:-"What's the weather forecast for Seattle, WA?"}
 export AGENTBUS_CONFIG=$LAB/broker.json
 export PATH=$REPO/bin:$PATH
@@ -47,6 +56,15 @@ step "Lab 0: build agentbus ($REPO)"
 (cd "$REPO" && GOWORK=off go build -o bin/agentbus ./cmd/agentbus)
 agentbus --help >/dev/null && ok "agentbus on PATH"
 echo "workspace: $LAB"
+if [ -n "$MOCK" ]; then
+  # Every agent started below inherits WEATHER_API_URL, which points the
+  # weather handlers at the stand-in instead of the real services.
+  python3 "$REPO/labs/mock-weather.py" --port-file "$LAB/mock-weather.port" 2>"$LAB/mock-weather.log" &
+  pids+=($!)
+  wait_for "the mock weather services" test -s "$LAB/mock-weather.port"
+  export WEATHER_API_URL="http://127.0.0.1:$(cat "$LAB/mock-weather.port")"
+  ok "mock weather services at $WEATHER_API_URL"
+fi
 
 step "Lab 1: start the broker"
 agentbus config init >/dev/null
@@ -104,6 +122,7 @@ wait_for "weather to come online" sh -c 'agentbus agents --plain | grep -q "weat
 out=$(as me agentbus task --plain -c weather.forecast --timeout 45s --body '{"location":"Seattle, WA","days":2}')
 expect "Seattle forecast" '"location":"Seattle, Washington, US"' "$out"
 expect "from the National Weather Service" "National Weather Service" "$out"
+if [ -n "$MOCK" ]; then expect "answered by the mock" "mock data" "$out"; fi
 expect "forecast as an inbox op" "Seattle, Washington, US" "$(as me agentbus request --plain --to weather --timeout 45s --body '{"op":"forecast","location":"Seattle, WA","days":1}')"
 expect "unknown place" "not_found" "$(as me agentbus task --plain -c weather.forecast --body '{"location":"Nowhereville, ZZ"}' 2>&1 || true)"
 expect "injection refused" "invalid" "$(as me agentbus task --plain -c weather.forecast --body '{"location":"x; rm -rf ~"}' 2>&1 || true)"

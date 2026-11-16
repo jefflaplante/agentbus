@@ -5,9 +5,11 @@
 #         unit tests.
 #   site  builds the documentation site (site/), failing on a broken link
 #         between docs or a missing image.
-#   labs  labs/check.sh: builds agentbus and runs labs 1-4 as a student
-#         would. It calls api.weather.gov and open-meteo.com, so it can fail
-#         when they do; that failure shows here, apart from the tests.
+#   labs  labs/check.sh --mock: builds agentbus and runs labs 1-4 and 6 as
+#         a student would, with labs/mock-weather.py standing in for
+#         api.weather.gov and open-meteo.com. Those services time out from
+#         GitHub's runners often enough to block merges; instructors still
+#         run labs/check.sh against them before teaching.
 name: CI
 
 on:
@@ -98,5 +100,5 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: labs/check.sh
-        run: bash labs/check.sh
+      - name: labs/check.sh --mock
+        run: bash labs/check.sh --mock
