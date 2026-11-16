@@ -176,6 +176,12 @@ func (e *Envelope) Marshal() ([]byte, error) { return json.Marshal(e) }
 
 // Parse decodes and validates an envelope.
 func Parse(data []byte) (*Envelope, error) {
+	// I-JSON (RFC 7493): Go's decoder would otherwise turn invalid UTF-8
+	// and unpaired surrogates into U+FFFD and keep the last of duplicate
+	// keys, so two different messages could parse, and sign, the same.
+	if err := checkIJSON(data); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrMalformed, err)
+	}
 	var e Envelope
 	if err := json.Unmarshal(data, &e); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrMalformed, err)

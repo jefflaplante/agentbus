@@ -1,8 +1,11 @@
 package a2a
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"math"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -82,8 +85,9 @@ func TestCanonicalBodyFromWireNumbers(t *testing.T) {
 		{`1e2`, `100`},
 		{`1E+2`, `100`},
 		{`0.000001`, `0.000001`},
-		{`1000000000000000000000`, `1e+21`},
-		{`9007199254740993`, `9007199254740992`}, // signs as the double it parses to
+		{`1000000000000000000000`, `1e+21`},            // 10^21 is exact as a double
+		{`9007199254740992`, `9007199254740992`},       // 2^53: canonical already
+		{`1152921504606847000`, `1152921504606847000`}, // 2^60, in its one integer spelling
 	}
 	for _, tc := range cases {
 		e, err := testEnvelope(json.RawMessage(tc.raw))
@@ -102,8 +106,21 @@ func TestCanonicalBodyFromWireNumbers(t *testing.T) {
 
 func TestCanonicalRefuses(t *testing.T) {
 	cases := []string{
-		`1e400`,            // literal beyond double range: refuse, don't round
-		`{"a":1} trailing`, // two values where one is required
+		`1e400`,                   // beyond a double's range: refuse, don't round
+		`-1e400`,                  //
+		`1e-400`,                  // underflows to 0: refuse, don't round
+		`9007199254740993`,        // same double as 9007199254740992: two values, one signature
+		`1152921504606846976`,     // 2^60 exactly, but its one integer spelling is 1152921504606847000
+		`1000000000000000000001`,  // from 1e21 up only the exact value is accepted
+		`[-12345678901234567890]`, //
+		`{"a":1} trailing`,        // two values where one is required
+		`{"a":1,"a":2}`,           // duplicate key: receivers disagree on which wins
+		`{"a":1,"\u0061":2}`,      // the same key, escaped
+		`{"o":{"k":1,"k":1}}`,     // nested
+		`"\ud800"`,                // unpaired high surrogate
+		`"\udfff"`,                // unpaired low surrogate
+		`"\ud800\u0041"`,          // high surrogate followed by a non-surrogate
+		"\"pay \xff bob\"",        // invalid UTF-8
 	}
 	for _, raw := range cases {
 		e, err := testEnvelope(json.RawMessage(raw))
@@ -121,7 +138,7 @@ func TestCanonicalReencodeInvariant(t *testing.T) {
 	// broker re-encodes (Parse then Marshal), the bytes are unchanged.
 	// Body deliberately carries <&> and non-ASCII: the broker's re-encode
 	// HTML-escapes and the canonical form must not care (parse unescapes,
-	// Canonical re-emits raw with SetEscapeHTML(false)).
+	// Canonical writes < > & raw).
 	e, err := testEnvelope(map[string]any{
 		"z": 1, "a": true, "m": []any{0.5, "s", nil},
 		"nested": map[string]any{"k": 42.30, "html": "<script>&</script>", "café": "né"},
@@ -178,7 +195,8 @@ func TestCanonicalTSNormalization(t *testing.T) {
 }
 
 func TestCanonicalKeyOrderAndOmission(t *testing.T) {
-	// Keys sorted by UTF-8 byte order; absent fields omitted; headers in.
+	// Keys sorted by UTF-16 code units (RFC 8785); absent fields omitted;
+	// headers in.
 	e, _ := testEnvelope(map[string]any{"b": 1, "a": 2})
 	e.To = "bob"
 	e.Headers = map[string]string{"zz": "1", "aa": "2"}
@@ -241,5 +259,112 @@ func TestCanonicalIntBounds(t *testing.T) {
 	}
 	if math.Abs(float64(MaxTTL.Milliseconds())-86400000) > 0 { // keeps math imported if table trimmed
 		t.Error("ttl drift")
+	}
+}
+
+// RFC 8785 sorts keys by UTF-16 code units, not UTF-8 bytes: U+1F600 is
+// the surrogate pair D83D DE00, which sorts before U+FB01.
+func TestCanonicalKeyOrderUTF16(t *testing.T) {
+	e, _ := testEnvelope(json.RawMessage(`{"\ufb01":1,"\ud83d\ude00":2,"a":3}`))
+	c, err := e.Canonical()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(c), `"body":{"a":3,"`+"\U0001F600"+`":2,"`+"\uFB01"+`":1}`) {
+		t.Errorf("not in UTF-16 order: %s", c)
+	}
+}
+
+// Strings escape as JSON.stringify does: short escapes, lowercase \u00xx
+// for other controls, everything else raw, U+2028 and U+2029 included.
+func TestCanonicalStringEscapes(t *testing.T) {
+	e, _ := testEnvelope(json.RawMessage(`"\b\f\n\r\t\u0001\u001f\"\\/\u007f\u2028\u2029"`))
+	c, err := e.Canonical()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `"body":"\b\f\n\r\t\u0001\u001f\"\\/` + "\u007f\u2028\u2029" + `"`
+	if !strings.Contains(string(c), want) {
+		t.Errorf("got %s\nwant %s", c, want)
+	}
+}
+
+// A header value that isn't valid UTF-8 is refused, not rewritten.
+func TestCanonicalRefusesInvalidHeader(t *testing.T) {
+	e, _ := testEnvelope(nil)
+	e.Headers = map[string]string{"k": "\xff"}
+	if _, err := e.Canonical(); err == nil {
+		t.Error("invalid UTF-8 header value accepted")
+	}
+}
+
+// Parse refuses what isn't I-JSON, so the broker never forwards a message
+// two receivers could read differently.
+func TestParseRefusesNonIJSON(t *testing.T) {
+	base := `{"v":1,"id":"t1","type":"event","from":"alice","event":"x.y","ts":"2026-11-15T16:04:05Z"`
+	for _, wire := range []string{
+		base + `,"to":"bob","to":"mallory"}`,
+		base + `,"headers":{"k":"\ud800"}}`,
+		base + `,"body":{"a":1,"a":2}}`,
+		base + ",\"headers\":{\"k\":\"\xc3\"}}",
+	} {
+		if _, err := Parse([]byte(wire)); !errors.Is(err, ErrMalformed) {
+			t.Errorf("Parse(%q) = %v, want ErrMalformed", wire, err)
+		}
+	}
+	if _, err := Parse([]byte(base + `,"body":"\ud83d\ude00"}`)); err != nil {
+		t.Errorf("a valid surrogate pair was refused: %v", err)
+	}
+}
+
+// testdata/canonical-vectors.json is shared with the Python
+// implementation (examples/python/test_canonical.py).
+func TestCanonicalVectors(t *testing.T) {
+	data, err := os.ReadFile("testdata/canonical-vectors.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Vectors []struct {
+			Name, Wire, WireBase64, Canonical string
+			Error                             bool
+		}
+	}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range doc.Vectors {
+		wire := []byte(v.Wire)
+		if v.WireBase64 != "" {
+			if wire, err = base64.StdEncoding.DecodeString(v.WireBase64); err != nil {
+				t.Fatal(err)
+			}
+		}
+		var got []byte
+		e, err := Parse(wire)
+		if err == nil {
+			got, err = e.Canonical()
+		}
+		switch {
+		case v.Error && err == nil:
+			t.Errorf("%s: accepted, produced %s", v.Name, got)
+		case !v.Error && err != nil:
+			t.Errorf("%s: %v", v.Name, err)
+		case !v.Error && string(got) != v.Canonical:
+			t.Errorf("%s:\n got %s\nwant %s", v.Name, got, v.Canonical)
+		case !v.Error:
+			// Canonical output is itself a valid envelope with the same
+			// canonical form: verifiers can canonicalize what they receive.
+			again, err := Parse(got)
+			if err == nil {
+				got, err = again.Canonical()
+			}
+			if err != nil || string(got) != v.Canonical {
+				t.Errorf("%s: not idempotent: %s %v", v.Name, got, err)
+			}
+		}
+	}
+	if len(doc.Vectors) < 20 {
+		t.Errorf("only %d vectors", len(doc.Vectors))
 	}
 }

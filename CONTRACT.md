@@ -165,7 +165,7 @@ in the PUBACK.
 | `not_authorized` | Writing to a topic you don't own, or to an inbox outside `send_to` other than a reply to an open request. |
 | `rate_limited` | Over the per-agent rate limit (default 20/s, burst 50; configurable per agent). Rejected publishes count too. |
 | `too_large` | Payload over `max_envelope_bytes` (default 256 KiB). |
-| `invalid` | Malformed envelope, `from` spoofing, `to` mismatch, `reply_to` not your own inbox, or `ts` outside the clock-skew window. |
+| `invalid` | Malformed envelope (including JSON that isn't I-JSON: invalid UTF-8, an unpaired surrogate, a repeated key; see [Canonical form](#canonical-form)), `from` spoofing, `to` mismatch, `reply_to` not your own inbox, or `ts` outside the clock-skew window. |
 | `expired` | `ts + ttl_ms` has already passed. |
 | `no_route` | The recipient isn't configured, or is offline with no session to queue messages in. |
 | `no_consumer` | Nobody is serving the task's capability. |
@@ -236,39 +236,63 @@ byte-exact answer to *what exactly is signed*. The canonical form is that
 answer. No envelope carries a signature yet; when one does, signer and
 verifier both serialize the envelope to these bytes and sign them.
 
-The canonical form is a function of the **parsed envelope**, not of the
-wire bytes it arrived on. The broker re-encodes every accepted envelope,
-so a signature over the sender's original serialization would not survive
-the hop: `Canonical(Parse(m)) == Canonical(Parse(Parse(m).Marshal()))`.
-Go: [`a2a.Envelope.Canonical`](a2a/canonical.go).
+The canonical form is the JSON Canonicalization Scheme,
+[RFC 8785](https://www.rfc-editor.org/rfc/rfc8785), applied to the
+**parsed envelope**, not to the wire bytes it arrived on. The broker
+re-encodes every accepted envelope, so a signature over the sender's
+original serialization would not survive the hop:
+`Canonical(Parse(m)) == Canonical(Parse(Parse(m).Marshal()))`.
+Because it is RFC 8785, an existing JCS library gives the same bytes from
+the same JSON object.
 
-1. One JSON object, compact separators `,` and `:`, no trailing newline.
+Implementations: Go [`a2a.Envelope.Canonical`](a2a/canonical.go), Python
+[`canonical.py`](examples/python/canonical.py). Both pass
+[`a2a/testdata/canonical-vectors.json`](a2a/testdata/canonical-vectors.json);
+a new implementation should too.
+
+1. One JSON object, no whitespace, no trailing newline.
 2. Every present envelope field, keyed by its wire name, `sig` excluded
-   (when one exists). Absent optional fields stay absent.
-3. Object keys sorted by raw UTF-8 byte order, recursively, including
-   `headers` and every object inside `body`.
-4. `ts` normalized to UTC RFC 3339 with a `Z` suffix and no added
-   fractional digits: `2026-11-15T16:04:05.123Z`. `Z` and `+00:00`
-   spellings of one instant canonicalize identically.
-5. Numbers in `body` per RFC 8785 (JCS) §3.2.2.3: IEEE-754 double
-   precision, shortest round-trip decimal digits, ECMAScript
-   number-to-string layout (`0.000001` plain, `1e-7` exponent; `1e20`
-   plain, `1e+21` exponent; `-0` collapses to `0`; integer-valued
-   doubles carry no `.0`). A number literal that does not fit a double
-   (`1e400`) is refused, not rounded. Envelope integers outside `body`
-   (`v`, `ttl_ms`) are within double-exact range by construction. Keep
-   body integers within ±(2^53−1); a sender that exceeds it signs the
-   double the verifier will parse.
-6. Strings byte-exact: no Unicode normalization, case folding or
-   trimming. Two canonically-equivalent but byte-distinct strings
-   canonicalize differently, by design — a signature covers exact bytes,
-   not intended meaning. (Non-normative: emitting NFC keeps
-   human-equivalent payloads comparable *before* signing.)
-7. No HTML escaping: `<`, `>`, `&` appear raw, never `\u003c` &c.
+   (when one exists). Optional fields that are absent or empty (`""`,
+   `0`, `{}`) are left out. Fields the contract doesn't define are left
+   out. `"body": null` is present.
+3. Object keys sorted by UTF-16 code units, recursively, as RFC 8785
+   §3.2.3 says. For ASCII keys this is ordinary byte order; it differs
+   from UTF-8 byte order only for keys with characters beyond U+FFFF.
+4. `ts` normalized to UTC RFC 3339 with a `Z` suffix and the fractional
+   digits it has, trailing zeros trimmed: `2026-11-15T16:04:05.12Z`. `Z`
+   and offset spellings of one instant canonicalize identically.
+5. Strings as RFC 8785 §3.2.2.2 (ECMAScript `JSON.stringify`): `\"` and
+   `\\`; `\b \t \n \f \r`; other characters below U+0020 as `\u00xx` in
+   lowercase hex; every other character raw, including `/`, `<`, `>`,
+   `&`, U+007F, U+2028 and U+2029. No Unicode normalization: NFC and NFD
+   spellings of one word canonicalize differently, by design.
+6. Numbers as RFC 8785 §3.2.2.3: IEEE-754 double, shortest round-trip
+   digits, ECMAScript layout (`0.000001` plain, `1e-7` exponent; `1e20`
+   plain, `1e+21` exponent; `-0` is `0`; no `.0`).
+
+Input that two receivers could read differently is **refused**, never
+rewritten, so one signature can't cover two meanings:
+
+- **Not I-JSON** ([RFC 7493](https://www.rfc-editor.org/rfc/rfc7493)):
+  invalid UTF-8, an unpaired surrogate escape such as `"\ud800"`, or an
+  object with a repeated key (`{"a":1,"a":2}`, also when one is written
+  `"\u0061"`). Many decoders turn the first two into U+FFFD and keep the
+  last of repeated keys, so different messages would read the same. The
+  broker refuses such envelopes with `invalid`.
+- **Numbers a double can't stand for:** beyond its range (`1e400`), or so
+  small it becomes 0 (`1e-400`).
+- **A second integer spelling of one double.** Beyond ±(2^53−1), many
+  integer literals parse to the same double, while Python and others
+  keep integers exact: `9007199254740993` and `9007199254740992` would
+  share a signature. Each double has one accepted integer literal: its
+  canonical form while that is a plain integer (`1152921504606847000`,
+  not `1152921504606846976`), and the exact value from `1e21` up, where
+  the canonical form has an exponent. Send larger identifiers as strings.
 
 Two envelopes canonicalize identically if and only if their parsed
-fields agree — a receiver can compare canonical bytes instead of
-re-deriving field-by-field equality.
+fields agree, so a receiver can compare canonical bytes instead of
+comparing field by field. The canonical bytes are themselves an envelope
+with the same canonical form.
 
 ## Versioning
 
