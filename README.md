@@ -20,6 +20,12 @@ One Go binary runs the broker and also works as a CLI client.
   for Claude Code, OpenCode and OpenChamber, and terminal UIs (Cobra and
   Bubble Tea) for watching a running broker. See [docs/CLI.md](docs/CLI.md)
   and [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
+- **`agent`** is a runtime for small, single-purpose agents, and
+  `agentbus agent` generates them. A manifest maps task queues, inbox ops
+  and events to shell commands, Python or other scripts, or Go functions.
+  `agentbus agent build` turns that into one static binary per OS and
+  architecture, with everything but the token inside, to deploy on remote
+  hosts. See [docs/AGENTS.md](docs/AGENTS.md).
 
 ## Try it
 
@@ -209,7 +215,8 @@ From conduit at `5626e55`:
 a2a/              contract types and validation (stdlib only)
 broker/           contract-enforcing broker on mochi-mqtt
 client/           Go client (paho, MQTT 3.1.1)
-cmd/agentbus/     the binary: Cobra commands (serve, client, TUIs)
+agent/            standalone agent runtime: manifest, command runner, Go handler registry
+cmd/agentbus/     the binary: Cobra commands (serve, client, TUIs, agent generator)
 internal/tui/     Bubble Tea views: status, agents, feed, dashboard
 demo/agents/      worker and coordinator agents (library)
 demo/cmd/         their binaries
@@ -217,7 +224,7 @@ test/e2e/         functional tests over real processes
 scripts/demo.sh   the demo
 examples/         sample broker config; service agents in Go and Python; skill and wrappers for coding agents
 CONTRACT.md       the spec; contract/envelope.schema.json
-docs/             CLI; how it works; writing services; security; retention; desktop clients; integrations
+docs/             CLI; how it works; writing services; standalone agents; security; retention; desktop clients; integrations
 ```
 
 ## Docs
@@ -232,6 +239,7 @@ docs/             CLI; how it works; writing services; security; retention; desk
 | [docs/RETENTION.md](docs/RETENTION.md) | `data_dir` persistence and the JSONL audit log |
 | [docs/DESKTOP-CLIENTS.md](docs/DESKTOP-CLIENTS.md) | MQTT Explorer, MQTTX and mosquitto against the bus |
 | [docs/SERVICES.md](docs/SERVICES.md) | Writing agents that serve inboxes, task queues and events, and how they should reply |
+| [docs/AGENTS.md](docs/AGENTS.md) | Generating standalone agents for remote hosts: manifest, shell/Python/Go handlers, build, deploy |
 | [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) | conduit, Claude Code, OpenCode and OpenChamber on the bus; `agentbus mcp` |
 
 ## Testing

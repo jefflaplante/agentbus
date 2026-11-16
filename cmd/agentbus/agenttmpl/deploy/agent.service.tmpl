@@ -1,0 +1,32 @@
+# systemd unit for the {{.Name}} agent.
+#
+#   sudo install -m 0755 {{.Name}}-linux-amd64 /usr/local/bin/{{.Name}}
+#   sudo install -m 0600 -D {{.Name}}.token /etc/agentbus/{{.Name}}.token
+#   sudo cp {{.Name}}.service /etc/systemd/system/ && sudo systemctl enable --now {{.Name}}
+#
+# The token reaches the agent as a systemd credential, readable only by the
+# service, which runs as a throwaway user with a read-only view of the
+# system. Loosen ProtectSystem, ProtectHome or add ReadWritePaths= if a
+# handler needs to change things on the host.
+[Unit]
+Description=agentbus agent {{.Name}}
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/{{.Name}}
+LoadCredential=token:/etc/agentbus/{{.Name}}.token
+Environment=AGENTBUS_TOKEN_FILE=%d/token
+# Environment=AGENTBUS_URL=ssl://bus.example.com:8883
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+Restart=on-failure
+RestartSec=5
+# SIGTERM starts a drain (manifest drain:, default 30s); give it time.
+TimeoutStopSec=45
+
+[Install]
+WantedBy=multi-user.target

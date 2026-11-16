@@ -1,0 +1,27 @@
+#!/bin/sh
+# Report usage of the filesystem holding body.path (default /).
+#
+# The agent runs this once per task. The envelope JSON is on stdin; for
+# small bodies, AGENTBUS_BODY holds the body and AGENTBUS_FROM the sender.
+# Print the reply on stdout. To refuse with an error the requester sees,
+# print {"code": ..., "reason": ...} and exit 3.
+#
+# The path comes from another agent: accept only a plain absolute path,
+# and pass it after -- so it can't become an option.
+set -eu
+
+path=$(printf '%s' "${AGENTBUS_BODY:-}" | sed -n 's/.*"path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+path=${path:-/}
+case $path in
+  /*) ;;
+  *) printf '{"code":"invalid","reason":"path must be absolute"}'; exit 3 ;;
+esac
+if printf '%s' "$path" | grep -q '[^A-Za-z0-9._/-]'; then
+  printf '{"code":"invalid","reason":"path may contain only A-Z a-z 0-9 . _ / -"}'
+  exit 3
+fi
+
+df -Pk -- "$path" | awk 'NR == 2 {
+  printf "{\"filesystem\":\"%s\",\"size_kb\":%d,\"used_kb\":%d,\"avail_kb\":%d,\"use_pct\":%d,\"mount\":\"%s\"}\n",
+    $1, $2, $3, $4, $5, $6
+}'

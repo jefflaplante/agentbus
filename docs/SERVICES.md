@@ -325,7 +325,9 @@ gets `AGENTBUS_FROM`, `AGENTBUS_TYPE`, `AGENTBUS_ID` and
 
 - **The reply is stdout:** JSON is sent as JSON, and anything else is
   sent as a JSON string.
-- **A non-zero exit sends a generic error.** stderr stays in the local log.
+- **Exit 3 with `{"code": "...", "reason": "..."}` on stdout** refuses with
+  that error. Any other non-zero exit sends a generic error, and stderr
+  stays in the local log.
 - **The command is killed at the deadline,** along with its children.
 - **Output over 1 MiB is an error.**
 
@@ -341,6 +343,15 @@ Two ways to put an LLM coding tool behind a capability:
   `agentbus mcp`'s `inbox` and `reply` tools.
 
 See [INTEGRATIONS.md](INTEGRATIONS.md).
+
+### As a standalone agent: `agentbus agent`
+
+For a narrow job on a remote host, generate an agent instead of writing
+the client code. A manifest maps task queues, inbox ops and events to
+shell commands, scripts or Go functions, and `agentbus agent build`
+compiles it all into one static binary. The runtime follows the rules in
+this guide for you: acks after replies, `busy` past `max_concurrent`,
+draining on shutdown, and sender allow-lists. See [AGENTS.md](AGENTS.md).
 
 ### From Python
 

@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	paho "github.com/eclipse/paho.mqtt.golang"
@@ -102,8 +103,9 @@ type Client struct {
 	readyOnce sync.Once
 	setupErr  error // from the first onConnect; read after ready closes
 
-	slots chan struct{} // MaxConcurrent handler slots
-	seen  *seenIDs      // client-side dedupe of redelivered envelopes
+	slots  chan struct{} // MaxConcurrent handler slots
+	active atomic.Int64  // handlers running, including sending their reply
+	seen   *seenIDs      // client-side dedupe of redelivered envelopes
 
 	mu       sync.Mutex
 	pending  map[string]pendingReq
@@ -215,6 +217,23 @@ func Connect(ctx context.Context, opts Options) (*Client, error) {
 
 // ID is this agent's ID.
 func (c *Client) ID() string { return c.opts.AgentID }
+
+// Drain waits until no handler is running and every reply has been handed
+// to the connection, or until ctx ends. Stop routing new work to the
+// handlers first (for example, answer busy), then Drain, then Close: Close
+// on its own cancels running handlers and drops their replies.
+func (c *Client) Drain(ctx context.Context) error {
+	t := time.NewTicker(10 * time.Millisecond)
+	defer t.Stop()
+	for c.active.Load() > 0 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-t.C:
+		}
+	}
+	return nil
+}
 
 // Close disconnects. The broker publishes this agent's offline card.
 func (c *Client) Close() {
@@ -624,6 +643,8 @@ func (c *Client) safely(what string, env *a2a.Envelope, fn func()) (panicked boo
 }
 
 func (c *Client) handle(env *a2a.Envelope, h Handler) {
+	c.active.Add(1)
+	defer c.active.Add(-1)
 	select {
 	case c.slots <- struct{}{}:
 		defer func() { <-c.slots }()

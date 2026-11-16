@@ -13,6 +13,7 @@ acts as an agent from the shell, and shows a running broker in terminal UIs.
 - [Messaging from the shell](#messaging-from-the-shell): `send`, `request`, `task`, `emit`
 - [Being an agent from the shell](#being-an-agent-from-the-shell): `handle`
 - [Giving a coding agent the bus](#giving-a-coding-agent-the-bus): `mcp`
+- [Standalone agents](#standalone-agents): `agent init`, `run`, `build`, `check`
 - [Setup](#setup-agentbus-config): `config`, agents, tokens, client setup, settings
 - [Running the broker](#running-the-broker): `serve`, `token`, live reload
 - [Usage recipes](#usage-recipes)
@@ -73,6 +74,9 @@ Observing:
   listen      Show messages arriving in this agent's inbox
   status      Live view of the running broker
   watch       Watch broadcast events (or, for observers, any traffic)
+
+Standalone agents:
+  agent       Build and run standalone agents that serve topics with shell, Python or Go handlers
 
 Additional Commands:
   completion  Generate the autocompletion script for the specified shell
@@ -329,8 +333,11 @@ agentbus handle --exec ./on-event.sh --types request,event
 
 `handle` runs the command once per request (`--types` adds events), with the
 envelope as JSON on stdin. Its stdout is the reply body: JSON, or text
-wrapped as a JSON string. A non-zero exit sends a generic error to the
-requester; stderr stays in the local log.
+wrapped as a JSON string. Exiting 3 with `{"code": "...", "reason": "..."}`
+on stdout refuses with that error; any other non-zero exit sends a generic
+error to the requester. stderr stays in the local log. Besides
+`AGENTBUS_FROM`, the command gets `AGENTBUS_OP` (the body's `op`) and, for
+bodies up to 32 KiB, `AGENTBUS_BODY`.
 
 The session is persistent, so work queued while the handler was down arrives
 when it starts. The command:
@@ -345,6 +352,22 @@ when it starts. The command:
 How a handler should reply (errors, deadlines, long jobs, duplicates):
 [SERVICES.md](SERVICES.md). To answer requests with Claude Code or
 OpenCode, see [INTEGRATIONS.md](INTEGRATIONS.md).
+
+## Standalone agents
+
+```bash
+agentbus agent init disk-agent                       # project: manifest, Go/Python/shell examples, systemd unit
+agentbus agent run -f agent.yaml                     # serve a manifest from disk, no build
+agentbus agent build --target linux/amd64,linux/arm64  # static binaries in dist/, manifest and scripts inside
+agentbus agent check -f agent.yaml                   # manifest, scripts and interpreters on this host
+```
+
+A manifest (`agent.yaml`) maps topics to handlers. A topic is a task
+queue, an inbox op or an event filter. A handler is a shell command, a
+script (sh, bash, python3, or anything with a shebang) or a Go function
+compiled into a built agent. Scripts use the same contract as `handle`,
+and exiting 3 with `{"code", "reason"}` on stdout chooses the error the
+requester sees. The full guide is [AGENTS.md](AGENTS.md).
 
 ## Giving a coding agent the bus
 

@@ -102,3 +102,13 @@ func TestExecSkipsUnselectedTypes(t *testing.T) {
 		t.Error("command ran for an event with -types request")
 	}
 }
+
+func TestExecExit3ChoosesErrorCode(t *testing.T) {
+	_, err := runExec(t, `printf '{"code":"not_found","reason":"no such job"}'; exit 3`, 5*time.Second, a2a.TypeRequest)
+	if err == nil || err.Error() != "not_found: no such job" {
+		t.Errorf("err = %v", err)
+	}
+	if _, err := runExec(t, `echo not json; exit 3`, 5*time.Second, a2a.TypeRequest); err == nil || err.Error() != "handler failed" {
+		t.Errorf("exit 3 without a code: %v", err)
+	}
+}

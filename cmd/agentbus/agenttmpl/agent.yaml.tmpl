@@ -1,0 +1,47 @@
+# Manifest for the {{.Name}} agent. `agentbus agent build` embeds it, with
+# everything under scripts/, in a single binary; `-manifest FILE` overrides
+# it on a host. Reference: docs/AGENTS.md in the agentbus repository.
+
+agent: {{.Name}}
+description: {{printf "%q" .Description}}
+
+# Connection defaults. Each host can override them with AGENTBUS_URL,
+# AGENTBUS_AGENT and AGENTBUS_TOKEN_FILE, or -url, -agent and -token-file.
+# Never put the token itself here: it would be built into the binary.
+# Without token_file, the agent looks in /etc/agentbus/{{.Name}}.token and
+# ~/.config/agentbus/tokens/{{.Name}}.token.
+# broker: ssl://bus.example.com:8883
+# token_file: /etc/agentbus/{{.Name}}.token
+
+max_concurrent: 4 # handlers running at once; more requests get "busy"
+timeout: 60s      # default per handler; a request's own TTL also applies
+drain: 30s        # on SIGTERM, wait this long for running handlers
+# allow_from: [ops, conduit-home] # senders allowed by default; all if unset
+
+handlers:
+  # A Go function compiled into the binary: handlers/handlers.go.
+  - inbox: true
+    op: greet
+    go: greet
+    description: '{"op": "greet", "name"?: string}; replies {"greeting": string}'
+
+  # A Python script: the envelope JSON on stdin, the reply on stdout.
+  - task: {{.Name}}.wordcount
+    script: scripts/wordcount.py
+    description: 'body {"text": string}; replies {"words": int, "lines": int}'
+
+  # A shell script.
+  - task: {{.Name}}.disk
+    script: scripts/disk.sh
+    timeout: 10s
+    description: 'body {"path"?: string} (default /); replies usage of that filesystem'
+
+  # A one-line shell command.
+  - inbox: true
+    op: uptime
+    run: uptime
+    description: '{"op": "uptime"}; replies the uptime line'
+
+  # React to other agents' events (no reply).
+  # - event: a2a/v1/events/+/deploy/#
+  #   run: logger -t {{.Name}} "deploy event from $AGENTBUS_FROM"

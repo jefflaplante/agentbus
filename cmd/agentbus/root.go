@@ -77,7 +77,11 @@ JSON or plain text for scripts.`,
 		&cobra.Group{ID: "setup", Title: "Setup:"},
 		&cobra.Group{ID: "msg", Title: "Messaging:"},
 		&cobra.Group{ID: "observe", Title: "Observing:"},
+		&cobra.Group{ID: "agents", Title: "Standalone agents:"},
 	)
+	agentCmd := newAgentCmd(a)
+	agentCmd.GroupID = "agents"
+	root.AddCommand(agentCmd)
 	for _, c := range []*cobra.Command{newServeCmd(a), newTokenCmd(a)} {
 		c.GroupID = "broker"
 		root.AddCommand(c)
@@ -158,21 +162,30 @@ func (a *app) resolveConnection() {
 	}
 }
 
-// connect resolves credentials and connects as this agent.
-func (a *app) connect(ctx context.Context, tui bool, mutate func(*client.Options)) (*client.Client, error) {
+// credentials resolves the connection settings and returns the token.
+func (a *app) credentials() (string, error) {
 	a.resolveConnection()
 	token := a.token
 	if a.tokenFile != "" {
 		b, err := os.ReadFile(a.tokenFile)
 		if err != nil {
-			return nil, fmt.Errorf("read token file: %w", err)
+			return "", fmt.Errorf("read token file: %w", err)
 		}
 		token = strings.TrimSpace(string(b))
 	}
 	if a.agent == "" || token == "" {
-		return nil, fmt.Errorf("agent ID and token are required: --agent and --token-file (or AGENTBUS_AGENT and "+
+		return "", fmt.Errorf("agent ID and token are required: --agent and --token-file (or AGENTBUS_AGENT and "+
 			"AGENTBUS_TOKEN_FILE). No local token found under %s; run \"agentbus serve\" once to create an admin identity, "+
 			"or \"agentbus config agent add NAME\"", a.location().TokensDir())
+	}
+	return token, nil
+}
+
+// connect resolves credentials and connects as this agent.
+func (a *app) connect(ctx context.Context, tui bool, mutate func(*client.Options)) (*client.Client, error) {
+	token, err := a.credentials()
+	if err != nil {
+		return nil, err
 	}
 	opts := client.Options{BrokerURL: a.url, AgentID: a.agent, Token: token, Logger: a.logger(tui)}
 	// One-shot commands use a clean session so they leave nothing queued;

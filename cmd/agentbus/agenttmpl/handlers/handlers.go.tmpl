@@ -1,0 +1,39 @@
+// Package handlers holds this agent's Go handlers. Each one registers
+// itself by name in an init function, and agent.yaml refers to it with
+// `go: NAME`. To add a handler, add a .go file here with its own init.
+package handlers
+
+import (
+	"context"
+	"fmt"
+	"os"
+
+	"github.com/jefflaplante/agentbus/a2a"
+	"github.com/jefflaplante/agentbus/agent"
+	"github.com/jefflaplante/agentbus/client"
+)
+
+func init() {
+	agent.Register("greet", greet)
+}
+
+// greet answers {"op": "greet", "name"?: string}. The return value is the
+// reply body; return client.Errorf(code, ...) to refuse with an error the
+// requester sees. ctx ends at the request's deadline: pass it on.
+func greet(ctx context.Context, e *a2a.Envelope) (any, error) {
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := e.DecodeBody(&body); err != nil {
+		return nil, client.Errorf("invalid", `body must be {"op": "greet", "name"?: string}`)
+	}
+	if len(body.Name) > 64 {
+		return nil, client.Errorf("invalid", "name is longer than 64 characters")
+	}
+	who := body.Name
+	if who == "" {
+		who = e.From // the sender, checked by the broker
+	}
+	host, _ := os.Hostname()
+	return map[string]string{"greeting": fmt.Sprintf("hello %s, from %s on %s", who, "{{.Name}}", host)}, nil
+}

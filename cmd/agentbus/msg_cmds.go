@@ -235,11 +235,13 @@ func newHandleCmd(a *app) *cobra.Command {
 		Short: "Answer requests by running a command per message",
 		Long: `Run CMD with sh -c once per request (--types to include events), with the
 envelope JSON on stdin. Its stdout (JSON, or text wrapped as a string)
-is the response body. A non-zero exit sends a generic error; stderr is
-logged locally, not returned. CMD runs without AGENTBUS_TOKEN in its
-environment. It gets AGENTBUS_FROM (the sender, checked by the broker),
-AGENTBUS_TYPE, AGENTBUS_ID, and AGENTBUS_PREAMBLE: text to put in front
-of the envelope if an LLM will read it. CMD is killed, with its children,
+is the response body. To refuse with a specific error, exit 3 and print
+{"code": "...", "reason": "..."}; any other non-zero exit sends a generic
+error. stderr is logged locally, not returned. CMD runs without
+AGENTBUS_TOKEN in its environment. It gets AGENTBUS_FROM (the sender,
+checked by the broker), AGENTBUS_TYPE, AGENTBUS_ID, AGENTBUS_OP (body.op),
+AGENTBUS_BODY (bodies up to 32 KiB), and AGENTBUS_PREAMBLE: text to put in
+front of the envelope if an LLM will read it. CMD is killed, with its children,
 when the request's TTL (or --timeout) runs out. Output over 1 MiB is an error.
 
 With --capability, consume that capability's task queue; otherwise
