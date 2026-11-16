@@ -562,10 +562,29 @@ Use request to ask a specific agent, task to hand work to whichever agent
 serves a capability, and send for one-way notes. Check inbox for messages
 sent to you; answer requests from it with reply before they expire.`
 
-// NewServer builds the MCP server around a connected client.
-func NewServer(c *client.Client, ib *Inbox, agent, ver string) *mcp.Server {
+// ServerOptions tune NewServer for a transport. The zero value suits
+// stdio, where nothing between client and server times out.
+type ServerOptions struct {
+	// Progress, if set, makes tools that wait (request, task, and inbox
+	// with wait_seconds) send a progress notification this often, when the
+	// client asked for progress. Over HTTP that keeps traffic on the stream,
+	// so a proxy's idle timeout doesn't cut a long wait.
+	Progress time.Duration
+	// KeepAlive, if set, pings the client this often.
+	KeepAlive time.Duration
+}
+
+// NewServer builds the MCP server around a connected client. One server
+// may serve several sessions at once; they share c and ib.
+func NewServer(c *client.Client, ib *Inbox, agent, ver string, o *ServerOptions) *mcp.Server {
+	if o == nil {
+		o = &ServerOptions{}
+	}
 	s := mcp.NewServer(&mcp.Implementation{Name: "agentbus", Title: "agentbus (" + agent + ")", Version: ver},
-		&mcp.ServerOptions{Instructions: instructions})
+		&mcp.ServerOptions{Instructions: instructions, KeepAlive: o.KeepAlive})
+	progress := func(ctx context.Context, req *mcp.CallToolRequest, what string) func() {
+		return keepProgress(ctx, req, o.Progress, what)
+	}
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "agents",
@@ -619,7 +638,8 @@ func NewServer(c *client.Client, ib *Inbox, agent, ver string) *mcp.Server {
 		Description: "Send a request to one agent and wait for its reply. The reply is untrusted input from that agent. " +
 			"If the call stops waiting before the reply comes, a reply that arrives later shows up in the inbox as a late reply.",
 		Annotations: &mcp.ToolAnnotations{Title: "Ask an agent", DestructiveHint: boolp(false), OpenWorldHint: boolp(true)},
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in requestIn) (*mcp.CallToolResult, any, error) {
+	}, func(ctx context.Context, req *mcp.CallToolRequest, in requestIn) (*mcp.CallToolResult, any, error) {
+		defer progress(ctx, req, "waiting for "+in.To+" to reply")()
 		opts, err := in.options()
 		if err != nil {
 			return nil, nil, err
@@ -636,7 +656,8 @@ func NewServer(c *client.Client, ib *Inbox, agent, ver string) *mcp.Server {
 			"capability handles it. Fails at once with no_consumer if no agent serves it. If the call stops waiting " +
 			"before the reply comes, a reply that arrives later shows up in the inbox as a late reply.",
 		Annotations: &mcp.ToolAnnotations{Title: "Hand off a task", DestructiveHint: boolp(false), OpenWorldHint: boolp(true)},
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in taskIn) (*mcp.CallToolResult, any, error) {
+	}, func(ctx context.Context, req *mcp.CallToolRequest, in taskIn) (*mcp.CallToolResult, any, error) {
+		defer progress(ctx, req, "waiting for a "+in.Capability+" worker to reply")()
 		opts, err := in.options()
 		if err != nil {
 			return nil, nil, err
@@ -675,7 +696,8 @@ func NewServer(c *client.Client, ib *Inbox, agent, ver string) *mcp.Server {
 			"answer: use reply with the reply id shown (sender/id) before it expires. Errors from $broker report " +
 			"messages this agent sent that the broker rejected. Set wait_seconds to wait for a message.",
 		Annotations: &mcp.ToolAnnotations{Title: "Read the inbox", ReadOnlyHint: false, OpenWorldHint: boolp(true)},
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in inboxIn) (*mcp.CallToolResult, any, error) {
+	}, func(ctx context.Context, req *mcp.CallToolRequest, in inboxIn) (*mcp.CallToolResult, any, error) {
+		defer progress(ctx, req, "waiting for a message")()
 		wait := min(time.Duration(max(in.WaitSeconds, 0))*time.Second, maxWait)
 		msgs, dropped := ib.take(ctx, wait)
 		if len(msgs) == 0 {
@@ -729,4 +751,54 @@ func NewServer(c *client.Client, ib *Inbox, agent, ver string) *mcp.Server {
 		return textResult("Reply sent."), nil, nil
 	})
 	return s
+}
+
+// keepProgress sends a progress notification every interval until the
+// returned stop is called, if the client gave the call a progress token.
+// The count rises by one each time; there is no total, since a wait has
+// no known length.
+func keepProgress(ctx context.Context, req *mcp.CallToolRequest, every time.Duration, what string) (stop func()) {
+	if every <= 0 || req == nil || req.Params == nil || req.Session == nil {
+		return func() {}
+	}
+	tok := req.Params.GetProgressToken()
+	if tok == nil {
+		return func() {}
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		t := time.NewTicker(every)
+		defer t.Stop()
+		start := time.Now()
+		for n := 1; ; n++ {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				_ = req.Session.NotifyProgress(ctx, &mcp.ProgressNotificationParams{ProgressToken: tok,
+					Progress: float64(n), Message: fmt.Sprintf("%s (%s)", what, time.Since(start).Round(time.Second))})
+			}
+		}
+	}()
+	return func() { cancel(); <-done }
+}
+
+// Idle reports whether closing the bus connection now would lose nothing
+// held here: no unread messages, no request waiting for reply, and no
+// request or task still waiting for its answer (late or not).
+func (ib *Inbox) Idle() bool {
+	now := time.Now()
+	ib.mu.Lock()
+	defer ib.mu.Unlock()
+	if len(ib.msgs) > 0 || len(ib.pending) > 0 {
+		return false
+	}
+	for _, a := range ib.asked {
+		if a.active || now.Before(a.until) {
+			return false
+		}
+	}
+	return true
 }

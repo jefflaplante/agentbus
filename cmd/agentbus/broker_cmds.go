@@ -98,6 +98,11 @@ apply at once; listener, TLS, storage and limit changes need a restart.`,
 				log.Info("metrics, health and readiness over HTTP", "metrics", "http://"+m+"/metrics",
 					"healthz", "http://"+m+"/healthz", "readyz", "http://"+m+"/readyz")
 			}
+			stopMCP, _, err := startMCPGateway(b, cfg, log)
+			if err != nil {
+				_ = b.Close()
+				return err
+			}
 			printServeHelp(a, loc, cfg, created)
 
 			ctx := cmd.Context()
@@ -115,6 +120,7 @@ apply at once; listener, TLS, storage and limit changes need a restart.`,
 				case <-hup:
 					_, _ = b.ReloadFrom(loc.Path)
 				case <-ctx.Done():
+					stopMCP() // before the broker, so its agents disconnect cleanly
 					return b.Close()
 				}
 			}

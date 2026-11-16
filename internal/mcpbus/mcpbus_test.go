@@ -19,12 +19,13 @@ import (
 	"github.com/jefflaplante/agentbus/client"
 )
 
-// testBus is a broker with agents cli, bob (serves "stats") and ops (an
-// observer), and their tokens.
+// testBus is a broker with agents cli, bob (serves "stats"), ops (an
+// observer) and dana, and their tokens.
 type testBus struct {
 	url    string
 	tokens map[string]string
 	srv    *broker.Broker
+	cfg    *broker.Config
 }
 
 func startTestBus(t *testing.T) *testBus {
@@ -32,7 +33,7 @@ func startTestBus(t *testing.T) *testBus {
 	b := &testBus{tokens: map[string]string{}}
 	cfg := &broker.Config{Listen: "127.0.0.1:0"}
 	for _, a := range []broker.AgentConfig{
-		{ID: "cli"}, {ID: "bob", Capabilities: []string{"stats"}}, {ID: "ops", Observer: true},
+		{ID: "cli"}, {ID: "bob", Capabilities: []string{"stats"}}, {ID: "ops", Observer: true}, {ID: "dana"},
 	} {
 		tok, hash := broker.NewToken()
 		a.TokenSHA256 = hash
@@ -47,7 +48,7 @@ func startTestBus(t *testing.T) *testBus {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = srv.Close() })
-	b.url, b.srv = "tcp://"+srv.Addr(), srv
+	b.url, b.srv, b.cfg = "tcp://"+srv.Addr(), srv, cfg
 	return b
 }
 
@@ -87,7 +88,7 @@ func mcpSession(t *testing.T, b *testBus) *mcp.ClientSession {
 	st, ct := mcp.NewInMemoryTransports()
 	srvCtx, stop := context.WithCancel(context.Background())
 	t.Cleanup(stop)
-	go func() { _ = NewServer(c, ib, "cli", "test").Run(srvCtx, st) }()
+	go func() { _ = NewServer(c, ib, "cli", "test", nil).Run(srvCtx, st) }()
 	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).Connect(ctx, ct, nil)
 	if err != nil {
 		t.Fatal(err)
