@@ -92,7 +92,10 @@ export ANTHROPIC_API_KEY=...                                 # the environment, 
 ```
 
 `-check` reports a missing model key the same way it reports a missing
-token. To run the local-model variant from a built binary, pass
+token. Under systemd, `agentbus agent init`'s unit template shows both
+ways to deliver the key: as a credential, with `api_key_file:
+/run/credentials/hostdoc.service/model-key`, or as an `EnvironmentFile=`.
+See [Deploying](../../docs/AGENTS.md#deploying). To run the local-model variant from a built binary, pass
 `-manifest agent.local.yaml`. The scripts still come from the binary.
 
 `go.mod` builds against this checkout (`replace ../..`). Outside the

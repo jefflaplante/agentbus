@@ -7,7 +7,7 @@ explains the mechanics.
 ## Layers
 
 ```text
- agents (conduit, demo/cmd/worker, demo/cmd/coordinator, agentbus CLI)
+ agents (conduit, demo/cmd/worker, demo/cmd/coordinator, agentbus CLI, agent runtime)
         |  MQTT 3.1.1 or 5; username = client ID = agent ID, password = token
         v
 +--------------------------------------------------------------+
@@ -127,6 +127,44 @@ coordinator               broker                    worker      worker-2
 The broker grants a capability per agent (`capabilities` in the config).
 An agent without the grant can send tasks but can't consume them, which is
 what the demo's `acl` step checks.
+
+## A model-backed agent
+
+An `llm:` handler in a standalone agent (see
+[AGENTS.md](AGENTS.md#model-backed-handlers)) turns one request into a
+conversation with a model. The broker sees only the bus messages: the
+request, any calls the model makes to other agents, and the reply.
+
+```text
+caller          broker          hostdoc (agent runtime)          model API
+  | task          |                 |                                |
+  |-------------->|---------------->| llm handler                    |
+  |               |                 |--- system + envelope --------->|
+  |               |                 |<---------- tool call: disk {} -|
+  |               |                 | runs disk as the caller        |
+  |               |                 |--- its output ---------------->|
+  |               |                 |<-------- tool call: bus_task --|
+  |               |<----------------| PUB tasks/weather.forecast     |
+  |               |   to weather,   |   headers {hops: "1"}          |
+  |               |   and its reply |                                |
+  |               |---------------->|--- the reply, fenced --------->|
+  |               |                 |<-------------- final text -----|
+  |<--------------|<----------------| response                       |
+```
+
+- **The model API is not on the bus.** The agent calls it over HTTPS with
+  its own key. The broker never sees prompts or model output, only the
+  envelopes.
+- **Tool calls to the agent's own handlers stay in the process.** They
+  run the handler directly, as a request from the original sender. Only
+  `bus_request` and `bus_task` publish, and those go through the
+  broker's usual checks under the agent's own identity.
+- **The `hops` header** is one more than the request being handled. At
+  `max_hops` the runtime refuses to publish, so agents that ask agents
+  can't loop (see [CONTRACT.md](../CONTRACT.md#headers)).
+- **The whole run fits in the request's deadline.** Model calls, tool
+  calls and bus calls all share the handler's context. When it ends, the
+  caller gets `handler timed out` instead of waiting for its own TTL.
 
 ## Retention
 

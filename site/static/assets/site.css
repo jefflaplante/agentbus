@@ -285,6 +285,27 @@ kbd { font-size: 11px; padding: 2px 6px; border-radius: 5px; border: 1px solid v
 .more { font-weight: 600; font-size: 15px; }
 .envelope-code { margin: 0; }
 
+/* models */
+.run { grid-template-columns: 1fr 1fr; align-items: center; }
+.run-figure { display: flex; flex-direction: column; gap: 14px; }
+.run-diagram { margin: 0; }
+.run-diagram .agent-box { fill: rgba(155, 140, 255, .05); stroke: var(--hub); stroke-width: 1.5; stroke-dasharray: 5 5; }
+.run-diagram .box-label { fill: var(--hub); font-weight: 600; }
+.run-diagram .node { stroke: var(--line-2); }
+.run-diagram .node.model { stroke: var(--hub); stroke-width: 2.5; filter: drop-shadow(0 0 12px rgba(155, 140, 255, .45)); }
+.run-diagram .node.tool { stroke: var(--evt); }
+.run-diagram text.strong { fill: var(--text); font-weight: 600; }
+.diagram .dot.evt { fill: var(--evt); color: var(--evt); }
+.run-legend { align-self: flex-start; }
+.guards { margin-top: 18px; }
+.guards .pattern h3 { margin-top: 0; }
+.run-proof { display: grid; grid-template-columns: 1.15fr .85fr; gap: 36px; align-items: center; margin-top: 22px; }
+.run-term .term-body { height: auto; white-space: pre-wrap; word-break: break-word; }
+.run-copy h3 { margin: 0 0 10px; font: 600 24px var(--display); }
+.run-copy p { margin: 0 0 14px; color: var(--muted); }
+.run-copy .more { display: block; margin-top: 6px; }
+@media (max-width: 1000px) { .run-proof { grid-template-columns: 1fr; } }
+
 /* code blocks (home and docs) */
 pre.code, .doc-body pre {
   position: relative; margin: 0; padding: 18px 20px; overflow-x: auto; border-radius: 12px;

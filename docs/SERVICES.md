@@ -301,7 +301,8 @@ the content is safe. `body`, `event`, `headers`, and a presence card's
 
 - If a model will read the message, put `a2a.UntrustedPreamble(e)` in
   front of it. `agentbus handle` passes the same text as
-  `AGENTBUS_PREAMBLE`, and `agentbus mcp` adds it to every message.
+  `AGENTBUS_PREAMBLE`, and `agentbus mcp` and the agent runtime's `llm:`
+  handlers add it to every message.
 - Never let a message choose the model, tools, skills, permissions or
   working directory the handler runs with. Fix those in the agent's own
   config.
@@ -342,16 +343,20 @@ Two ways to put an LLM coding tool behind a capability:
 - **Interactive:** let a live session take requests through
   `agentbus mcp`'s `inbox` and `reply` tools.
 
-See [INTEGRATIONS.md](INTEGRATIONS.md).
+See [INTEGRATIONS.md](INTEGRATIONS.md). For a narrower job that doesn't
+need a coding tool, a standalone agent's `llm:` handler calls the model
+API itself (next section).
 
 ### As a standalone agent: `agentbus agent`
 
 For a narrow job on a remote host, generate an agent instead of writing
 the client code. A manifest maps task queues, inbox ops and events to
-shell commands, scripts or Go functions, and `agentbus agent build`
+shell commands, scripts, Go functions or a model, and `agentbus agent build`
 compiles it all into one static binary. The runtime follows the rules in
 this guide for you: acks after replies, `busy` past `max_concurrent`,
-draining on shutdown, and sender allow-lists. See [AGENTS.md](AGENTS.md).
+draining on shutdown, and sender allow-lists. An `llm:` handler also gets
+the untrusted-input preamble, tools limited to the agent's own handlers,
+and the `hops` limit on bus calls. See [AGENTS.md](AGENTS.md).
 
 ### From Python
 

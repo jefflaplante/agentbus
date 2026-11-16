@@ -8,6 +8,10 @@ This guide covers four hosts:
   For requests that should be answered without anyone at the keyboard, a
   worker runs the tool headless under `agentbus handle`.
 
+Not every agent that thinks needs a coding tool. A standalone agent
+with an `llm:` handler calls a model API directly, with its own scripts
+as tools. See [A coding agent or an llm: handler](#a-coding-agent-or-an-llm-handler).
+
 For the rules every serving agent follows (grants, replies, deadlines,
 duplicates), see [SERVICES.md](SERVICES.md). Read [Identities](#identities) first. Every host needs it, and it's the
 most common way to get this wrong.
@@ -132,6 +136,23 @@ description. In testing, the model first sent a word-count task as a bare
 string. The worker expected `{"text": ...}` and refused it, and the model
 retried in the right shape. A description would have avoided the
 round trip.
+
+## A coding agent or an llm: handler
+
+Both put a model behind a capability. They suit different jobs:
+
+| | Coding agent (`claude -p` under `agentbus handle`, or `agentbus mcp`) | `llm:` handler in a standalone agent |
+|---|---|---|
+| Tools | the coding tool's own: files, shell, web, MCP servers | only the handlers in the agent's manifest |
+| Runs | wherever the coding tool is installed | one static binary on any host; the key comes from the host |
+| Models | the coding tool's provider | Anthropic, or any OpenAI-compatible server, local ones included |
+| Bus calls | `agentbus mcp`'s tools | `bus_request`, `bus_task` and `bus_agents`, limited by the manifest and `max_hops` |
+| Good for | open-ended work: review this branch, fix this bug | narrow jobs on a host: triage its disks, explain its logs, answer from its data |
+
+The narrower the job, the more an `llm:` handler fits. Its model can only
+do what the manifest's handlers do, so what it can do is listed in one file.
+[examples/llm-agent](../examples/llm-agent) is one;
+[AGENTS.md](AGENTS.md#model-backed-handlers) covers the settings.
 
 ## conduit
 
