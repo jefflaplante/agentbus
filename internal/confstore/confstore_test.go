@@ -1,6 +1,8 @@
 package confstore
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,8 +41,30 @@ func TestResolveOrder(t *testing.T) {
 	if loc := Resolve(""); loc.Source != FromEnv || !loc.Explicit() {
 		t.Errorf("env: %+v", loc)
 	}
-	if loc := Resolve("x.json"); loc.Source != FromFlag || loc.Path != "x.json" {
+	wd, _ := os.Getwd()
+	if loc := Resolve("x.json"); loc.Source != FromFlag || loc.Path != filepath.Join(wd, "x.json") {
 		t.Errorf("flag: %+v", loc)
+	}
+	t.Setenv("AGENTBUS_CONFIG", "rel/env.json")
+	if loc := Resolve(""); loc.Path != filepath.Join(wd, "rel", "env.json") || !filepath.IsAbs(loc.TokensDir()) {
+		t.Errorf("relative env path not made absolute: %+v", loc)
+	}
+}
+
+// A relative --config gives absolute data_dir, audit_file and token paths.
+func TestBootstrapRelativeConfig(t *testing.T) {
+	isolate(t)
+	home, _ := os.Getwd()
+	loc := Resolve("sub/broker.json")
+	cfg, err := Bootstrap(loc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !filepath.IsAbs(cfg.DataDir) || !filepath.IsAbs(cfg.AuditFile) || cfg.DataDir != filepath.Join(home, "sub", "state", "data") {
+		t.Errorf("data_dir %q audit_file %q", cfg.DataDir, cfg.AuditFile)
+	}
+	if DefaultStateDir(loc) != filepath.Join(home, "sub", "state") {
+		t.Errorf("state dir %s", DefaultStateDir(loc))
 	}
 }
 
@@ -82,37 +106,180 @@ func TestBootstrap(t *testing.T) {
 	}
 }
 
-func TestAgentLifecycle(t *testing.T) {
-	isolate(t)
-	loc := Resolve("")
-	cfg, _ := Bootstrap(loc)
-
-	file, err := AddAgent(cfg, loc, broker.AgentConfig{ID: "worker", Capabilities: []string{"stats"}})
+func commit(t *testing.T, loc Location, fn func(tx *Tx) error) {
+	t.Helper()
+	tx, err := Begin(loc)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := AddAgent(cfg, loc, broker.AgentConfig{ID: "worker"}); err == nil {
-		t.Error("duplicate agent accepted")
-	}
-	if _, err := AddAgent(cfg, loc, broker.AgentConfig{ID: "Bad Name"}); err == nil {
-		t.Error("invalid agent id accepted")
-	}
-	if err := Save(loc.Path, cfg); err != nil {
+	if err := fn(tx); err != nil {
+		tx.Abort()
 		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAgentLifecycle(t *testing.T) {
+	isolate(t)
+	loc := Resolve("")
+	if _, err := Bootstrap(loc); err != nil {
+		t.Fatal(err)
+	}
+	var file string
+	commit(t, loc, func(tx *Tx) (err error) {
+		file, err = tx.AddAgent(broker.AgentConfig{ID: "worker", Capabilities: []string{"stats"}})
+		if _, err := tx.AddAgent(broker.AgentConfig{ID: "worker"}); err == nil {
+			t.Error("duplicate agent accepted")
+		}
+		if _, err := tx.AddAgent(broker.AgentConfig{ID: "Bad Name"}); err == nil {
+			t.Error("invalid agent id accepted")
+		}
+		return err
+	})
+	if m := mode(t, file); m != 0o600 {
+		t.Errorf("token mode %o", m)
 	}
 	old, _ := ReadToken(loc, "worker")
-	if _, err := RotateToken(cfg, loc, "worker"); err != nil {
-		t.Fatal(err)
-	}
+	commit(t, loc, func(tx *Tx) error { _, err := tx.RotateToken("worker"); return err })
 	tok, _ := ReadToken(loc, "worker")
+	cfg, _ := Load(loc.Path)
 	if tok == old || broker.HashToken(tok) != cfg.Agents[Find(cfg, "worker")].TokenSHA256 {
 		t.Error("rotate did not replace the token consistently")
 	}
-	if err := RemoveAgent(cfg, loc, "worker"); err != nil {
-		t.Fatal(err)
-	}
+	commit(t, loc, func(tx *Tx) error { return tx.RemoveAgent("worker") })
 	if _, err := os.Stat(file); !os.IsNotExist(err) {
 		t.Error("token file left behind")
+	}
+	if left := tmpFiles(t, loc); len(left) > 0 {
+		t.Errorf("temp files left: %v", left)
+	}
+}
+
+func tmpFiles(t *testing.T, loc Location) []string {
+	t.Helper()
+	var out []string
+	for _, dir := range []string{filepath.Dir(loc.Path), loc.TokensDir()} {
+		m, _ := filepath.Glob(filepath.Join(dir, ".*.tmp-*"))
+		out = append(out, m...)
+	}
+	return out
+}
+
+// A change whose save fails leaves the token files as they were.
+func TestFailedSaveKeepsTokenFiles(t *testing.T) {
+	isolate(t)
+	loc := Resolve("")
+	if _, err := Bootstrap(loc); err != nil {
+		t.Fatal(err)
+	}
+	admin, _ := ReadToken(loc, AdminID)
+
+	// Removing the only agent fails validation: admin.token must survive.
+	tx, _ := Begin(loc)
+	if err := tx.RemoveAgent(AdminID); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err == nil {
+		t.Fatal("config with no agents saved")
+	}
+	if tok, ok := ReadToken(loc, AdminID); !ok || tok != admin {
+		t.Error("failed rm deleted or changed the token file")
+	}
+
+	// A rotation whose save fails keeps the old, still-valid token.
+	raw, _ := os.ReadFile(loc.Path)
+	bad := strings.Replace(string(raw), DefaultListen, "0.0.0.0:1883", 1) // invalid: plaintext beyond loopback
+	if err := os.WriteFile(loc.Path, []byte(bad), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tx, _ = Begin(loc)
+	if _, err := tx.RotateToken(AdminID); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err == nil {
+		t.Fatal("invalid config saved")
+	}
+	if tok, _ := ReadToken(loc, AdminID); tok != admin {
+		t.Error("failed rotate replaced the token file")
+	}
+	if left := tmpFiles(t, loc); len(left) > 0 {
+		t.Errorf("temp files left: %v", left)
+	}
+}
+
+// Commit refuses to overwrite changes made since Begin.
+func TestCommitDetectsConcurrentChange(t *testing.T) {
+	isolate(t)
+	loc := Resolve("")
+	if _, err := Bootstrap(loc); err != nil {
+		t.Fatal(err)
+	}
+	tx, _ := Begin(loc)
+	if _, err := tx.AddAgent(broker.AgentConfig{ID: "late"}); err != nil {
+		t.Fatal(err)
+	}
+	commit(t, loc, func(other *Tx) error { return other.Set("rate_per_second", "7") })
+	if err := tx.Commit(); !errors.Is(err, ErrChanged) {
+		t.Fatalf("err = %v, want ErrChanged", err)
+	}
+	cfg, _ := Load(loc.Path)
+	if cfg.RatePerSecond != 7 || Find(cfg, "late") >= 0 {
+		t.Errorf("concurrent change lost: %+v", cfg)
+	}
+	if _, ok := ReadToken(loc, "late"); ok {
+		t.Error("token file written for an agent that was never saved")
+	}
+}
+
+// Save writes 0600 even over a stale temp file, follows a symlinked
+// config, and WriteToken tightens an existing token file's mode.
+func TestSaveModesAndSymlink(t *testing.T) {
+	home := isolate(t)
+	real := filepath.Join(home, "real", "broker.json")
+	cfg, err := Bootstrap(Location{Path: real, Source: FromFlag})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(real+".tmp", []byte("stale"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(home, "link.json")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	cfg.RatePerSecond = 9
+	if err := Save(link, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Error("Save replaced the symlink with a regular file")
+	}
+	if got, _ := Load(real); got.RatePerSecond != 9 {
+		t.Error("Save did not write through the symlink")
+	}
+	if m := mode(t, real); m != 0o600 {
+		t.Errorf("config mode %o", m)
+	}
+
+	tok := filepath.Join(home, "loose.token")
+	if err := os.WriteFile(tok, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteToken(tok, "new"); err != nil {
+		t.Fatal(err)
+	}
+	if m := mode(t, tok); m != 0o600 {
+		t.Errorf("WriteToken left mode %o", m)
+	}
+}
+
+func TestLoadMissingHintsInit(t *testing.T) {
+	isolate(t)
+	_, err := Load(filepath.Join(t.TempDir(), "none.json"))
+	if err == nil || !strings.Contains(err.Error(), "config init") || !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("err = %v", err)
 	}
 }
 
@@ -146,6 +313,15 @@ func TestSet(t *testing.T) {
 	for k, v := range map[string]string{"nope": "1", "agents": "[]", "max_queued": "lots", "session_expiry": "soon"} {
 		if err := Set(cfg, k, v); err == nil {
 			t.Errorf("%s=%s accepted", k, v)
+		}
+	}
+	for k, want := range map[string]string{"data_dir": "a string", "max_queued": "a whole number", "session_expiry": "a duration", "allow_insecure": "true or false"} {
+		v := "123"
+		if k != "data_dir" {
+			v = "nope"
+		}
+		if err := Set(cfg, k, v); err == nil || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "json") {
+			t.Errorf("%s=%s: %v, want %q", k, v, err, want)
 		}
 	}
 }

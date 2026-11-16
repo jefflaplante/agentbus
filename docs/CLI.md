@@ -109,6 +109,11 @@ environment variable:
 | `--token` | `AGENTBUS_TOKEN` | the token itself; visible in `ps` |
 | `--config` | `AGENTBUS_CONFIG` | the broker config file, for `serve`, `config`, and finding defaults |
 
+A flag beats an environment variable: `--token` is used even when
+`AGENTBUS_TOKEN_FILE` is set, and `--token-file` even when `AGENTBUS_TOKEN`
+is. A relative `--config` or `AGENTBUS_CONFIG` is taken from the current
+directory, and the paths derived from it are absolute.
+
 When a setting isn't given, it comes from the local broker config:
 - **URL:** the config's listen address
 - **Token file:** `tokens/<agent>.token` beside the config
@@ -156,9 +161,17 @@ up one level at a time.
 | `e` | agent views | edit the agent in the config editor, when the broker's config file is on this machine |
 | `tab` | `dashboard`, `config` | switch panel or tab |
 | `y` | inspector, client setup | copy the JSON or snippet to the clipboard |
-| `p` / `space`, `c` | feeds | pause or resume, clear |
+| `p` / `space`, `c` | feeds | pause or resume, clear; in a `status` agent detail, `p` pauses until you leave it and `c` does nothing (the traffic is shared with every agent) |
 | `esc` | everywhere | back one level; quits at the top |
-| `q`, `ctrl+c` | everywhere | quit |
+| `q` | top-level views | quit |
+| `q` | inspector, `status` agent detail, confirmation prompts, client setup, the config editor opened with `e` | back one level, like `esc` |
+| `ctrl+c` | everywhere | quit |
+
+Text that comes from other agents (presence descriptions and metadata,
+event names, headers, error reasons, message bodies) is shown with control
+characters escaped, as `\x1b` for example, so it can't move the cursor,
+change the terminal, or add rows to `agents --plain` output. JSON output is
+left as JSON.
 
 ## Looking inside a running broker
 
@@ -393,7 +406,7 @@ The same from scripts:
 
 ```bash
 agentbus config init                         # create a config (serve does this on first run)
-agentbus config path                         # which config, tokens and state directories
+agentbus config path                         # which config, tokens, data_dir and audit_file
 agentbus config show                         # print the file
 agentbus config agent list
 agentbus config agent add researcher --capability research --send-to conduit-home
@@ -404,7 +417,20 @@ agentbus config agent token researcher       # rotate
 agentbus config agent rm researcher
 agentbus config env researcher               # shell exports; --format go | mqtt
 agentbus config set rate_per_second 50       # any top-level setting
+agentbus config set tls_cert /etc/agentbus/cert.pem tls_key /etc/agentbus/key.pem listen 0.0.0.0:8883
 ```
+
+`config set` takes several `KEY VALUE` pairs and saves them together, so
+settings that are only valid together (`tls_cert` with `tls_key`, a
+non-loopback `listen` with TLS) can be changed in one step. If any pair is
+invalid, nothing is saved. In the editor, editing `tls_cert` or `tls_key`
+opens one form for both.
+
+Changes are saved before token files are touched: if a save fails (say,
+`agent rm` of the last agent), the token files stay as they were. The
+editor rereads the file before every change; if something else changed it
+since, the editor reloads, says so, and saves nothing, so it never
+overwrites changes you haven't seen.
 
 `agent add` prints the new agent's shell exports on stdout, so
 `agentbus config agent add x > x.env` gives you a ready env file.
@@ -421,14 +447,24 @@ agentbus token                                    # a new token + token_sha256, 
 If you name a config file that doesn't exist, `serve` refuses and tells
 you how to create it, rather than silently making a different one.
 
-**Live reload.** The broker checks its config file every second (`--watch`)
-and reloads on change, or at once on `SIGHUP`:
+**Live reload.** The broker checks its config file every second (`--watch`;
+`--watch 0` turns file watching off) and reloads on change, or at once on
+`SIGHUP`:
 - **Agents** that were added can connect immediately.
 - **Removed agents**, and agents whose token was rotated, are disconnected.
 - **Changed grants** apply to the next message: a worker whose capability
   was revoked stops receiving tasks.
 - **A bad file** is rejected, and the broker keeps running on the previous
   config. The error appears in `status` and the log.
+
+**Metrics and health.** Set `metrics_listen` (for example
+`agentbus config set metrics_listen 127.0.0.1:9464`, then restart) and the
+broker serves Prometheus `/metrics`, `/healthz` and `/readyz` there. It
+must be loopback unless `allow_insecure` is set, since the endpoint has no
+authentication. `status` shows the same request counts in its Decisions
+panel (`requests: open · ok · err · expired`), and `status --plain` lists
+them per agent and capability under `requests`. See
+[HOW-IT-WORKS.md](HOW-IT-WORKS.md#request-tracking-and-metrics).
 
 See [examples/broker.json](../examples/broker.json),
 [SECURITY.md](SECURITY.md) for TLS and limits, and

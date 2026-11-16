@@ -47,6 +47,14 @@ type contractHook struct {
 
 	counters *counters // decision counts for Status
 
+	// closing is set when the broker starts shutting down; logins are
+	// refused from then on.
+	closing atomic.Bool
+
+	// reconnects marks connections that replaced a lingering session for
+	// the same agent; see guardReconnect.
+	reconnects sync.Map // *mqtt.Client -> struct{}
+
 	mu       sync.Mutex
 	presence map[string]a2a.Presence // last card per agent, for offline cards and refresh
 }
@@ -133,15 +141,20 @@ func (h *contractHook) OnConnect(cl *mqtt.Client, pk packets.Packet) error {
 	if cl.Net.Inline || !pk.Connect.WillFlag {
 		return nil
 	}
-	h.log.Warn("connection refused", "client", trunc(cl.ID), "remote", cl.Net.Remote,
-		"reason", "will messages are not allowed; the broker publishes offline presence itself")
+	// This runs before authentication, so throttle per remote address like
+	// failed logins: otherwise anyone who can reach the port could flood
+	// the log and rotate the audit file away.
+	if h.noise.allow("ip:"+ipKey(hostOf(cl.Net.Remote)), h.now(), 1, 10) {
+		h.log.Warn("connection refused", "client", trunc(cl.ID), "remote", cl.Net.Remote,
+			"reason", "will messages are not allowed; the broker publishes offline presence itself")
+		h.audit.write(AuditRecord{Action: "refused", Agent: trunc(cl.ID), Remote: cl.Net.Remote, Reason: "will message"})
+	}
 	code := packets.ErrNotAuthorized
 	if cl.Properties.ProtocolVersion < 5 {
 		// MQTT 3.1.1 has no 0x87; mochi maps this one to v3 "not authorized".
 		code = packets.ErrBadUsernameOrPassword
 	}
 	_ = h.server.SendConnack(cl, code, false, nil)
-	h.audit.write(AuditRecord{Action: "refused", Agent: trunc(cl.ID), Remote: cl.Net.Remote, Reason: "will message"})
 	h.counters.inc(&h.counters.decisions.WillsRefused)
 	return code
 }
@@ -157,26 +170,35 @@ func (h *contractHook) OnWill(cl *mqtt.Client, will mqtt.Will) (mqtt.Will, error
 // OnConnectAuthenticate requires username = client ID = a configured agent
 // ID and password = that agent's token.
 func (h *contractHook) OnConnectAuthenticate(cl *mqtt.Client, pk packets.Packet) bool {
-	user := string(pk.Connect.Username)
-	want, ok := h.state().hashes[user]
-	if !ok || cl.ID != user {
-		h.authFailed(cl, user, "unknown agent or client id mismatch")
+	if h.closing.Load() {
 		return false
 	}
-	got, _ := hex.DecodeString(HashToken(string(pk.Connect.Password)))
-	if subtle.ConstantTimeCompare(got, want) != 1 {
-		h.authFailed(cl, user, "bad token")
+	user := string(pk.Connect.Username)
+	if reason := h.state().checkLogin(cl.ID, user, pk.Connect.Password); reason != "" {
+		h.authFailed(cl, user, reason)
 		return false
 	}
 	return true
+}
+
+// checkLogin returns why a login fails against this config, or "".
+func (s *hookState) checkLogin(clientID, user string, password []byte) string {
+	want, ok := s.hashes[user]
+	if !ok || clientID != user {
+		return "unknown agent or client id mismatch"
+	}
+	got, _ := hex.DecodeString(HashToken(string(password)))
+	if subtle.ConstantTimeCompare(got, want) != 1 {
+		return "bad token"
+	}
+	return ""
 }
 
 // authFailed logs a failed login, throttled per remote IP so a flood of
 // bad logins can't flood the log.
 func (h *contractHook) authFailed(cl *mqtt.Client, user, reason string) {
 	h.counters.inc(&h.counters.decisions.AuthFailures)
-	ip := hostOf(cl.Net.Remote)
-	if h.noise.allow("ip:"+ip, h.now(), 1, 10) {
+	if h.noise.allow("ip:"+ipKey(hostOf(cl.Net.Remote)), h.now(), 1, 10) {
 		h.log.Warn("auth rejected", "client", trunc(cl.ID), "username", trunc(user), "remote", cl.Net.Remote, "reason", reason)
 		h.audit.write(AuditRecord{Action: "refused", Agent: trunc(user), Remote: cl.Net.Remote, Reason: reason})
 	}
@@ -324,6 +346,7 @@ var (
 	rjExpired       = rejection{"expired", packets.ErrPayloadFormatInvalid}
 	rjNoRoute       = rejection{"no_route", packets.ErrImplementationSpecificError}
 	rjNoConsumer    = rejection{"no_consumer", packets.ErrImplementationSpecificError}
+	rjQueueFull     = rejection{"queue_full", packets.ErrQuotaExceeded}
 	rjInternal      = rejection{"internal", packets.ErrImplementationSpecificError}
 )
 
@@ -341,13 +364,14 @@ func (h *contractHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Pa
 		return pk, nil
 	}
 	now := h.now()
-	ref := peek(pk.Payload, h.state().cfg.MaxEnvelopeBytes)
-	agent, ok := h.state().agents[cl.ID]
+	st := h.state() // one config snapshot for the whole decision
+	agent, ok := st.agents[cl.ID]
 	if !ok {
-		return pk, h.reject(cl, pk, ref, rjNotAuthorized, "unknown agent")
+		return pk, h.reject(cl, pk, rjNotAuthorized, "unknown agent")
 	}
-	// Rate-limit first so rejected publishes cost tokens too.
-	rate, burst := h.state().cfg.RatePerSecond, h.state().cfg.RateBurst
+	// Rate-limit first, before parsing anything, so a flood costs the
+	// sender tokens and the broker little CPU.
+	rate, burst := st.cfg.RatePerSecond, st.cfg.RateBurst
 	if agent.RatePerSecond > 0 {
 		rate = agent.RatePerSecond
 	}
@@ -355,7 +379,7 @@ func (h *contractHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Pa
 		burst = agent.RateBurst
 	}
 	if !h.rate.allow(cl.ID, now, rate, burst) {
-		return pk, h.reject(cl, pk, ref, rjRateLimited, "rate limit exceeded")
+		return pk, h.reject(cl, pk, rjRateLimited, "rate limit exceeded")
 	}
 	t, err := h.authorizeWrite(agent, pk.TopicName)
 	// An inbox outside send_to is still allowed for a reply to a request
@@ -366,7 +390,7 @@ func (h *contractHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Pa
 		outsideSendTo, err = err, nil
 	}
 	if err != nil {
-		return pk, h.reject(cl, pk, ref, rjNotAuthorized, err.Error())
+		return pk, h.reject(cl, pk, rjNotAuthorized, err.Error())
 	}
 	// MQTT 5 properties (response topic, correlation data, user
 	// properties) would travel unchecked beside the envelope. The
@@ -379,56 +403,65 @@ func (h *contractHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Pa
 	// be redelivered, and handled again, on every resubscribe.
 	pk.FixedHeader.Retain = false
 
-	if len(pk.Payload) > h.state().cfg.MaxEnvelopeBytes {
-		return pk, h.reject(cl, pk, ref, rjTooLarge, "envelope too large")
+	if len(pk.Payload) > st.cfg.MaxEnvelopeBytes {
+		return pk, h.reject(cl, pk, rjTooLarge, "envelope too large")
 	}
 	env, err := a2a.Parse(pk.Payload)
 	if err == nil {
 		err = env.ValidateFor(t, cl.ID)
 	}
-	if outsideSendTo != nil && (err != nil || !h.isOpenReply(env, t, agent, now)) {
-		// Not a valid reply to an open request: the send_to refusal stands.
-		return pk, h.reject(cl, pk, ref, rjNotAuthorized, outsideSendTo.Error())
+	isReply := err == nil && t.Kind == a2a.KindInbox && (env.Type == a2a.TypeResponse || env.Type == a2a.TypeError)
+	if outsideSendTo != nil && !isReply {
+		// Only a reply can be allowed outside send_to.
+		return pk, h.reject(cl, pk, rjNotAuthorized, outsideSendTo.Error())
 	}
 	if err != nil {
-		return pk, h.reject(cl, pk, ref, rjInvalid, err.Error())
+		return pk, h.reject(cl, pk, rjInvalid, err.Error())
 	}
-	// A reply to an open request must come from the request's answerer,
-	// even when send_to would allow the sender. Otherwise any agent that
-	// can reach the requester could answer a task first with a forged
-	// reply; the requester can't tell, since it doesn't know which worker
-	// took the task.
-	if (env.Type == a2a.TypeResponse || env.Type == a2a.TypeError) && t.Kind == a2a.KindInbox {
-		if r, ok := h.open.lookup(t.Owner, env.CorrelationID, now); ok && !r.allows(agent) {
-			return pk, h.reject(cl, pk, ref, rjNotAuthorized,
-				fmt.Sprintf("reply to %s must come from %s", env.CorrelationID, r.answerer()))
-		}
-	}
-	if err := env.CheckTime(now, time.Duration(h.state().cfg.MaxClockSkew)); err != nil {
-		return pk, h.reject(cl, pk, ref, rjInvalid, err.Error())
+	if err := env.CheckTime(now, time.Duration(st.cfg.MaxClockSkew)); err != nil {
+		return pk, h.reject(cl, pk, rjInvalid, err.Error())
 	}
 	if env.Expired(now) {
-		return pk, h.reject(cl, pk, ref, rjExpired, "envelope expired before delivery")
+		return pk, h.reject(cl, pk, rjExpired, "envelope expired before delivery")
 	}
-	if rj, reason := h.route(t); reason != "" {
-		return pk, h.reject(cl, pk, ref, rj, reason)
+	if rj, reason := h.route(st, t); reason != "" {
+		return pk, h.reject(cl, pk, rj, reason)
 	}
 	if !h.dedup.firstSeen(env.From+"/"+env.ID, now) {
-		h.log.Info("duplicate dropped", "action", "duplicate", "from", env.From, "id", env.ID, "topic", pk.TopicName)
-		h.audit.write(envelopeRecord("duplicate", pk.TopicName, env, len(pk.Payload)))
+		h.log.Info("duplicate dropped", "action", "duplicate", "from", env.From, "id", env.ID, "topic", truncTopic(pk.TopicName))
+		h.audit.write(envelopeRecord("duplicate", truncTopic(pk.TopicName), env, len(pk.Payload)))
 		h.counters.inc(&h.counters.decisions.Duplicates)
 		return pk, packets.CodeSuccessIgnore
 	}
+	if isReply {
+		// A reply to an open request must come from the request's
+		// answerer, even when send_to would allow the sender: otherwise
+		// any agent that can reach the requester could answer a task first
+		// with a forged reply, and the requester can't tell which worker
+		// took the task. Claiming is atomic, so only one reply is accepted.
+		r, found, allowed := h.open.claim(t.Owner, env.CorrelationID, agent, env.Type, now)
+		switch {
+		case found && !allowed:
+			return pk, h.reject(cl, pk, rjNotAuthorized,
+				fmt.Sprintf("reply to %s must come from %s", env.CorrelationID, r.answerer()))
+		case !found && outsideSendTo != nil:
+			return pk, h.reject(cl, pk, rjNotAuthorized, outsideSendTo.Error())
+		case outsideSendTo != nil:
+			h.log.Info("reply allowed outside send_to", "from", env.From, "to", t.Owner, "correlation_id", env.CorrelationID)
+		}
+	}
 	data, err := env.Marshal()
 	if err != nil {
-		return pk, h.reject(cl, pk, ref, rjInternal, err.Error())
+		return pk, h.reject(cl, pk, rjInternal, err.Error())
 	}
 	pk.Payload = data
-	h.trackReplies(env, t, outsideSendTo != nil, now)
+	if env.Type == a2a.TypeRequest {
+		h.trackRequest(env, t, now)
+	}
 	h.log.Info("envelope", "action", "accept", "from", env.From, "to", env.To, "type", env.Type, "id", env.ID,
 		"correlation_id", env.CorrelationID, "priority", env.Priority, "event", env.Event,
-		"topic", pk.TopicName, "bytes", len(data))
-	h.audit.write(envelopeRecord("accept", pk.TopicName, env, len(data)))
+		"topic", truncTopic(pk.TopicName), "bytes", len(data))
+	h.audit.write(envelopeRecord("accept", truncTopic(pk.TopicName), env, len(data)))
 	h.counters.accept(cl.ID, now)
 	return pk, nil
 }
@@ -436,46 +469,18 @@ func (h *contractHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Pa
 // errOutsideSendTo marks an inbox publish outside the sender's send_to.
 var errOutsideSendTo = errors.New("not allowed to send to")
 
-// isOpenReply reports whether env answers an open request from the owner
-// of the inbox it's addressed to, sent to (or, for a task, consumable by)
-// this agent.
-func (h *contractHook) isOpenReply(env *a2a.Envelope, t a2a.Topic, agent *AgentConfig, now time.Time) bool {
-	if env.Type != a2a.TypeResponse && env.Type != a2a.TypeError {
-		return false
+// trackRequest opens an entry for an accepted request, so its one reply
+// can be checked and its outcome counted.
+func (h *contractHook) trackRequest(env *a2a.Envelope, t a2a.Topic, now time.Time) {
+	r := openRequest{start: now, expires: openExpiry(env, now)}
+	if t.Kind == a2a.KindTask {
+		r.capability = t.Capability
+	} else {
+		r.responder = t.Owner
 	}
-	return h.open.match(t.Owner, env.CorrelationID, agent, now)
-}
-
-// trackReplies updates the open-request table for an accepted envelope:
-// a request opens an entry, and a reply closes its request's entry.
-func (h *contractHook) trackReplies(env *a2a.Envelope, t a2a.Topic, viaOpenRequest bool, now time.Time) {
-	switch env.Type {
-	case a2a.TypeRequest:
-		r := openRequest{expires: now.Add(time.Duration(h.state().cfg.SessionExpiry))}
-		if env.TTLMillis > 0 {
-			r.expires = env.TS.Add(time.Duration(env.TTLMillis) * time.Millisecond)
-		}
-		if t.Kind == a2a.KindTask {
-			r.capability = t.Capability
-		} else {
-			r.responder = t.Owner
-		}
-		if !h.open.add(env.From, env.ID, r, now) && h.noise.allow("open-requests-full", now, 0.01, 1) {
-			h.log.Warn("open-request table full; replies to new requests fall back to send_to",
-				"max", maxOpenRequests)
-		}
-	case a2a.TypeResponse, a2a.TypeError:
-		// Only the allowed responder's reply closes the entry, so another
-		// agent can't use up a request's reply with a guessed ID.
-		if t.Kind == a2a.KindInbox {
-			if agent, ok := h.state().agents[env.From]; ok &&
-				h.open.match(t.Owner, env.CorrelationID, agent, now) {
-				h.open.take(t.Owner, env.CorrelationID)
-			}
-		}
-		if viaOpenRequest {
-			h.log.Info("reply allowed outside send_to", "from", env.From, "to", t.Owner, "correlation_id", env.CorrelationID)
-		}
+	if !h.open.add(env.From, env.ID, r, now) && h.noise.allow("open-requests-full", now, 0.01, 1) {
+		h.log.Warn("open-request table full; replies to new requests fall back to send_to",
+			"max", maxOpenRequests)
 	}
 }
 
@@ -505,18 +510,23 @@ func (h *contractHook) authorizeWrite(agent *AgentConfig, topic string) (a2a.Top
 // sender waiting for a timeout: an inbox whose agent isn't configured or
 // has no session, or a task queue nobody is serving. A disconnected agent
 // that keeps a persistent session still counts; its messages queue.
-func (h *contractHook) route(t a2a.Topic) (rejection, string) {
+func (h *contractHook) route(st *hookState, t a2a.Topic) (rejection, string) {
 	switch t.Kind {
 	case a2a.KindInbox:
-		if _, ok := h.state().agents[t.Owner]; !ok {
+		if _, ok := st.agents[t.Owner]; !ok {
 			return rjNoRoute, fmt.Sprintf("no agent %q is configured", t.Owner)
 		}
-		if _, ok := h.server.Clients.Get(t.Owner); !ok {
+		cl, ok := h.server.Clients.Get(t.Owner)
+		if !ok {
 			return rjNoRoute, fmt.Sprintf("agent %q is offline and has no session to queue for", t.Owner)
+		}
+		// mochi drops a message silently when the recipient's queue is
+		// full. Refuse it here instead, so the sender hears about it.
+		if n := cl.State.Inflight.Len(); n >= st.cfg.MaxQueued {
+			return rjQueueFull, fmt.Sprintf("agent %q has %d messages waiting; its queue is full", t.Owner, n)
 		}
 	case a2a.KindTask:
 		topic := a2a.TaskTopic(t.Capability)
-		st := h.state()
 		serving := false
 		for _, members := range h.server.Topics.Subscribers(topic).Shared {
 			for id := range members {
@@ -538,10 +548,10 @@ func (h *contractHook) route(t a2a.Topic) (rejection, string) {
 func (h *contractHook) publishPresence(cl *mqtt.Client, agent *AgentConfig, pk packets.Packet, now time.Time) (packets.Packet, error) {
 	p, err := a2a.ParsePresence(pk.Payload)
 	if err != nil {
-		return pk, h.reject(cl, pk, envRef{}, rjInvalid, err.Error())
+		return pk, h.reject(cl, pk, rjInvalid, err.Error())
 	}
 	if p.Agent != cl.ID {
-		return pk, h.reject(cl, pk, envRef{}, rjNotAuthorized, "presence agent does not match authenticated agent")
+		return pk, h.reject(cl, pk, rjNotAuthorized, "presence agent does not match authenticated agent")
 	}
 	// Only advertise capabilities the broker actually grants.
 	granted := p.Capabilities[:0]
@@ -558,14 +568,14 @@ func (h *contractHook) publishPresence(cl *mqtt.Client, agent *AgentConfig, pk p
 		case p.Keys == nil:
 			p.Keys = agent.Keys
 		case *p.Keys != *agent.Keys:
-			return pk, h.reject(cl, pk, envRef{}, rjNotAuthorized, "presence keys do not match the keys pinned in broker config")
+			return pk, h.reject(cl, pk, rjNotAuthorized, "presence keys do not match the keys pinned in broker config")
 		}
 		p.KeysPinned = true
 	}
 	p.Status, p.TS = a2a.StatusOnline, now.UTC()
 	data, err := json.Marshal(p)
 	if err != nil {
-		return pk, h.reject(cl, pk, envRef{}, rjInternal, err.Error())
+		return pk, h.reject(cl, pk, rjInternal, err.Error())
 	}
 	h.mu.Lock()
 	h.presence[cl.ID] = *p
@@ -613,7 +623,7 @@ type envRef struct {
 // a publish rejected before full parsing gets a correlated error.
 func peek(payload []byte, limit int) envRef {
 	var r envRef
-	if len(payload) <= limit && json.Unmarshal(payload, &r) == nil && len(r.ID) <= a2a.MaxIDLen {
+	if len(payload) <= limit && json.Unmarshal(payload, &r) == nil && a2a.ValidID(r.ID) {
 		return r
 	}
 	return envRef{}
@@ -623,9 +633,12 @@ func peek(payload []byte, limit int) envRef {
 // error that makes mochi acknowledge and drop the packet. Logs and error
 // envelopes are throttled per agent, so a stream of bad publishes can't
 // turn into a stream of log lines and broker messages.
-func (h *contractHook) reject(cl *mqtt.Client, pk packets.Packet, ref envRef, rj rejection, reason string) error {
+func (h *contractHook) reject(cl *mqtt.Client, pk packets.Packet, rj rejection, reason string) error {
 	h.counters.reject(cl.ID, rj.code, h.now())
 	if h.noise.allow("agent:"+cl.ID, h.now(), 2, 20) {
+		// Parsed only for the throttled few that get a log line and an
+		// error envelope, not for every rejected publish.
+		ref := peek(pk.Payload, h.state().cfg.MaxEnvelopeBytes)
 		h.log.Warn("publish rejected", "action", "reject", "agent", cl.ID, "topic", trunc(pk.TopicName),
 			"id", trunc(ref.ID), "type", trunc(string(ref.Type)), "code", rj.code, "reason", reason)
 		h.audit.write(AuditRecord{Action: "reject", Agent: cl.ID, Topic: trunc(pk.TopicName), ID: trunc(ref.ID),
@@ -678,8 +691,12 @@ func (h *contractHook) OnSessionEstablish(cl *mqtt.Client, pk packets.Packet) {
 		return
 	}
 	old, ok := h.server.Clients.Get(cl.ID)
-	if !ok || old == cl || old.Closed() {
+	if !ok || old == cl {
 		return
+	}
+	h.reconnects.Store(cl, struct{}{})
+	if old.Closed() {
+		return // an ordinary reconnect, not two live processes
 	}
 	h.log.Warn("agent session taken over: another connection is using this agent ID",
 		"agent", cl.ID, "new_remote", cl.Net.Remote, "old_remote", old.Net.Remote,
@@ -690,8 +707,24 @@ func (h *contractHook) OnSessionEstablished(cl *mqtt.Client, pk packets.Packet) 
 	if cl.Net.Inline {
 		return
 	}
+	// Check the login again against the current config: a reload between
+	// authentication and here (agent removed, token rotated) would
+	// otherwise leave a session the reload never saw to disconnect.
+	st := h.state()
+	agent, ok := st.agents[cl.ID]
+	if reason := st.checkLogin(cl.ID, string(pk.Connect.Username), pk.Connect.Password); !ok || reason != "" {
+		h.log.Warn("connection dropped: the config changed during login", "agent", trunc(cl.ID), "remote", cl.Net.Remote)
+		_ = h.server.DisconnectClient(cl, packets.ErrNotAuthorized)
+		return
+	}
+	if tc, ok := cl.Net.Conn.(*trackedConn); ok {
+		tc.authenticated() // leaves the listener's pre-auth budget
+	}
+	if _, ok := h.reconnects.LoadAndDelete(cl); ok {
+		go h.guardReconnect(cl)
+	}
 	h.log.Info("agent connected", "action", "connect", "agent", cl.ID, "remote", cl.Net.Remote, "mqtt", cl.Properties.ProtocolVersion,
-		"clean", cl.Properties.Clean, "observer", h.state().agents[cl.ID].Observer)
+		"clean", cl.Properties.Clean, "observer", agent.Observer)
 	h.audit.write(AuditRecord{Action: "connect", Agent: cl.ID, Remote: cl.Net.Remote})
 	h.counters.seen(cl.ID, h.now())
 }
@@ -719,14 +752,21 @@ func (h *contractHook) OnDisconnect(cl *mqtt.Client, err error, expire bool) {
 	h.audit.write(AuditRecord{Action: "disconnect", Agent: cl.ID, Remote: cl.Net.Remote, Reason: errString(err)})
 	h.counters.seen(cl.ID, h.now())
 
+	// Decide and publish under h.mu. A new connection for the same agent
+	// registers before it can publish its online card (which also takes
+	// h.mu), so if one is live now we skip, and if not, our offline card
+	// is retained before its online card can be.
 	h.mu.Lock()
+	defer h.mu.Unlock()
+	if cur, ok := h.server.Clients.Get(cl.ID); ok && cur != cl && !cur.Closed() {
+		return
+	}
 	p, ok := h.presence[cl.ID]
 	if !ok {
 		p = a2a.Presence{V: a2a.Version, Agent: cl.ID}
 	}
 	p.Status, p.TS = a2a.StatusOffline, h.now().UTC()
 	h.presence[cl.ID] = p
-	h.mu.Unlock()
 	data, mErr := json.Marshal(p)
 	if mErr != nil {
 		return
@@ -770,17 +810,21 @@ func (h *contractHook) restorePresence() {
 		if err != nil {
 			continue
 		}
-		if _, ok := h.state().agents[p.Agent]; !ok {
+		agent, ok := h.state().agents[p.Agent]
+		if !ok {
 			continue // agent was removed from config
 		}
-		wasOnline := p.Status == a2a.StatusOnline
-		if wasOnline {
+		// The config may have changed while the broker was down: re-apply
+		// grants and pinned keys before trusting the stored card.
+		changed := stampGrants(p, agent)
+		if p.Status == a2a.StatusOnline {
 			p.Status, p.TS = a2a.StatusOffline, h.now().UTC()
+			changed = true
 		}
 		h.mu.Lock()
 		h.presence[p.Agent] = *p
 		h.mu.Unlock()
-		if !wasOnline {
+		if !changed {
 			continue
 		}
 		data, err := json.Marshal(p)
@@ -790,5 +834,121 @@ func (h *contractHook) restorePresence() {
 		if err != nil {
 			h.log.Error("restore presence", "agent", p.Agent, "err", err)
 		}
+	}
+}
+
+// stampGrants makes a cached presence card match agent's current config:
+// capabilities it isn't granted are dropped, and keys follow the pins
+// (pinned keys replace whatever the card had; without pins, keys are only
+// the agent's claim). It reports whether the card changed.
+func stampGrants(p *a2a.Presence, agent *AgentConfig) bool {
+	changed := false
+	granted := make([]string, 0, len(p.Capabilities))
+	for _, c := range p.Capabilities {
+		if agent.mayConsume(c) {
+			granted = append(granted, c)
+		}
+	}
+	if len(granted) != len(p.Capabilities) {
+		p.Capabilities, changed = granted, true
+	}
+	switch {
+	case agent.Keys != nil:
+		if p.Keys == nil || *p.Keys != *agent.Keys || !p.KeysPinned {
+			k := *agent.Keys
+			p.Keys, p.KeysPinned, changed = &k, true, true
+		}
+	case p.KeysPinned:
+		p.KeysPinned, changed = false, true
+	}
+	return changed
+}
+
+// applyReload brings presence and sessions in line with a reloaded
+// config. Removed agents lose their card and their stored session (queued
+// messages and subscriptions); changed agents get their card re-stamped
+// with the new grants and keys.
+func (h *contractHook) applyReload(st *hookState, removed, changed []string) {
+	for _, id := range removed {
+		if cl, ok := h.server.Clients.Get(id); ok {
+			if !cl.Closed() {
+				_ = h.server.DisconnectClient(cl, packets.ErrNotAuthorized)
+			}
+			h.server.UnsubscribeClient(cl)
+			for _, m := range cl.State.Inflight.GetAll(false) {
+				cl.State.Inflight.Delete(m.PacketID)
+			}
+			h.server.Clients.Delete(id)
+		}
+		h.mu.Lock()
+		delete(h.presence, id)
+		// An empty retained message deletes the retained card.
+		if err := h.server.Publish(a2a.PresenceTopic(id), []byte{}, true, 1); err != nil {
+			h.log.Error("clear presence", "agent", id, "err", err)
+		}
+		h.mu.Unlock()
+	}
+	for _, id := range changed {
+		agent, ok := st.agents[id]
+		if !ok {
+			continue
+		}
+		h.mu.Lock()
+		p, ok := h.presence[id]
+		if ok && stampGrants(&p, agent) {
+			h.presence[id] = p
+			data, err := json.Marshal(p)
+			if err == nil {
+				err = h.server.Publish(a2a.PresenceTopic(id), data, true, 1)
+			}
+			if err != nil {
+				h.log.Error("re-stamp presence", "agent", id, "err", err)
+			}
+		}
+		h.mu.Unlock()
+	}
+}
+
+// truncTopic shortens a topic for logs and audit records.
+func truncTopic(s string) string {
+	if len(s) > 256 {
+		return s[:256] + "…"
+	}
+	return s
+}
+
+// guardReconnect works around a mochi race. When a clean-session client
+// disconnects, mochi checks whether it was taken over and, if not,
+// unsubscribes and deletes it from the client table by agent ID. A
+// reconnect under the same ID that registers between that check and the
+// delete loses its table entry and its subscriptions: the broker then
+// reports the connected agent as having no session (no_route) and stops
+// delivering to its inbox. Writes to data_dir during the unsubscribe make
+// the window wide enough to hit in practice.
+//
+// For a short while after a reconnect, watch for that and put the new
+// connection back: re-add it to the table and re-subscribe its filters
+// (Subscribe is idempotent).
+func (h *contractHook) guardReconnect(cl *mqtt.Client) {
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && !cl.Closed() {
+		if cur, ok := h.server.Clients.Get(cl.ID); !ok || cur != cl {
+			if ok && cur != cl {
+				return // a newer connection replaced this one
+			}
+			h.server.Clients.Add(cl)
+			for _, sub := range cl.State.Subscriptions.GetAll() {
+				h.server.Topics.Subscribe(cl.ID, sub)
+			}
+			if cl.Closed() { // closed while being restored: undo, as mochi would
+				h.server.UnsubscribeClient(cl)
+				h.server.Clients.Delete(cl.ID)
+				return
+			}
+			h.log.Warn("restored a reconnected agent's session after a late teardown of its previous connection",
+				"agent", cl.ID, "remote", cl.Net.Remote)
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

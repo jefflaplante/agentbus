@@ -44,6 +44,19 @@ func (r *rateLimiter) allow(key string, now time.Time, rate float64, burst int) 
 	return true
 }
 
+// prune drops buckets idle for longer than idle. Keys can come from
+// remote addresses, so without this the map would grow without bound.
+// An idle bucket has refilled anyway, so dropping it changes nothing.
+func (r *rateLimiter) prune(now time.Time, idle time.Duration) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for k, b := range r.buckets {
+		if now.Sub(b.last) > idle {
+			delete(r.buckets, k)
+		}
+	}
+}
+
 // dedupe remembers (sender, envelope ID) pairs for a window so a
 // retransmitted envelope is delivered once.
 type dedupe struct {

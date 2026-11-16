@@ -52,23 +52,23 @@ func FormatItem(it Item, width int) string {
 	switch {
 	case it.Env != nil:
 		e := it.Env
-		route := AccentStyle.Render(e.From)
+		route := AccentStyle.Render(Clean(e.From))
 		switch {
 		case e.To != "":
-			route += SubtleStyle.Render(" → ") + TextStyle.Render(e.To)
+			route += SubtleStyle.Render(" → ") + TextStyle.Render(Clean(e.To))
 		case e.Capability != "":
-			route += SubtleStyle.Render(" → task:") + TextStyle.Render(e.Capability)
+			route += SubtleStyle.Render(" → task:") + TextStyle.Render(Clean(e.Capability))
 		default:
-			route += SubtleStyle.Render(" → ") + TextStyle.Render(strings.TrimPrefix(it.Topic, a2a.Root+"/"))
+			route += SubtleStyle.Render(" → ") + TextStyle.Render(Clean(strings.TrimPrefix(it.Topic, a2a.Root+"/")))
 		}
 		var tags []string
 		if e.Priority != "" {
-			tags = append(tags, priorityStyle(e.Priority).Render(string(e.Priority)))
+			tags = append(tags, priorityStyle(e.Priority).Render(Clean(string(e.Priority))))
 		}
 		if e.Event != "" {
-			tags = append(tags, WarnStyle.Render(e.Event))
+			tags = append(tags, WarnStyle.Render(Clean(e.Event)))
 		}
-		line = fmt.Sprintf("%s %s %s", ts, typeStyle(e.Type).Render(string(e.Type)), route)
+		line = fmt.Sprintf("%s %s %s", ts, typeStyle(e.Type).Render(Clean(string(e.Type))), route)
 		if len(tags) > 0 {
 			line += " " + strings.Join(tags, " ")
 		}
@@ -78,13 +78,13 @@ func FormatItem(it Item, width int) string {
 	case it.Presence != nil:
 		p := it.Presence
 		line = fmt.Sprintf("%s %s %s %s", ts, typeStyle("presence").Render("presence"),
-			AccentStyle.Render(p.Agent), StatusStyle(p.Status).Render(string(p.Status)))
+			AccentStyle.Render(Clean(p.Agent)), StatusStyle(p.Status).Render(Clean(string(p.Status))))
 		if len(p.Capabilities) > 0 {
-			line += SubtleStyle.Render(" [" + strings.Join(p.Capabilities, ",") + "]")
+			line += SubtleStyle.Render(" [" + Clean(strings.Join(p.Capabilities, ",")) + "]")
 		}
 	default:
 		line = fmt.Sprintf("%s %s %s  %s", ts, typeStyle("raw").Render("raw"),
-			TextStyle.Render(it.Topic), SubtleStyle.Render(preview(it.Raw)))
+			TextStyle.Render(Clean(it.Topic)), SubtleStyle.Render(preview(it.Raw)))
 	}
 	if width > 0 {
 		line = ansi.Truncate(line, width, "…") // never wrap: one item, one row
@@ -101,9 +101,9 @@ func preview(b []byte) string {
 	if json.Compact(&buf, b) == nil {
 		b = buf.Bytes()
 	}
-	s := strings.ReplaceAll(string(b), "\n", " ")
-	if len(s) > 120 {
-		s = s[:117] + "..."
+	s := Clean(string(b))
+	if r := []rune(s); len(r) > 120 {
+		s = string(r[:117]) + "..."
 	}
 	return s
 }

@@ -64,16 +64,24 @@ func (in *Inspector) View() string {
 		title = "presence card of " + in.Item.Presence.Agent
 	}
 	pct := fmt.Sprintf("%3.0f%%", in.vp.ScrollPercent()*100)
-	head := AccentStyle.Render("Inspect "+title) + SubtleStyle.Render("  "+in.Item.Topic+"  "+pct)
+	head := AccentStyle.Render("Inspect "+Clean(title)) + SubtleStyle.Render("  "+Clean(in.Item.Topic)+"  "+pct)
 	return head + "\n" + in.vp.View() + "\n" + HelpStyle.Render("↑/↓ pgup/pgdn scroll · y copy JSON · esc back")
 }
 
 func (in *Inspector) content() string {
+	// Every value shown here can come from another agent: kv cleans
+	// them; styled values are cleaned before styling.
 	kv := func(k, v string) string {
 		if v == "" {
 			return ""
 		}
-		return SubtleStyle.Render(fmt.Sprintf("%-15s", k)) + TextStyle.Render(v) + "\n"
+		return SubtleStyle.Render(fmt.Sprintf("%-15s", k)) + TextStyle.Render(Clean(v)) + "\n"
+	}
+	styled := func(k, v string) string {
+		if v == "" {
+			return ""
+		}
+		return SubtleStyle.Render(fmt.Sprintf("%-15s", k)) + v + "\n"
 	}
 	var b strings.Builder
 	switch {
@@ -86,16 +94,16 @@ func (in *Inspector) content() string {
 		b.WriteString(kv("from", e.From))
 		b.WriteString(kv("to", e.To))
 		b.WriteString(kv("topic", in.Item.Topic))
-		b.WriteString(kv("sent", e.TS.Local().Format("2006-01-02 15:04:05.000")+SubtleStyle.Render("  ("+since(e.TS)+" ago)")))
+		b.WriteString(styled("sent", TextStyle.Render(e.TS.Local().Format("2006-01-02 15:04:05.000"))+SubtleStyle.Render("  ("+since(e.TS)+" ago)")))
 		if e.TTLMillis > 0 {
 			exp := e.TS.Add(time.Duration(e.TTLMillis) * time.Millisecond)
-			b.WriteString(kv("ttl", (time.Duration(e.TTLMillis)*time.Millisecond).String()+SubtleStyle.Render("  (expires "+exp.Local().Format("15:04:05")+")")))
+			b.WriteString(styled("ttl", TextStyle.Render((time.Duration(e.TTLMillis)*time.Millisecond).String())+SubtleStyle.Render("  (expires "+exp.Local().Format("15:04:05")+")")))
 		}
 		b.WriteString(kv("correlation_id", e.CorrelationID))
 		b.WriteString(kv("reply_to", e.ReplyTo))
 		b.WriteString(kv("capability", e.Capability))
 		if e.Priority != "" {
-			b.WriteString(kv("priority", priorityStyle(e.Priority).Render(string(e.Priority))))
+			b.WriteString(styled("priority", priorityStyle(e.Priority).Render(Clean(string(e.Priority)))))
 		}
 		b.WriteString(kv("event", e.Event))
 		b.WriteString(kv("content_type", e.ContentType))
@@ -121,8 +129,8 @@ func (in *Inspector) content() string {
 		raw, _ := json.MarshalIndent(p, "", "  ")
 		in.raw = string(raw)
 		b.WriteString(kv("agent", p.Agent))
-		b.WriteString(kv("status", StatusStyle(p.Status).Render(string(p.Status))))
-		b.WriteString(kv("since", p.TS.Local().Format("2006-01-02 15:04:05")+SubtleStyle.Render("  ("+since(p.TS)+" ago)")))
+		b.WriteString(styled("status", StatusStyle(p.Status).Render(Clean(string(p.Status)))))
+		b.WriteString(styled("since", TextStyle.Render(p.TS.Local().Format("2006-01-02 15:04:05"))+SubtleStyle.Render("  ("+since(p.TS)+" ago)")))
 		b.WriteString(kv("description", p.Description))
 		b.WriteString(kv("capabilities", strings.Join(p.Capabilities, ", ")))
 		if p.Keys != nil {
@@ -130,7 +138,7 @@ func (in *Inspector) content() string {
 			if p.KeysPinned {
 				trust = OKStyle.Render("pinned in the broker config")
 			}
-			b.WriteString(kv("keys", trust))
+			b.WriteString(styled("keys", trust))
 			b.WriteString(kv("  sign", p.Keys.Sign))
 			b.WriteString(kv("  kex", p.Keys.KEX))
 		}
@@ -171,9 +179,12 @@ func prettyJSON(b []byte) string {
 	}
 	var v any
 	if json.Unmarshal(b, &v) != nil {
-		return TextStyle.Render(string(b))
+		return TextStyle.Render(CleanBlock(string(b)))
 	}
+	// MarshalIndent escapes C0 controls inside strings but not DEL or
+	// C1, so the output is cleaned too.
 	out, _ := json.MarshalIndent(v, "", "  ")
+	out = []byte(CleanBlock(string(out)))
 	var s strings.Builder
 	for _, line := range strings.Split(string(out), "\n") {
 		trimmed := strings.TrimLeft(line, " ")

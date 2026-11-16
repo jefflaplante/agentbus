@@ -28,7 +28,9 @@ CLI use, its own agent ID.
 
 ## Topics
 
-Everything lives under `a2a/v1/`. Publishes outside these shapes are rejected.
+Everything lives under `a2a/v1/`. Publishes outside these shapes are
+rejected, and so is any topic longer than 512 bytes. An empty retained
+message on a presence topic means the broker removed that agent.
 
 | Topic | Publish | Subscribe | Payload |
 |---|---|---|---|
@@ -96,13 +98,13 @@ Every inbox, task and event payload is one JSON object
 | Field | Required | Meaning |
 |---|---|---|
 | `v` | yes | Contract version, `1`. |
-| `id` | yes | Unique per sender, max 128 chars. The broker drops repeats of the same `from` + `id` within the dedupe window (default 10 min). |
+| `id` | yes | Unique per sender: 1-128 chars of `A-Z a-z 0-9 . _ : -`. IDs appear in the text put in front of messages for LLMs, so nothing else is allowed. The broker drops repeats of the same `from` + `id` within the dedupe window (default 10 min). |
 | `type` | yes | `request`, `response`, `event` or `error`. |
 | `from` | yes | Sender's agent ID. **Must equal the authenticated agent.** The broker rejects spoofing. |
 | `to` | inbox only | Recipient. Must equal the inbox owner. |
 | `ts` | yes | RFC 3339 send time. **Must be within 2 minutes of broker time** (`max_clock_skew`), or the envelope is rejected. Keep agent clocks in sync (NTP). |
 | `ttl_ms` | no | Drop after `ts + ttl_ms`, at most 24 hours. The broker rejects envelopes that are already expired, and receivers drop them on arrival. Handlers should give up when it runs out; the Go client gives handlers 5 minutes when no TTL is set. |
-| `correlation_id` | `response`, `error` | The `id` of the request being answered. |
+| `correlation_id` | `response`, `error` | The `id` of the request being answered. Same character rules as `id`. |
 | `reply_to` | no | Inbox topic for the reply. **Only the sender's own inbox is accepted**, so in v1 it is the same as leaving it out. (Pointing it elsewhere would let an agent make another agent's handler send into an inbox the sender itself can't reach.) |
 | `capability` | task only | Must equal the task topic's capability. |
 | `priority` | no | `high`, `normal`, `low` or `info`. How urgently the receiver should act; the receiver decides what each level means. conduit maps them to spawn and notify, spawn quietly, queue for the heartbeat, and record only. |
@@ -124,14 +126,19 @@ Every inbox, task and event payload is one JSON object
 
 Error bodies are `{"code": "...", "reason": "..."}`. Codes the Go client
 sends: `no_handler`, `handler_error`, `handler_panic` and `busy` (the
-agent is at its concurrent handler limit; retry later).
+agent is at its concurrent handler limit; retry later). A handler can
+choose its own code (1-64 chars of `a-z 0-9 _ . -`) by returning
+`client.Errorf(code, ...)`, or by raising `ReplyError` in the Python
+example.
 
 `send_to` doesn't block replies. The broker records each accepted request
 and lets one `response` or `error` with its `correlation_id` reach the
 requester's inbox, from the addressed agent (for a task, from any agent
-granted the capability), until the request's TTL ends. Without a TTL, the
-request stays open for `session_expiry`. The record is in memory, so it
-doesn't survive a broker restart.
+granted the capability), until the request's TTL ends, counted from the
+later of its `ts` and the moment the broker accepted it. Without a TTL,
+the request stays open for 24 hours. The record is in memory, so it
+doesn't survive a broker restart. Each requester can have 256 requests
+open; past that, its own oldest one stops being tracked.
 
 While a request is open, the broker refuses a reply to it from anyone
 other than its answerer: the addressed agent, or for a task, an agent
@@ -141,8 +148,9 @@ this for a task itself, because it doesn't know which worker took it.
 
 Requesters should still accept a reply only from the agent they addressed
 (any agent for task requests) or from `$broker`. That covers requests the
-broker isn't tracking: after a broker restart, or when its table of 65,536
-open requests is full. The Go client and the Python example both do.
+broker isn't tracking: after a broker restart, past the requester's 256
+open requests, or when the table of 65,536 is full. The Go client and the
+Python example both do.
 
 ### Broker rejections
 
@@ -161,6 +169,7 @@ in the PUBACK.
 | `expired` | `ts + ttl_ms` has already passed. |
 | `no_route` | The recipient isn't configured, or is offline with no session to queue messages in. |
 | `no_consumer` | Nobody is serving the task's capability. |
+| `queue_full` | The recipient's queue already holds `max_queued` messages (default 1024), usually because it has been offline a while. |
 
 Error envelopes and the matching log lines are throttled per agent (about
 2/s), so a flood of bad publishes is acknowledged and dropped without

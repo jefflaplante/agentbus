@@ -3,6 +3,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"slices"
 	"strconv"
@@ -39,8 +40,9 @@ var liveSettings = map[string]bool{"rate_per_second": true, "rate_burst": true, 
 // client setup, and broker settings. Every change is validated and saved
 // at once; a running broker reloads the file within a second.
 type ConfigModel struct {
-	loc confstore.Location
-	cfg *broker.Config
+	loc   confstore.Location
+	cfg   *broker.Config
+	stamp string // the file contents cfg was read from; see change
 
 	// Embedded makes quitting return CloseMsg (to a parent view) instead
 	// of ending the program.
@@ -66,18 +68,20 @@ type ConfigModel struct {
 	dark     bool
 
 	// form-bound values
-	fID, fCaps, fSendTo, fRate, fBurst, fSign, fKex, fValue string
-	fObserver                                               bool
+	fID, fCaps, fSendTo, fRate, fBurst, fSign, fKex, fValue, fCert, fKey string
+	fObserver                                                            bool
 }
 
 // NewConfigEditor opens the editor on the config at loc. If focus names an
 // agent, it starts with that agent selected.
 func NewConfigEditor(loc confstore.Location, focus string) (*ConfigModel, error) {
-	cfg, err := confstore.Load(loc.Path)
+	tx, err := confstore.Begin(loc)
 	if err != nil {
 		return nil, err
 	}
-	m := &ConfigModel{loc: loc, cfg: cfg, width: 110, height: 30, dark: true}
+	tx.Abort()
+	cfg := tx.Config
+	m := &ConfigModel{loc: loc, cfg: cfg, stamp: tx.Stamp(), width: 110, height: 30, dark: true}
 	m.agents = table.New(table.WithColumns(m.agentColumns()), table.WithFocused(true), table.WithHeight(12))
 	m.settings = table.New(table.WithColumns(m.settingColumns()), table.WithHeight(12))
 	restyleTable(&m.agents)
@@ -142,6 +146,10 @@ func AgentRate(a broker.AgentConfig) string {
 }
 
 func (m *ConfigModel) refresh() {
+	var sel string
+	if r := m.agents.SelectedRow(); len(r) > 0 {
+		sel = r[0]
+	}
 	rows := make([]table.Row, 0, len(m.cfg.Agents))
 	for _, a := range m.cfg.Agents {
 		tok := "missing"
@@ -155,6 +163,10 @@ func (m *ConfigModel) refresh() {
 		rows = append(rows, table.Row{a.ID, AgentRole(a), SendTo(a), AgentRate(a), tok, keys})
 	}
 	m.agents.SetRows(rows)
+	// Keep the cursor on the same agent when rows come and go.
+	if i := confstore.Find(m.cfg, sel); sel != "" && i >= 0 {
+		m.agents.SetCursor(i)
+	}
 
 	eff := *m.cfg
 	eff.ApplyDefaults()
@@ -177,6 +189,7 @@ var settingOrder = []string{
 	"listen", "tls_cert", "tls_key", "allow_insecure", "data_dir", "audit_file", "audit_max_bytes", "audit_keep",
 	"rate_per_second", "rate_burst", "max_clock_skew", "max_envelope_bytes", "max_queued", "session_expiry",
 	"dedupe_window", "max_connections", "max_connections_per_ip", "connect_timeout", "status_interval",
+	"metrics_listen",
 }
 
 func settingValues(c *broker.Config) map[string]string {
@@ -189,6 +202,7 @@ func settingValues(c *broker.Config) map[string]string {
 		"session_expiry": dur(c.SessionExpiry), "dedupe_window": dur(c.DedupeWindow),
 		"max_connections": strconv.Itoa(c.MaxConnections), "max_connections_per_ip": strconv.Itoa(c.MaxConnectionsPerIP),
 		"connect_timeout": dur(c.ConnectTimeout), "status_interval": dur(c.StatusInterval),
+		"metrics_listen": c.MetricsListen,
 	}
 }
 
@@ -197,20 +211,45 @@ func dur(d broker.Duration) string {
 	return strings.Trim(string(b), `"`)
 }
 
-// save validates and writes cfg; on success it becomes the editor's config.
-func (m *ConfigModel) save(cfg *broker.Config) error {
-	if err := confstore.Save(m.loc.Path, cfg); err != nil {
+// errReloaded reports that a change was refused because someone else
+// changed the file first.
+var errReloaded = errors.New("the config file was changed outside this editor: reloaded it and saved nothing; check and try again")
+
+// change applies fn to the config file as it is on disk now and saves
+// it, token files included (see confstore.Tx). If the file changed since
+// the editor last read it (agent rm or token rotation from the CLI, say),
+// it saves nothing and reloads instead, so a save never reverts changes
+// the user hasn't seen. Afterwards the editor shows the file as saved.
+func (m *ConfigModel) change(fn func(tx *confstore.Tx) error) error {
+	tx, err := confstore.Begin(m.loc)
+	if err != nil {
 		return err
 	}
-	m.cfg = cfg
-	m.refresh()
-	return nil
+	if tx.Stamp() != m.stamp {
+		tx.Abort()
+		m.cfg, m.stamp = tx.Config, tx.Stamp()
+		m.refresh()
+		return errReloaded
+	}
+	if err := fn(tx); err != nil {
+		tx.Abort()
+		return err
+	}
+	err = tx.Commit()
+	m.reload()
+	if errors.Is(err, confstore.ErrChanged) {
+		return errReloaded
+	}
+	return err
 }
 
-func (m *ConfigModel) clone() *broker.Config {
-	c := *m.cfg
-	c.Agents = slices.Clone(m.cfg.Agents)
-	return &c
+// reload rereads the config file.
+func (m *ConfigModel) reload() {
+	if tx, err := confstore.Begin(m.loc); err == nil {
+		tx.Abort()
+		m.cfg, m.stamp = tx.Config, tx.Stamp()
+		m.refresh()
+	}
 }
 
 func (m *ConfigModel) selectedAgent() (broker.AgentConfig, bool) {
@@ -380,12 +419,23 @@ func validList(allowStar bool) func(string) error {
 	}
 }
 
-func validNumber(s string) error {
+func validRate(s string) error {
 	if s == "" {
 		return nil
 	}
-	if _, err := strconv.ParseFloat(s, 64); err != nil {
-		return errors.New("a number, or blank for the broker default")
+	f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) || f < 0 {
+		return errors.New("a number of messages per second (0 or more), or blank for the broker default")
+	}
+	return nil
+}
+
+func validBurst(s string) error {
+	if s == "" {
+		return nil
+	}
+	if n, err := strconv.Atoi(strings.TrimSpace(s)); err != nil || n < 0 {
+		return errors.New("a whole number of messages (0 or more), or blank for the broker default")
 	}
 	return nil
 }
@@ -430,8 +480,8 @@ func (m *ConfigModel) agentForm(a *broker.AgentConfig) tea.Cmd {
 			Value(&m.fSendTo).Validate(validList(true)),
 		huh.NewConfirm().Title("Observer?").Description("read all traffic and broker status: for admin and monitoring tools only").
 			Value(&m.fObserver),
-		huh.NewInput().Title("Rate per second").Description("blank for the broker default").Value(&m.fRate).Validate(validNumber),
-		huh.NewInput().Title("Burst").Description("blank for the broker default").Value(&m.fBurst).Validate(validNumber),
+		huh.NewInput().Title("Rate per second").Description("blank for the broker default").Value(&m.fRate).Validate(validRate),
+		huh.NewInput().Title("Burst").Description("blank for the broker default").Value(&m.fBurst).Validate(validBurst),
 		huh.NewInput().Title("Pinned signing key").Description("Ed25519 public key, base64; optional").Value(&m.fSign),
 		huh.NewInput().Title("Pinned key-exchange key").Description("X25519 public key, base64; optional").Value(&m.fKex),
 	)
@@ -439,34 +489,45 @@ func (m *ConfigModel) agentForm(a *broker.AgentConfig) tea.Cmd {
 	return m.startForm(title, fields, func() error {
 		next := broker.AgentConfig{ID: strings.TrimSpace(m.fID), Capabilities: splitList(m.fCaps), SendTo: splitList(m.fSendTo),
 			Observer: m.fObserver}
+		// The validators ran on input, but the form can be submitted
+		// programmatically too: check again rather than save garbage.
+		if err := errors.Join(validRate(m.fRate), validBurst(m.fBurst)); err != nil {
+			return err
+		}
 		if m.fRate != "" {
-			next.RatePerSecond, _ = strconv.ParseFloat(m.fRate, 64)
+			next.RatePerSecond, _ = strconv.ParseFloat(strings.TrimSpace(m.fRate), 64)
 		}
 		if m.fBurst != "" {
-			b, _ := strconv.ParseFloat(m.fBurst, 64)
-			next.RateBurst = int(b)
+			next.RateBurst, _ = strconv.Atoi(strings.TrimSpace(m.fBurst))
 		}
 		if m.fSign != "" || m.fKex != "" {
 			next.Keys = &a2a.Keys{Sign: strings.TrimSpace(m.fSign), KEX: strings.TrimSpace(m.fKex)}
 		}
-		cfg := m.clone()
 		if adding {
-			file, err := confstore.AddAgent(cfg, m.loc, next)
+			var file string
+			err := m.change(func(tx *confstore.Tx) (err error) {
+				file, err = tx.AddAgent(next)
+				return err
+			})
 			if err != nil {
 				return err
 			}
-			if err := m.save(cfg); err != nil {
-				_ = os.Remove(file)
-				return err
+			if i := confstore.Find(m.cfg, next.ID); i >= 0 {
+				m.agents.SetCursor(i)
 			}
-			m.agents.SetCursor(len(m.cfg.Agents) - 1)
 			m.say("added %s · token in %s · press c for client setup", next.ID, file)
 			return nil
 		}
-		i := confstore.Find(cfg, orig)
-		next.TokenSHA256 = cfg.Agents[i].TokenSHA256
-		cfg.Agents[i] = next
-		if err := m.save(cfg); err != nil {
+		err := m.change(func(tx *confstore.Tx) error {
+			i := confstore.Find(tx.Config, orig)
+			if i < 0 {
+				return fmt.Errorf("agent %s no longer exists", orig)
+			}
+			next.TokenSHA256 = tx.Config.Agents[i].TokenSHA256
+			tx.Config.Agents[i] = next
+			return nil
+		})
+		if err != nil {
 			return err
 		}
 		m.say("saved %s · applied to the running broker", next.ID)
@@ -482,13 +543,9 @@ func (m *ConfigModel) askDelete(id string) {
 	}
 	m.confirm = fmt.Sprintf("Remove agent %s and its token file? A running broker disconnects it.%s", id, extra)
 	m.onYes = func() error {
-		cfg := m.clone()
-		i := confstore.Find(cfg, id)
-		cfg.Agents = slices.Delete(cfg.Agents, i, i+1)
-		if err := m.save(cfg); err != nil {
+		if err := m.change(func(tx *confstore.Tx) error { return tx.RemoveAgent(id) }); err != nil {
 			return err
 		}
-		_ = os.Remove(m.loc.TokenFile(id))
 		m.say("removed %s", id)
 		return nil
 	}
@@ -498,16 +555,15 @@ func (m *ConfigModel) askRotate(id string) {
 	m.mode = modeConfirm
 	m.confirm = fmt.Sprintf("Give %s a new token? Its current token stops working and a running broker disconnects it.", id)
 	m.onYes = func() error {
-		tok, hash := broker.NewToken()
-		cfg := m.clone()
-		cfg.Agents[confstore.Find(cfg, id)].TokenSHA256 = hash
-		if err := m.save(cfg); err != nil {
+		var file string
+		err := m.change(func(tx *confstore.Tx) (err error) {
+			file, err = tx.RotateToken(id)
+			return err
+		})
+		if err != nil {
 			return err
 		}
-		if err := confstore.WriteToken(m.loc.TokenFile(id), tok); err != nil {
-			return fmt.Errorf("config saved but writing the token file failed (rotate again): %w", err)
-		}
-		m.say("new token for %s in %s", id, m.loc.TokenFile(id))
+		m.say("new token for %s in %s", id, file)
 		return nil
 	}
 }
@@ -520,7 +576,11 @@ func (m *ConfigModel) editSetting() tea.Cmd {
 	key := m.keys[i]
 	eff := *m.cfg
 	eff.ApplyDefaults()
-	m.fValue = settingValues(&eff)[key]
+	vals := settingValues(&eff)
+	if key == "tls_cert" || key == "tls_key" {
+		return m.tlsForm(vals)
+	}
+	m.fValue = vals[key]
 	applies := "Takes effect after a restart."
 	if liveSettings[key] {
 		applies = "Applies to a running broker at once."
@@ -528,14 +588,36 @@ func (m *ConfigModel) editSetting() tea.Cmd {
 	return m.startForm("Edit "+key, []huh.Field{
 		huh.NewInput().Title(key).Description(applies + " Durations look like 10m or 72h.").Value(&m.fValue),
 	}, func() error {
-		cfg := m.clone()
-		if err := confstore.Set(cfg, key, m.fValue); err != nil {
-			return err
-		}
-		if err := m.save(cfg); err != nil {
+		if err := m.change(func(tx *confstore.Tx) error { return tx.Set(key, m.fValue) }); err != nil {
 			return err
 		}
 		m.say("%s = %s · %s", key, m.fValue, strings.ToLower(strings.TrimSuffix(applies, ".")))
+		return nil
+	})
+}
+
+// tlsForm edits tls_cert and tls_key together: the broker requires both
+// or neither, so changing one at a time could never turn TLS on or off.
+func (m *ConfigModel) tlsForm(vals map[string]string) tea.Cmd {
+	m.fCert, m.fKey = vals["tls_cert"], vals["tls_key"]
+	return m.startForm("Edit TLS", []huh.Field{
+		huh.NewInput().Title("tls_cert").Description("PEM certificate file; blank both to turn TLS off. Takes effect after a restart.").
+			Value(&m.fCert),
+		huh.NewInput().Title("tls_key").Description("PEM private key file for that certificate").Value(&m.fKey),
+	}, func() error {
+		cert, key := strings.TrimSpace(m.fCert), strings.TrimSpace(m.fKey)
+		err := m.change(func(tx *confstore.Tx) error {
+			tx.Config.TLSCert, tx.Config.TLSKey = cert, key
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		if cert == "" {
+			m.say("TLS off · takes effect after a restart")
+		} else {
+			m.say("TLS on with %s · takes effect after a restart", cert)
+		}
 		return nil
 	})
 }
@@ -601,12 +683,16 @@ func (m *ConfigModel) render() string {
 	case modeClient:
 		body, help = m.renderClient()
 	default:
+		leave := "q quit"
+		if m.Embedded {
+			leave = "q back"
+		}
 		if m.tab == 0 {
 			body = m.agents.View()
-			help = "↑/↓ select · enter edit · a add · c client setup · r rotate token · d remove · tab settings · q quit"
+			help = "↑/↓ select · enter edit · a add · c client setup · r rotate token · d remove · tab settings · " + leave
 		} else {
 			body = m.settings.View()
-			help = "↑/↓ select · enter edit · tab agents · q quit"
+			help = "↑/↓ select · enter edit · tab agents · " + leave
 		}
 	}
 	if m.mode == modeConfirm {

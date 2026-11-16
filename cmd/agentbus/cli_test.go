@@ -275,3 +275,79 @@ func isolate(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 }
+
+// A flag given on the command line beats a credential from the env.
+func TestExplicitTokenBeatsEnv(t *testing.T) {
+	b := startCLIBus(t)
+	t.Setenv("AGENTBUS_TOKEN_FILE", filepath.Join(t.TempDir(), "missing.token"))
+	if _, stderr, err := runCLI(t, "", "--url", b.url, "--agent", "cli", "--token", b.tokens["cli"], "agents", "--plain"); err != nil {
+		t.Errorf("--token lost to AGENTBUS_TOKEN_FILE: %v %s", err, stderr)
+	}
+	t.Setenv("AGENTBUS_TOKEN_FILE", "")
+	t.Setenv("AGENTBUS_TOKEN", "wrong")
+	if _, stderr, err := runCLI(t, "", "--url", b.url, "--agent", "cli", "--token-file", b.files["cli"], "agents", "--plain"); err != nil {
+		t.Errorf("--token-file lost to AGENTBUS_TOKEN: %v %s", err, stderr)
+	}
+}
+
+// Presence text from another agent can't forge rows or reach the
+// terminal as escape sequences.
+func TestAgentsPlainEscapesPresence(t *testing.T) {
+	b := startCLIBus(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c, err := client.Connect(ctx, client.Options{
+		BrokerURL: b.url, AgentID: "bob", Token: b.tokens["bob"], CleanSession: true,
+		Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Description: "nice\nmallory  online  forged\x1b]0;pwned\x07\x1b[2J",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(c.Close)
+	out, _, err := b.cli(t, "", "agents", "--once")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if strings.ContainsAny(out, "\x1b\x07") || len(lines) != 3 { // header, bob, cli
+		t.Errorf("agents output not escaped (%d lines):\n%q", len(lines), out)
+	}
+	if !strings.Contains(out, `nice\x0amallory`) {
+		t.Errorf("description not shown escaped:\n%s", out)
+	}
+}
+
+func TestPrintBodyEscapes(t *testing.T) {
+	var out bytes.Buffer
+	a := &app{stdout: &out}
+	for _, body := range []string{`"text\u001b]0;x\u0007 and \u009b"`, "{\"k\":\"del\u007f\"}", "not json \x1b[2J"} {
+		out.Reset()
+		printBody(a, json.RawMessage(body))
+		if strings.ContainsAny(out.String(), "\x1b\x07\x7f\u009b") {
+			t.Errorf("printBody(%q) = %q", body, out.String())
+		}
+	}
+	out.Reset()
+	printBody(a, json.RawMessage(`"line1\nline2"`))
+	if out.String() != "line1\nline2\n" {
+		t.Errorf("newlines in a string body: %q", out.String())
+	}
+}
+
+func TestHandleRejectsBadFlags(t *testing.T) {
+	isolate(t)
+	for _, args := range [][]string{
+		{"handle", "--exec", "true", "--types", "requests"},
+		{"handle", "--exec", "true", "--types", "request,"},
+		{"handle", "--exec", "true", "--timeout", "0"},
+		{"handle", "--exec", "true", "--timeout", "-5s"},
+	} {
+		if _, _, err := runCLI(t, "", args...); err == nil || !strings.Contains(err.Error(), "--t") {
+			t.Errorf("%v: %v", args, err)
+		}
+	}
+	if sel, err := handleTypes("request, event"); err != nil || !sel["request"] || !sel["event"] {
+		t.Errorf("request, event: %v %v", sel, err)
+	}
+}

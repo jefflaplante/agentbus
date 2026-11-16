@@ -39,6 +39,10 @@ type Config struct {
 	// AllowInsecure permits a plaintext (non-TLS) listener on a
 	// non-loopback address. Tokens then cross the network in clear.
 	AllowInsecure bool `json:"allow_insecure,omitempty"`
+	// MetricsListen, if set, serves /metrics (Prometheus text), /healthz
+	// and /readyz over plain HTTP on this address. Like listen, it must be
+	// loopback unless allow_insecure is set: the metrics name every agent.
+	MetricsListen string `json:"metrics_listen,omitempty"`
 	// ConnectTimeout is how long a new connection may take to send CONNECT.
 	ConnectTimeout Duration `json:"connect_timeout"`
 	// MaxConnections and MaxConnectionsPerIP cap open sockets, including
@@ -217,6 +221,10 @@ func (c *Config) Validate() error {
 	if c.TLSCert == "" && !c.AllowInsecure && !isLoopback(c.Listen) {
 		return fmt.Errorf("listen %q is not loopback and TLS is off: tokens would cross the network in clear; "+
 			"set tls_cert/tls_key, bind to 127.0.0.1, or set allow_insecure", c.Listen)
+	}
+	if c.MetricsListen != "" && !c.AllowInsecure && !isLoopback(c.MetricsListen) {
+		return fmt.Errorf("metrics_listen %q is not loopback: the metrics endpoint has no authentication; "+
+			"bind it to 127.0.0.1 (and scrape locally or through a proxy), or set allow_insecure", c.MetricsListen)
 	}
 	if c.MaxConnections < 1 || c.MaxConnectionsPerIP < 1 || c.MaxQueued < 1 {
 		return errors.New("max_connections, max_connections_per_ip and max_queued must be positive")

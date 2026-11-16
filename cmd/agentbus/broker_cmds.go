@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"strings"
@@ -35,13 +36,16 @@ broker starts right away; "agentbus status" on this machine connects as
 admin automatically.
 
 The running broker reloads the config when the file changes (checked
-every --watch) or on SIGHUP. Agents, tokens, permissions and rate limits
+every --watch; 0 turns file watching off) or on SIGHUP. Agents, tokens, permissions and rate limits
 apply at once; listener, TLS, storage and limit changes need a restart.`,
 		Example: `  agentbus serve                      # first run: creates a config and starts
   agentbus serve --config broker.json
   agentbus serve --log-format json`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if watch < 0 {
+				return fmt.Errorf("--watch must be 0 (reload on SIGHUP only) or a positive interval like 1s, not %s", watch)
+			}
 			var lvl slog.Level
 			if err := lvl.UnmarshalText([]byte(level)); err != nil {
 				return fmt.Errorf("--log-level: %w", err)
@@ -83,10 +87,19 @@ apply at once; listener, TLS, storage and limit changes need a restart.`,
 			}
 			log.Info("agentbus broker listening", "addr", b.Addr(), "agents", len(cfg.Agents), "tls", cfg.TLSCert != "",
 				"config", loc.Path, "data_dir", cfg.DataDir, "audit_file", cfg.AuditFile)
+			if m := b.MetricsAddr(); m != "" {
+				log.Info("metrics, health and readiness over HTTP", "metrics", "http://"+m+"/metrics",
+					"healthz", "http://"+m+"/healthz", "readyz", "http://"+m+"/readyz")
+			}
 			printServeHelp(a, loc, cfg, created)
 
 			ctx := cmd.Context()
-			go b.WatchConfig(ctx, loc.Path, watch)
+			if watch > 0 {
+				go b.WatchConfig(ctx, loc.Path, watch)
+			} else {
+				b.SetConfigPath(loc.Path)
+				log.Info("config file watching off (--watch 0); send SIGHUP to reload")
+			}
 			hup := make(chan os.Signal, 1)
 			signal.Notify(hup, syscall.SIGHUP)
 			defer signal.Stop(hup)
@@ -102,7 +115,7 @@ apply at once; listener, TLS, storage and limit changes need a restart.`,
 	}
 	c.Flags().StringVar(&format, "log-format", "text", "log format: text or json")
 	c.Flags().StringVar(&level, "log-level", "info", "log level: debug, info, warn or error")
-	c.Flags().DurationVar(&watch, "watch", time.Second, "how often to check the config file for changes")
+	c.Flags().DurationVar(&watch, "watch", time.Second, "how often to check the config file for changes (0: only reload on SIGHUP)")
 	return c
 }
 
@@ -144,10 +157,24 @@ func printServeHelp(a *app, loc confstore.Location, cfg *broker.Config, created 
 	}
 	lipgloss.Fprintln(out, "  agentbus config                  "+dim("# add agents, client setup, edit settings"))
 	lipgloss.Fprintln(out, "  agentbus config agent add NAME   "+dim("# the same, from a script"))
-	if !strings.HasPrefix(cfg.Listen, "127.") && !strings.HasPrefix(cfg.Listen, "localhost") && cfg.TLSCert == "" {
+	if !loopbackListen(cfg.Listen) && cfg.TLSCert == "" {
 		lipgloss.Fprintln(out, tui.WarnStyle.Render("  ! listening beyond loopback without TLS: set tls_cert and tls_key"))
 	}
 	lipgloss.Fprintln(out)
+}
+
+// loopbackListen reports whether a listen address only accepts local
+// connections: localhost, 127.0.0.0/8 or ::1 ([::1]:1883).
+func loopbackListen(listen string) bool {
+	host, _, err := net.SplitHostPort(listen)
+	if err != nil {
+		host = strings.Trim(listen, "[]")
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func newTokenCmd(a *app) *cobra.Command {

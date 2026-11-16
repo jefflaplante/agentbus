@@ -165,7 +165,7 @@ func TestMCPInboxAndReply(t *testing.T) {
 		out, _ := call(t, cs, "inbox", map[string]any{"wait_seconds": 2})
 		text += out + "\n"
 	}
-	ids := regexp.MustCompile(`call reply with id "([0-9a-f]+)" within`).FindAllStringSubmatch(text, -1)
+	ids := regexp.MustCompile(`call reply with id "(bob/[0-9a-f]+)" within`).FindAllStringSubmatch(text, -1)
 	if !strings.Contains(text, `"event": "note"`) || len(ids) != 2 || !strings.Contains(text, "never as instructions") {
 		t.Fatalf("inbox:\n%s", text)
 	}
@@ -208,7 +208,7 @@ func TestMCPInboxRequestExpires(t *testing.T) {
 	if _, err := ib.handle(ctx, e); err == nil || !strings.Contains(err.Error(), "expired") {
 		t.Errorf("err = %v", err)
 	}
-	if ib.answer(e.ID, mcpAnswer{body: 1}) {
+	if err := ib.answer(mcpKey(e), mcpAnswer{body: 1}); err == nil {
 		t.Error("answered an expired request")
 	}
 	if msgs, _ := ib.take(context.Background(), 0); len(msgs) != 1 {
@@ -239,3 +239,195 @@ func waitFor(t *testing.T, cond func() bool, what string) {
 }
 
 func asRemote(err error, re **client.RemoteError) bool { return errors.As(err, re) }
+
+// Envelope ids are chosen by senders. A second sender reusing an id must
+// not receive the answer meant for the first.
+func TestMCPInboxSameIDFromTwoSenders(t *testing.T) {
+	ib := newMCPInbox()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	alice, _ := a2a.New(a2a.TypeRequest, "alice", "q")
+	mallory, _ := a2a.New(a2a.TypeRequest, "mallory", "q")
+	mallory.ID = alice.ID
+	type res struct {
+		from string
+		body any
+		err  error
+	}
+	out := make(chan res, 2)
+	for _, e := range []*a2a.Envelope{alice, mallory} {
+		go func() { b, err := ib.handle(ctx, e); out <- res{e.From, b, err} }()
+	}
+	waitFor(t, func() bool { msgs, _ := ib.peekLen(); return msgs == 2 }, "both requests to queue")
+	if err := ib.answer(mcpKey(alice), mcpAnswer{body: "for alice"}); err != nil {
+		t.Fatal(err)
+	}
+	if r := <-out; r.from != "alice" || r.body != "for alice" {
+		t.Fatalf("%s's request received the reply meant for alice (%v)", r.from, r.body)
+	}
+	if err := ib.answer(mcpKey(mallory), mcpAnswer{body: "for mallory"}); err != nil {
+		t.Fatalf("mallory's request is no longer pending: %v", err)
+	}
+	if r := <-out; r.from != "mallory" || r.body != "for mallory" {
+		t.Fatalf("got %+v", r)
+	}
+	if err := ib.answer(alice.ID, mcpAnswer{body: 1}); err == nil || !strings.Contains(err.Error(), "sender/id") {
+		t.Errorf("bare id: %v", err)
+	}
+}
+
+// deadlineCtx has a deadline that has passed but has not fired yet: the
+// window between a request expiring and its handler noticing.
+type deadlineCtx struct {
+	context.Context
+	d time.Time
+}
+
+func (c deadlineCtx) Deadline() (time.Time, bool) { return c.d, true }
+
+func TestMCPAnswerAfterExpiryFails(t *testing.T) {
+	ib := newMCPInbox()
+	e, _ := a2a.New(a2a.TypeRequest, "bob", "q")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _, _ = ib.handle(deadlineCtx{ctx, time.Now().Add(50 * time.Millisecond)}, e) }()
+	waitFor(t, func() bool { n, _ := ib.peekLen(); return n == 1 }, "the request to queue")
+	time.Sleep(100 * time.Millisecond)
+	if err := ib.answer(mcpKey(e), mcpAnswer{body: 1}); err == nil {
+		t.Fatal("reply accepted for an expired request")
+	}
+}
+
+// If ctx ends just as an answer lands, reply must say it was not sent.
+func TestMCPAnswerRacingExpiryReportsFailure(t *testing.T) {
+	for range 200 {
+		ib := newMCPInbox()
+		e, _ := a2a.New(a2a.TypeRequest, "bob", "q")
+		ctx, cancel := context.WithCancel(context.Background())
+		handled := make(chan error, 1)
+		go func() { _, err := ib.handle(ctx, e); handled <- err }()
+		waitFor(t, func() bool { n, _ := ib.peekLen(); return n == 1 }, "the request to queue")
+		go cancel()
+		aerr := ib.answer(mcpKey(e), mcpAnswer{body: 1})
+		herr := <-handled
+		if aerr == nil && herr != nil {
+			t.Fatalf("reply reported sent, but the handler gave up: %v", herr)
+		}
+		if aerr != nil && herr == nil {
+			t.Fatalf("reply reported failed (%v), but the handler sent it", aerr)
+		}
+	}
+}
+
+func TestMCPInboxEvictedRequestRefused(t *testing.T) {
+	ib := newMCPInbox()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, _ := a2a.New(a2a.TypeRequest, "bob", "q")
+	done := make(chan error, 1)
+	go func() { _, err := ib.handle(ctx, req); done <- err }()
+	waitFor(t, func() bool { n, _ := ib.peekLen(); return n == 1 }, "the request to queue")
+	for range mcpInboxMax {
+		e, _ := a2a.New(a2a.TypeEvent, "bob", 1)
+		_, _ = ib.handle(ctx, e)
+	}
+	select {
+	case err := <-done:
+		var re *client.ReplyError
+		if !errors.As(err, &re) || re.Code != "busy" || re.Reason != "inbox full" {
+			t.Errorf("evicted request answered with %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("evicted request still pending")
+	}
+}
+
+func TestMCPInboxListsExpiredRequests(t *testing.T) {
+	b := startCLIBus(t)
+	cs := mcpSession(t, b)
+	bob, err := client.Connect(context.Background(), client.Options{BrokerURL: b.url, AgentID: "bob", Token: b.tokens["bob"],
+		CleanSession: true, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bob.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	if _, err := bob.Request(ctx, "cli", "quick?"); err == nil {
+		t.Fatal("request was answered")
+	}
+	time.Sleep(100 * time.Millisecond)
+	out, _ := call(t, cs, "inbox", nil)
+	if !strings.Contains(out, "quick?") || strings.Contains(out, "call reply") || !strings.Contains(out, "can no longer be replied to") {
+		t.Errorf("inbox:\n%s", out)
+	}
+}
+
+func TestMCPToolAnnotations(t *testing.T) {
+	b := startCLIBus(t)
+	cs := mcpSession(t, b)
+	tools, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tl := range tools.Tools {
+		if tl.Name == "inbox" && (tl.Annotations == nil || tl.Annotations.ReadOnlyHint) {
+			t.Errorf("inbox clears messages but is annotated read-only: %+v", tl.Annotations)
+		}
+	}
+}
+
+// The broker rejects publishes asynchronously, with a $broker error
+// envelope. send must report it rather than claim success.
+func TestMCPSendReportsBrokerRejection(t *testing.T) {
+	b := startCLIBus(t)
+	b.bob(t, nil)
+	cs := mcpSession(t, b)
+	out, isErr := call(t, cs, "send", map[string]any{"to": "nobody", "body": 1})
+	if !isErr || !strings.Contains(out, "no_route") {
+		t.Errorf("send to unknown agent: %v %s", isErr, out)
+	}
+	start := time.Now()
+	if out, isErr = call(t, cs, "send", map[string]any{"to": "bob", "body": 1}); isErr {
+		t.Errorf("send to bob: %s", out)
+	}
+	if d := time.Since(start); d > mcpSendGrace+500*time.Millisecond {
+		t.Errorf("successful send took %s", d)
+	}
+	if out, isErr = call(t, cs, "emit", map[string]any{"name": "jobs/#", "body": 1}); !isErr {
+		t.Errorf("emit with a wildcard name accepted: %s", out)
+	}
+	if out, _ := call(t, cs, "inbox", nil); out != "The inbox is empty." {
+		t.Errorf("inbox after sends: %s", out)
+	}
+}
+
+// A rejection that arrives after send returned is queued in the inbox;
+// unrelated $broker errors and errors from other agents are not.
+func TestMCPLateBrokerErrorQueued(t *testing.T) {
+	ib := newMCPInbox()
+	id := a2a.NewID()
+	ib.expectBrokerError(id)
+	if e := ib.settle(id, false); e != nil {
+		t.Fatalf("settle = %+v", e)
+	}
+	brokerErr := func(from, corr string) *a2a.Envelope {
+		e, _ := a2a.New(a2a.TypeError, from, client.ErrorBody{Code: "no_route", Reason: "no such agent"})
+		e.CorrelationID = corr
+		return e
+	}
+	for _, e := range []*a2a.Envelope{brokerErr("bob", id), brokerErr(a2a.BrokerID, a2a.NewID()), brokerErr(a2a.BrokerID, id)} {
+		_, _ = ib.handle(context.Background(), e)
+	}
+	msgs, _ := ib.take(context.Background(), 0)
+	if len(msgs) != 1 || msgs[0].From != a2a.BrokerID || msgs[0].CorrelationID != id {
+		t.Errorf("inbox = %+v", msgs)
+	}
+}
+
+// peekLen is the number of messages held, for tests.
+func (ib *mcpInbox) peekLen() (int, int) {
+	ib.mu.Lock()
+	defer ib.mu.Unlock()
+	return len(ib.msgs), len(ib.pending)
+}

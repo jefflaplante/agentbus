@@ -33,6 +33,8 @@ def main() -> int:
         sp.add_argument("--priority", default="", choices=["", "high", "normal", "low", "info"])
         if name != "send":
             sp.add_argument("--timeout", type=float, default=60)
+        else:
+            sp.add_argument("--wait", type=float, default=1, help="seconds to wait for a refusal from the broker")
     sp = sub.add_parser("emit")
     sp.add_argument("name")
     sp.add_argument("body", type=json.loads)
@@ -44,7 +46,7 @@ def main() -> int:
     with Agent.from_env("asker", clean_session=True) as agent:
         if args.cmd == "agents":
             time.sleep(0.5)  # retained presence cards arrive just after connecting
-            for card in sorted(agent.agents.values(), key=lambda c: c.get("agent", "")):
+            for card in sorted(agent.agents_snapshot().values(), key=lambda c: c.get("agent", "")):
                 caps = ", ".join(card.get("capabilities") or [])
                 print(f"{card['agent']:<20} {card.get('status', '?'):<8} {caps:<20} {card.get('description', '')}")
             return 0
@@ -63,7 +65,26 @@ def main() -> int:
             print(json.dumps(reply.get("body")))
             return 0
         if args.cmd == "send":
-            agent.send(args.agent, args.body, event=args.event, priority=args.priority)
+            # A refusal comes back later as an error in the inbox, so wait a
+            # moment for one before calling it sent.
+            errors: list = []
+            arrived = threading.Condition()
+
+            def inbox(env: dict) -> None:
+                if env.get("type") == "error":
+                    with arrived:
+                        errors.append(env)
+                        arrived.notify_all()
+
+            agent.inbox = inbox
+            sent = agent.send(args.agent, args.body, event=args.event, priority=args.priority)
+            with arrived:
+                arrived.wait_for(lambda: any(e.get("correlation_id") == sent for e in errors), args.wait)
+                refusal = next((e for e in errors if e.get("correlation_id") == sent), None)
+            if refusal is not None:
+                e = RemoteError(refusal)
+                print(f"error from {e.sender}: {e.code}: {e.reason}", file=sys.stderr)
+                return 1
             return 0
         if args.cmd == "emit":
             agent.emit(args.name, args.body)
@@ -79,3 +100,6 @@ if __name__ == "__main__":
         sys.exit(main())
     except KeyboardInterrupt:
         sys.exit(130)
+    except (ValueError, ConnectionError, TimeoutError) as e:
+        print(e, file=sys.stderr)
+        sys.exit(1)

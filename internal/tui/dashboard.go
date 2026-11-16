@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -35,8 +36,9 @@ type DashboardModel struct {
 	cards   []a2a.Presence
 	feed    feedState
 	counts  map[a2a.Type]int
-	focus   int // 0 agents, 1 traffic
-	cursor  int // selected agent
+	focus   int    // 0 agents, 1 traffic
+	cursor  int    // selected agent's index in cards
+	selID   string // selected agent, so the cursor follows it as cards change
 	inspect *Inspector
 	sub     tea.Model // embedded config editor
 	width   int
@@ -83,7 +85,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tickMsg:
 		m.cards, m.updated = m.Agents(), time.Time(msg)
-		m.cursor = min(m.cursor, max(0, len(m.cards)-1))
+		m.reseat()
 		return m, tick()
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -141,9 +143,9 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.focus == 0 {
 		switch k.String() {
 		case "up", "k":
-			m.cursor = max(0, m.cursor-1)
+			m.setCursor(m.cursor - 1)
 		case "down", "j":
-			m.cursor = min(len(m.cards)-1, m.cursor+1)
+			m.setCursor(m.cursor + 1)
 		case "enter":
 			if p, ok := m.selectedCard(); ok {
 				if m.feed.filterName == p.Agent {
@@ -181,6 +183,23 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *DashboardModel) setCursor(i int) {
+	m.cursor = max(0, min(i, len(m.cards)-1))
+	m.selID = ""
+	if m.cursor < len(m.cards) {
+		m.selID = m.cards[m.cursor].Agent
+	}
+}
+
+// reseat moves the cursor to the selected agent after the cards change.
+func (m *DashboardModel) reseat() {
+	if i := slices.IndexFunc(m.cards, func(p a2a.Presence) bool { return p.Agent == m.selID }); m.selID != "" && i >= 0 {
+		m.cursor = i
+		return
+	}
+	m.setCursor(m.cursor)
+}
+
 func (m DashboardModel) selectedCard() (a2a.Presence, bool) {
 	if m.cursor < 0 || m.cursor >= len(m.cards) {
 		return a2a.Presence{}, false
@@ -198,7 +217,7 @@ func (m DashboardModel) View() tea.View {
 func (m DashboardModel) render() string {
 	width, height := max(m.width, 60), max(m.height, 12)
 	header := TitleStyle.Render("agentbus · dashboard") + " " +
-		SubtleStyle.Render("as ") + AccentStyle.Render(m.Agent) + SubtleStyle.Render(" · "+m.Scope)
+		SubtleStyle.Render("as ") + AccentStyle.Render(Clean(m.Agent)) + SubtleStyle.Render(" · "+m.Scope)
 	if m.summary != "" {
 		header += "\n" + SubtleStyle.Render(" "+m.summary)
 	}
@@ -234,18 +253,27 @@ func (m DashboardModel) render() string {
 	}
 	on, off := Counts(m.cards)
 	left := []string{title("Agents", m.focus == 0) + SubtleStyle.Render(fmt.Sprintf("  %d up · %d down", on, off)), ""}
+	// Scroll the agent list so the cursor row stays visible.
+	rows := max(1, inner-len(left))
+	first := 0
+	if m.cursor >= rows {
+		first = m.cursor - rows + 1
+	}
 	for i, p := range m.cards {
+		if i < first || i >= first+rows {
+			continue
+		}
 		mark := "  "
 		if i == m.cursor && m.focus == 0 {
 			mark = AccentStyle.Render("▌ ")
 		}
 		dot := StatusStyle(p.Status).Render("●")
-		line := mark + dot + " " + TextStyle.Render(p.Agent)
+		line := mark + dot + " " + TextStyle.Render(Clean(p.Agent))
 		if m.feed.filterName == p.Agent {
 			line += WarnStyle.Render(" ⧩")
 		}
 		if len(p.Capabilities) > 0 {
-			line += SubtleStyle.Render(" " + strings.Join(p.Capabilities, ","))
+			line += SubtleStyle.Render(" " + Clean(strings.Join(p.Capabilities, ",")))
 		}
 		left = append(left, ansi.Truncate(line, leftWidth-panelPadX, "…"))
 	}
@@ -255,7 +283,7 @@ func (m DashboardModel) render() string {
 
 	trafficTitle := title("Traffic", m.focus == 1)
 	if m.feed.filterName != "" {
-		trafficTitle += WarnStyle.Render(" · only " + m.feed.filterName)
+		trafficTitle += WarnStyle.Render(" · only " + Clean(m.feed.filterName))
 	}
 	right := []string{ansi.Truncate(trafficTitle+"  "+SubtleStyle.Render(stats), rightWidth-panelPadX, "…"), ""}
 	lines := m.feed.lines(rightWidth-panelPadX, inner-2) // minus the title and blank rows

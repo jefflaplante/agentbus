@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -160,5 +161,150 @@ func TestServeBootstrapsWithNoConfig(t *testing.T) {
 	}
 	if _, err := os.Stat(confstore.Resolve("").TokenFile("admin")); err != nil {
 		t.Error("no admin token written")
+	}
+}
+
+// A config change that fails to save leaves the token files alone.
+func TestConfigAgentRmFailedSaveKeepsToken(t *testing.T) {
+	isolate(t)
+	if _, _, err := runCLI(t, "", "config", "init"); err != nil {
+		t.Fatal(err)
+	}
+	loc := confstore.Resolve("")
+	before, _ := confstore.ReadToken(loc, "admin")
+	if _, _, err := runCLI(t, "", "config", "agent", "rm", "admin"); err == nil {
+		t.Fatal("removed the last agent")
+	}
+	if tok, ok := confstore.ReadToken(loc, "admin"); !ok || tok != before {
+		t.Error("failed rm deleted admin.token")
+	}
+	cfg, _ := confstore.Load(loc.Path)
+	if broker.HashToken(before) != cfg.Agents[0].TokenSHA256 {
+		t.Error("token file and config out of step")
+	}
+}
+
+func TestConfigSetSeveral(t *testing.T) {
+	isolate(t)
+	if _, _, err := runCLI(t, "", "config", "init"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runCLI(t, "", "config", "set", "tls_cert", "/x/cert.pem"); err == nil {
+		t.Error("tls_cert without tls_key saved")
+	}
+	_, stderr, err := runCLI(t, "", "config", "set", "tls_cert", "/x/cert.pem", "tls_key", "/x/key.pem", "listen", "0.0.0.0:8883")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := confstore.Load(confstore.Resolve("").Path)
+	if cfg.TLSCert != "/x/cert.pem" || cfg.TLSKey != "/x/key.pem" || cfg.Listen != "0.0.0.0:8883" {
+		t.Errorf("cfg = %+v", cfg)
+	}
+	if strings.Count(stderr, "✓") != 3 {
+		t.Errorf("stderr = %q", stderr)
+	}
+	for _, args := range [][]string{{"config", "set"}, {"config", "set", "listen"}, {"config", "set", "listen", "127.0.0.1:1", "rate_burst"}} {
+		if _, _, err := runCLI(t, "", args...); err == nil {
+			t.Errorf("%v accepted", args)
+		}
+	}
+	// A bad pair saves none of them.
+	if _, _, err := runCLI(t, "", "config", "set", "rate_per_second", "5", "max_queued", "lots"); err == nil {
+		t.Error("bad value accepted")
+	}
+	if cfg, _ := confstore.Load(confstore.Resolve("").Path); cfg.RatePerSecond == 5 {
+		t.Error("partial set saved")
+	}
+}
+
+func TestConfigErrorsExplain(t *testing.T) {
+	isolate(t)
+	if _, _, err := runCLI(t, "", "config", "agent", "add", "w"); err == nil || !strings.Contains(err.Error(), "agentbus config init") {
+		t.Errorf("add with no config: %v", err)
+	}
+	if _, _, err := runCLI(t, "", "config", "init"); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := runCLI(t, "", "config", "set", "data_dir", "123")
+	if err == nil || !strings.Contains(err.Error(), "a string") || strings.Contains(err.Error(), "json") {
+		t.Errorf("data_dir 123: %v", err)
+	}
+}
+
+// A relative --config gives absolute data_dir and token paths, and
+// config path shows the config's own data_dir and audit_file.
+func TestRelativeConfigPath(t *testing.T) {
+	isolate(t)
+	t.Chdir(t.TempDir())
+	wd, _ := os.Getwd()
+	if _, _, err := runCLI(t, "", "--config", "rel/broker.json", "config", "init"); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := confstore.Load(filepath.Join(wd, "rel", "broker.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(wd, "rel", "state", "data"); cfg.DataDir != want {
+		t.Errorf("data_dir %q, want %q", cfg.DataDir, want)
+	}
+	t.Setenv("AGENTBUS_CONFIG", "rel/broker.json")
+	if _, _, err := runCLI(t, "", "config", "set", "data_dir", "/srv/agentbus"); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err := runCLI(t, "", "config", "path")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{filepath.Join(wd, "rel", "broker.json"), filepath.Join(wd, "rel", "tokens"), "data    /srv/agentbus",
+		"audit   " + filepath.Join(wd, "rel", "state", "audit.jsonl")} {
+		if !strings.Contains(out, want) {
+			t.Errorf("config path missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestServeWatchFlag(t *testing.T) {
+	isolate(t)
+	if _, _, err := runCLI(t, "", "serve", "--watch", "-1s"); err == nil || !strings.Contains(err.Error(), "--watch") {
+		t.Errorf("negative --watch: %v", err)
+	}
+	loc := confstore.Resolve("")
+	cfg, err := confstore.Bootstrap(loc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Listen = freePort(t)
+	if err := confstore.Save(loc.Path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	sw := &syncWriter{w: &bytes.Buffer{}}
+	a := &app{stdin: strings.NewReader(""), stdout: sw, stderr: sw}
+	root := newRootCmd(a)
+	root.SetArgs([]string{"serve", "--watch", "0"})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- root.ExecuteContext(ctx) }()
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(sw.String(), "SIGHUP") && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	time.Sleep(100 * time.Millisecond) // a panicking watcher would have fired by now
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sw.String(), "watching off") {
+		t.Errorf("log:\n%s", sw.String())
+	}
+}
+
+func TestLoopbackListen(t *testing.T) {
+	for listen, want := range map[string]bool{
+		"127.0.0.1:1883": true, "localhost:1883": true, "[::1]:1883": true, "::1": true, "127.5.5.5:1": true,
+		"0.0.0.0:1883": false, ":1883": false, "[::]:1883": false, "10.0.0.1:1883": false, "127.example.com:1": false,
+	} {
+		if got := loopbackListen(listen); got != want {
+			t.Errorf("%s: %v", listen, got)
+		}
 	}
 }

@@ -23,6 +23,19 @@ const SharePrefix = "$share/"
 
 var nameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 
+// MaxTopicLen caps a topic or filter. Contract topics are short (agent IDs
+// and capabilities are at most 64 chars); the cap keeps an event name from
+// carrying kilobytes into every log line and audit record.
+const MaxTopicLen = 512
+
+// idRE is what an envelope id or correlation_id may contain. IDs appear in
+// the text put in front of messages for LLMs (UntrustedPreamble), so they
+// must not be able to carry newlines or prose.
+var idRE = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
+
+// ValidID reports whether s is a valid envelope id or correlation_id.
+func ValidID(s string) bool { return idRE.MatchString(s) }
+
 // ValidName reports whether s is a valid agent ID or capability name:
 // 1-64 chars of lowercase letters, digits, '.', '_' or '-', not starting
 // with punctuation.
@@ -91,6 +104,9 @@ type Topic struct {
 // prefix is removed first. It returns an error for anything outside the
 // contract namespace or not matching a known shape.
 func ParseTopic(s string) (Topic, error) {
+	if len(s) > MaxTopicLen {
+		return Topic{}, fmt.Errorf("topic is %d bytes; the limit is %d", len(s), MaxTopicLen)
+	}
 	s = StripShare(s)
 	if s != Root && !strings.HasPrefix(s, Root+"/") {
 		return Topic{}, fmt.Errorf("topic %q is outside %s", s, Root)

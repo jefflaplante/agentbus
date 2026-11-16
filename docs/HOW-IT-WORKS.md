@@ -40,8 +40,8 @@ OnConnect                              # refuse a CONNECT that carries a Will
 OnConnectAuthenticate                  # client ID == username == agent; token hash
 
 OnPublish(client, packet)
-  ref = peek(payload)                  # id + type, for a correlated error
-  rate.allow(agent)                    # first, so rejected publishes cost tokens too
+  st = state()                         # one config snapshot for the whole decision
+  rate.allow(agent)                    # first, before any parsing
   authorizeWrite(agent, topic)         # own presence/events; inbox allowed by send_to,
                                        #   or (after parsing) one reply to an open request
   strip MQTT 5 properties
@@ -57,14 +57,16 @@ OnPublish(client, packet)
   ValidateFor(topic, agent)            # from == agent, to == inbox owner,
                                        # reply_to == own inbox, task/event types
   ts within max_clock_skew; not expired
-  route: recipient configured and has a session; task has a worker
+  route: recipient configured, has a session, queue not full; task has a worker
   dedupe(from/id)  -> duplicate: ack, drop silently
+  if reply: claim the open request     # atomic: only its answerer, only once
   payload = re-encoded envelope        # receivers see exactly what was checked
+  if request: open an entry            # for reply checks and request metrics
   log one line (action=accept, no body), deliver
 
 on any failure: reject(code)
   ack and drop                         # a QoS 1 sender won't retry
-  throttled per agent:
+  throttled per agent (the payload is only peeked at here):
     log action=reject with the code
     send an error envelope from $broker to the sender's inbox,
     with correlation_id = the rejected id
@@ -153,6 +155,10 @@ serve
       agents, rates, clock skew    -> new hookState, swapped in atomically
       listen, TLS, storage, limits -> restart_needed (kept as they are)
       removed agents, rotated tokens -> DisconnectClient
+      removed agents               -> card cleared, session and queue dropped
+      changed agents               -> card re-stamped (grants, pinned keys)
+  OnSessionEstablished re-checks every login against the current config,
+  so a login that raced the reload can't keep a removed or rotated identity
 ```
 
 Every check reads one immutable snapshot (`hookState`). A reload never
@@ -160,6 +166,35 @@ leaves a check half on the old config and half on the new. Revoked
 capabilities take effect at the next task: shared-subscription members
 without the grant are pruned before a worker is picked, so a stale stored
 subscription can't receive tasks.
+
+## Request tracking and metrics
+
+```text
+request accepted   -> open entry {requester, id, answerer, start, expiry}
+                      256 per requester (own oldest evicted), 65,536 total
+reply accepted     -> claim the entry: answerer only, once
+                      outcome answered or errored; latency into a histogram
+every second       -> sweep expired entries: outcome expired, audit "expire"
+```
+
+The same table enforces who may reply and records what happened to each
+request, per target (`agent:<id>` or `task:<capability>`). `status`
+shows it under `requests`. With `metrics_listen` set, the broker also
+serves it over HTTP:
+
+```text
+GET /healthz   200 while serving
+GET /readyz    200 once accepting connections and the last reload succeeded
+GET /metrics   Prometheus text: agentbus_requests_open, agentbus_requests_total
+               {outcome=answered|errored|expired|evicted},
+               agentbus_request_duration_seconds (histogram),
+               per-agent online/queued/accepted/rejected, rejections by code,
+               auth failures, reloads, MQTT traffic
+```
+
+Label values come only from the config (agent IDs and capabilities) and
+fixed code lists, never from message content, so a sender can't create
+new series.
 
 ## Broker status
 

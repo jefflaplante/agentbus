@@ -30,6 +30,9 @@ type Status struct {
 	Decisions Decisions     `json:"decisions"`
 	Config    StatusConfig  `json:"config"`
 	Agents    []AgentStatus `json:"agents"`
+	// Requests are per-target request outcomes: open, answered, errored,
+	// expired, and reply latency.
+	Requests []RequestStats `json:"requests,omitempty"`
 }
 
 // StatusConfig describes the config file and its reloads.
@@ -203,6 +206,7 @@ func (b *Broker) Status() Status {
 		st.Agents = append(st.Agents, as)
 	}
 	c.mu.Unlock()
+	st.Requests = b.hook.open.snapshot()
 	return st
 }
 

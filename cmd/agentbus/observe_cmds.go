@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"text/tabwriter"
 	"time"
@@ -47,6 +49,21 @@ func (a *app) editAgentFunc() func(string) tea.Model {
 		m.Embedded = true
 		return m
 	}
+}
+
+// lineEncoder writes JSON lines. Handlers for different subscriptions
+// run concurrently, so writes are serialized to keep lines whole.
+type lineEncoder struct {
+	mu  sync.Mutex
+	enc *json.Encoder
+}
+
+func newLineEncoder(w io.Writer) *lineEncoder { return &lineEncoder{enc: json.NewEncoder(w)} }
+
+func (l *lineEncoder) Encode(v any) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.enc.Encode(v)
 }
 
 // feed is a bounded channel of items for a TUI; it drops rather than
@@ -119,7 +136,7 @@ filters, or {"topic":...,"payload":...} for other filters.`,
 			defer c.Close()
 			ctx := cmd.Context()
 			items := make(feed, 1024)
-			enc := json.NewEncoder(a.stdout)
+			enc := newLineEncoder(a.stdout)
 
 			t, perr := a2a.ParseTopic(filter)
 			if perr == nil && t.Kind == a2a.KindEvent {
@@ -178,7 +195,7 @@ On a terminal this is a live feed; piped or with --plain, JSON lines.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			tuiMode := a.interactive()
 			items := make(feed, 1024)
-			enc := json.NewEncoder(a.stdout)
+			enc := newLineEncoder(a.stdout)
 			c, err := a.connect(cmd.Context(), tuiMode, func(o *client.Options) {
 				o.CleanSession = false
 				o.Inbox = func(_ context.Context, e *a2a.Envelope) (any, error) {

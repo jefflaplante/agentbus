@@ -6,7 +6,7 @@
 <circle cx="40" cy="15" r="6" fill="#FEBC2E"/>
 <circle cx="60" cy="15" r="6" fill="#28C840"/>
 <text x="532" y="20" fill="#9A9AAA" text-anchor="middle">zsh</text>
-<clipPath id="term-67066c3c"><rect x="16.0" y="44" width="1032.0" height="428"/></clipPath><g clip-path="url(#term-67066c3c)">
+<clipPath id="term-6f6ef9ed"><rect x="16.0" y="44" width="1032.0" height="428"/></clipPath><g clip-path="url(#term-6f6ef9ed)">
 <text x="16.0" y="57.0" fill="#3DD68C" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">❯</text>
 <text x="33.2" y="57.0" fill="#E4E4E4" textLength="206.4" lengthAdjust="spacingAndGlyphs">source demo/.run/you.env</text>
 <text x="16.0" y="75.0" fill="#3DD68C" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">❯</text>
@@ -14,10 +14,10 @@
 <text x="16.0" y="93.0" fill="#3DD68C" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">✓</text>
 <text x="24.6" y="93.0" fill="#D6D6E0" textLength="129.0" lengthAdjust="spacingAndGlyphs"> response from </text>
 <text x="153.6" y="93.0" fill="#9F86FF" font-weight="bold" textLength="51.6" lengthAdjust="spacingAndGlyphs">worker</text>
-<text x="205.2" y="93.0" fill="#D6D6E0" textLength="77.4" lengthAdjust="spacingAndGlyphs"> in 148ms</text>
+<text x="205.2" y="93.0" fill="#D6D6E0" textLength="77.4" lengthAdjust="spacingAndGlyphs"> in 166ms</text>
 <text x="16.0" y="111.0" fill="#D6D6E0" textLength="8.6" lengthAdjust="spacingAndGlyphs">{</text>
 <text x="16.0" y="129.0" fill="#D6D6E0" textLength="129.0" lengthAdjust="spacingAndGlyphs">  &#34;op&#34;: &#34;pong&#34;,</text>
-<text x="16.0" y="147.0" fill="#D6D6E0" textLength="344.0" lengthAdjust="spacingAndGlyphs">  &#34;time&#34;: &#34;2026-11-15T23:16:28.198465Z&#34;,</text>
+<text x="16.0" y="147.0" fill="#D6D6E0" textLength="344.0" lengthAdjust="spacingAndGlyphs">  &#34;time&#34;: &#34;2026-11-16T03:15:10.999202Z&#34;,</text>
 <text x="16.0" y="165.0" fill="#D6D6E0" textLength="172.0" lengthAdjust="spacingAndGlyphs">  &#34;worker&#34;: &#34;worker&#34;</text>
 <text x="16.0" y="183.0" fill="#D6D6E0" textLength="8.6" lengthAdjust="spacingAndGlyphs">}</text>
 <text x="16.0" y="219.0" fill="#3DD68C" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">❯</text>
@@ -26,7 +26,7 @@
 <text x="33.2" y="237.0" fill="#FF6B6B" font-weight="bold" textLength="120.4" lengthAdjust="spacingAndGlyphs">not_authorized</text>
 <text x="153.6" y="237.0" fill="#D6D6E0" textLength="51.6" lengthAdjust="spacingAndGlyphs"> from </text>
 <text x="205.2" y="237.0" fill="#9F86FF" font-weight="bold" textLength="60.2" lengthAdjust="spacingAndGlyphs">$broker</text>
-<text x="265.4" y="237.0" fill="#D6D6E0" textLength="94.6" lengthAdjust="spacingAndGlyphs"> after 34ms</text>
+<text x="265.4" y="237.0" fill="#D6D6E0" textLength="94.6" lengthAdjust="spacingAndGlyphs"> after 35ms</text>
 <text x="16.0" y="255.0" fill="#D6D6E0" textLength="326.8" lengthAdjust="spacingAndGlyphs">  not allowed to send to &#34;coordinator&#34;</text>
 <text x="16.0" y="291.0" fill="#3DD68C" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">❯</text>
 <text x="33.2" y="291.0" fill="#E4E4E4" textLength="946.0" lengthAdjust="spacingAndGlyphs">agentbus task -c textstats --body &#39;{&#34;text&#34;:&#34;to be or not to be&#34;}&#39; --plain | jq -c &#39;.body | {words, top_words}&#39;</text>
@@ -34,10 +34,10 @@
 <text x="16.0" y="345.0" fill="#3DD68C" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">❯</text>
 <text x="33.2" y="345.0" fill="#E4E4E4" textLength="197.8" lengthAdjust="spacingAndGlyphs">agentbus agents --plain</text>
 <text x="16.0" y="363.0" fill="#D6D6E0" textLength="602.0" lengthAdjust="spacingAndGlyphs">AGENT        STATUS   SINCE            CAPABILITIES  KEYS  DESCRIPTION</text>
-<text x="16.0" y="381.0" fill="#D6D6E0" textLength="645.0" lengthAdjust="spacingAndGlyphs">coordinator  offline  Nov 15 15:16:27                      Demo coordinator</text>
-<text x="16.0" y="399.0" fill="#D6D6E0" textLength="507.4" lengthAdjust="spacingAndGlyphs">explorer     online   Nov 15 15:16:25                      </text>
-<text x="16.0" y="417.0" fill="#D6D6E0" textLength="894.4" lengthAdjust="spacingAndGlyphs">worker       online   Nov 15 15:16:25  textstats           Demo worker: text statistics and ping/reverse</text>
-<text x="16.0" y="435.0" fill="#D6D6E0" textLength="894.4" lengthAdjust="spacingAndGlyphs">worker-2     online   Nov 15 15:16:25  textstats           Demo worker: text statistics and ping/reverse</text>
-<text x="16.0" y="453.0" fill="#D6D6E0" textLength="507.4" lengthAdjust="spacingAndGlyphs">you          online   Nov 15 15:16:28                      </text>
+<text x="16.0" y="381.0" fill="#D6D6E0" textLength="645.0" lengthAdjust="spacingAndGlyphs">coordinator  offline  Nov 15 19:15:10                      Demo coordinator</text>
+<text x="16.0" y="399.0" fill="#D6D6E0" textLength="507.4" lengthAdjust="spacingAndGlyphs">explorer     online   Nov 15 19:15:08                      </text>
+<text x="16.0" y="417.0" fill="#D6D6E0" textLength="894.4" lengthAdjust="spacingAndGlyphs">worker       online   Nov 15 19:15:08  textstats           Demo worker: text statistics and ping/reverse</text>
+<text x="16.0" y="435.0" fill="#D6D6E0" textLength="894.4" lengthAdjust="spacingAndGlyphs">worker-2     online   Nov 15 19:15:08  textstats           Demo worker: text statistics and ping/reverse</text>
+<text x="16.0" y="453.0" fill="#D6D6E0" textLength="507.4" lengthAdjust="spacingAndGlyphs">you          online   Nov 15 19:15:10                      </text>
 </g>
 </svg>

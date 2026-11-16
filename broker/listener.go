@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"net/netip"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -36,9 +37,16 @@ type guardedListener struct {
 	gate     chan struct{}
 	gateOnce sync.Once
 
-	mu    sync.Mutex
-	total int
-	perIP map[string]int
+	mu         sync.Mutex
+	total      int
+	perIP      map[string]int
+	pending    int            // connections that haven't logged in yet
+	pendingIP  map[string]int // the same, per IP key
+	maxPending int
+	maxPendIP  int
+	conns      map[*trackedConn]struct{} // every open connection, for Close
+	lastWarn   time.Time                 // "limit reached" logs, throttled
+	refused    int                       // refusals since the last warning
 
 	// unread counts accepted connections mochi hasn't read from yet. mochi
 	// sets up the client (reading server state that Close writes) before
@@ -51,8 +59,21 @@ type guardedListener struct {
 // setting up the client for this connection.
 type trackedConn struct {
 	net.Conn
-	once sync.Once
-	done func()
+	once     sync.Once
+	done     func()
+	authOnce sync.Once
+	onAuth   func()
+	// Guarded by the listener's mu.
+	ip       string
+	accepted time.Time
+	authed   bool
+}
+
+// authenticated moves the connection out of the pre-auth budget.
+func (c *trackedConn) authenticated() {
+	if c.onAuth != nil {
+		c.authOnce.Do(c.onAuth)
+	}
 }
 
 func (c *trackedConn) Read(p []byte) (int, error) {
@@ -70,8 +91,14 @@ func newGuardedListener(id, address string, tlsConfig *tls.Config, cfg *Config) 
 		id: id, address: address, tlsConfig: tlsConfig,
 		timeout:  time.Duration(cfg.ConnectTimeout),
 		maxTotal: cfg.MaxConnections, maxPerIP: cfg.MaxConnectionsPerIP,
-		perIP: map[string]int{},
-		gate:  make(chan struct{}),
+		perIP: map[string]int{}, pendingIP: map[string]int{},
+		conns: map[*trackedConn]struct{}{},
+		// Connections that haven't authenticated get a quarter of each
+		// budget, so idle or slow sockets from anyone who can reach the
+		// port can't take the slots configured agents need.
+		maxPending: max(8, cfg.MaxConnections/4),
+		maxPendIP:  max(2, cfg.MaxConnectionsPerIP/4),
+		gate:       make(chan struct{}),
 	}
 }
 
@@ -109,19 +136,24 @@ func (l *guardedListener) Serve(establish listeners.EstablishFn) {
 		if err != nil {
 			return
 		}
-		ip := remoteIP(conn)
-		if !l.acquire(ip) {
-			l.log.Warn("connection refused: limit reached", "remote", ip)
+		ip := ipKey(remoteIP(conn))
+		tc := &trackedConn{Conn: conn, done: l.unread.Done, ip: ip, accepted: time.Now()}
+		tc.onAuth = func() { l.authed(tc) }
+		// acquire re-checks end under l.mu and registers with unread there,
+		// so stopAccepting can't finish waiting between the two.
+		if refused := l.acquire(ip, tc); refused != "" {
+			l.warnRefused(ip, refused)
 			_ = conn.Close()
+			if l.end.Load() {
+				return
+			}
 			continue
 		}
 		// mochi replaces this with a keepalive-based deadline once CONNECT
 		// is read, so it only bounds the pre-auth phase.
 		_ = conn.SetDeadline(time.Now().Add(l.timeout))
-		l.unread.Add(1)
-		tc := &trackedConn{Conn: conn, done: l.unread.Done}
 		go func() {
-			defer l.release(ip)
+			defer l.release(ip, tc)
 			defer tc.once.Do(tc.done)
 			if err := establish(l.id, tc); err != nil && !isRoutineClose(err) {
 				l.log.Info("connection ended with error", "remote", ip, "err", err)
@@ -130,30 +162,105 @@ func (l *guardedListener) Serve(establish listeners.EstablishFn) {
 	}
 }
 
-func (l *guardedListener) acquire(ip string) bool {
+// acquire admits a new connection, or says why not.
+func (l *guardedListener) acquire(ip string, tc *trackedConn) string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.total >= l.maxTotal || l.perIP[ip] >= l.maxPerIP {
-		return false
+	switch {
+	case l.end.Load():
+		return "shutting down"
+	case l.total >= l.maxTotal || l.perIP[ip] >= l.maxPerIP:
+		return "connection limit reached"
+	}
+	// When the pre-auth budget is full, close the oldest connection that
+	// still hasn't logged in rather than refusing this one. A real agent
+	// logs in within milliseconds, so it isn't the one evicted; a flood of
+	// idle sockets only displaces itself.
+	if l.pendingIP[ip] >= l.maxPendIP {
+		l.evictOldestPending(ip)
+	} else if l.pending >= l.maxPending {
+		l.evictOldestPending("")
 	}
 	l.total++
 	l.perIP[ip]++
-	return true
+	l.pending++
+	l.pendingIP[ip]++
+	l.conns[tc] = struct{}{}
+	l.unread.Add(1)
+	return ""
 }
 
-func (l *guardedListener) release(ip string) {
+// evictOldestPending closes the oldest connection that hasn't logged in,
+// from ip if ip is set. Called with l.mu held. The connection leaves the
+// budget now; its goroutine releases its general slot when mochi notices.
+func (l *guardedListener) evictOldestPending(ip string) {
+	var oldest *trackedConn
+	for tc := range l.conns {
+		if tc.authed || (ip != "" && tc.ip != ip) {
+			continue
+		}
+		if oldest == nil || tc.accepted.Before(oldest.accepted) {
+			oldest = tc
+		}
+	}
+	if oldest == nil {
+		return
+	}
+	l.leavePending(oldest)
+	_ = oldest.Conn.Close()
+}
+
+// authed moves a connection from the pre-auth budget to the general one.
+func (l *guardedListener) authed(tc *trackedConn) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	l.leavePending(tc)
+}
+
+// leavePending takes tc out of the pre-auth budget once. l.mu held.
+func (l *guardedListener) leavePending(tc *trackedConn) {
+	if tc.authed {
+		return
+	}
+	tc.authed = true
+	l.pending--
+	if l.pendingIP[tc.ip]--; l.pendingIP[tc.ip] <= 0 {
+		delete(l.pendingIP, tc.ip)
+	}
+}
+
+func (l *guardedListener) release(ip string, tc *trackedConn) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.leavePending(tc) // no-op if it already left the pre-auth budget
 	l.total--
 	if l.perIP[ip]--; l.perIP[ip] <= 0 {
 		delete(l.perIP, ip)
 	}
+	delete(l.conns, tc)
+}
+
+// warnRefused logs refused connections at most once a second, with a
+// count of the ones in between.
+func (l *guardedListener) warnRefused(ip, reason string) {
+	l.mu.Lock()
+	l.refused++
+	if time.Since(l.lastWarn) < time.Second {
+		l.mu.Unlock()
+		return
+	}
+	n := l.refused
+	l.refused, l.lastWarn = 0, time.Now()
+	l.mu.Unlock()
+	l.log.Warn("connection refused", "remote", ip, "reason", reason, "refused_since_last_warning", n)
 }
 
 // stopAccepting stops new connections and waits (up to wait) for mochi to
 // finish setting up the ones already accepted.
 func (l *guardedListener) stopAccepting(wait time.Duration) {
+	l.mu.Lock()
 	l.end.Store(true)
+	l.mu.Unlock()
 	l.open() // release a Serve still waiting at the gate
 	if l.listen != nil {
 		_ = l.listen.Close()
@@ -173,9 +280,35 @@ func (l *guardedListener) Close(closeClients listeners.CloseFn) {
 	}
 	if l.disconnectAll != nil {
 		l.disconnectAll(l.id)
-		return
+	} else {
+		closeClients(l.id)
 	}
-	closeClients(l.id)
+	// Connections still in the handshake aren't mochi clients yet, so the
+	// disconnect above can't see them, but mochi's Close waits for them.
+	// Close their sockets so shutdown doesn't wait out connect_timeout.
+	l.mu.Lock()
+	open := make([]*trackedConn, 0, len(l.conns))
+	for tc := range l.conns {
+		open = append(open, tc)
+	}
+	l.mu.Unlock()
+	for _, tc := range open {
+		_ = tc.Conn.Close()
+	}
+}
+
+// ipKey groups addresses for per-IP limits. An IPv6 host usually holds a
+// whole /64, so per-address limits would be trivial to sidestep there.
+func ipKey(ip string) string {
+	addr, err := netip.ParseAddr(ip)
+	if err != nil || addr.Is4() || addr.Is4In6() {
+		return ip
+	}
+	p, err := addr.Prefix(64)
+	if err != nil {
+		return ip
+	}
+	return p.String()
 }
 
 func remoteIP(c net.Conn) string {

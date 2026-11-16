@@ -19,7 +19,7 @@ import (
 // match a record to a body you have from elsewhere.
 type AuditRecord struct {
 	TS            time.Time    `json:"ts"`
-	Action        string       `json:"action"` // accept, reject, duplicate, connect, disconnect, refused, restore
+	Action        string       `json:"action"` // accept, reject, duplicate, connect, disconnect, refused, restore, expire
 	Agent         string       `json:"agent,omitempty"`
 	Remote        string       `json:"remote,omitempty"`
 	Topic         string       `json:"topic,omitempty"`

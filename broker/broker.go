@@ -4,9 +4,11 @@ import (
 	"crypto/tls"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	mqtt "github.com/mochi-mqtt/server/v2"
@@ -23,7 +25,12 @@ type Broker struct {
 	log        *slog.Logger
 	dedupePath string // "" without data_dir
 
-	reload reloadInfo
+	reload   reloadInfo
+	reloadMu sync.Mutex // serializes Reload and ReloadFrom
+
+	ready       atomic.Bool // set once Start has opened the listener
+	metrics     *http.Server
+	metricsAddr string
 
 	closeOnce  sync.Once
 	closeErr   error
@@ -110,9 +117,44 @@ func (b *Broker) Start() error {
 		return err
 	}
 	b.hook.restorePresence()
+	if addr := b.hook.state().cfg.MetricsListen; addr != "" {
+		if err := b.startMetrics(addr); err != nil {
+			_ = b.server.Close()
+			return err
+		}
+	}
 	b.ln.open()
+	b.ready.Store(true)
 	go b.publishStatus(time.Duration(b.hook.state().cfg.StatusInterval), b.statusDone)
+	go b.maintain(b.statusDone)
 	return nil
+}
+
+// maintain sweeps expired open requests every second, and prunes idle
+// rate-limiter buckets every minute, until done.
+func (b *Broker) maintain(done <-chan struct{}) {
+	t := time.NewTicker(time.Second)
+	defer t.Stop()
+	lastPrune := time.Now()
+	for {
+		select {
+		case <-done:
+			return
+		case now := <-t.C:
+			for _, e := range b.hook.open.sweep(now) {
+				b.hook.audit.write(AuditRecord{Action: "expire", Agent: e.requester, ID: e.id, Reason: "no reply from " + e.req.answerer()})
+				if b.hook.noise.allow("expire:"+e.requester, now, 1, 5) {
+					b.log.Info("request expired unanswered", "action", "expire", "requester", e.requester,
+						"id", e.id, "target", e.req.target())
+				}
+			}
+			if now.Sub(lastPrune) >= time.Minute {
+				lastPrune = now
+				b.hook.rate.prune(now, 10*time.Minute)
+				b.hook.noise.prune(now, 10*time.Minute)
+			}
+		}
+	}
 }
 
 // Addr is the bound listener address ("host:port"), useful when Listen
@@ -127,7 +169,9 @@ func (b *Broker) Close() error {
 }
 
 func (b *Broker) close() error {
+	b.hook.closing.Store(true) // refuse logins from here on
 	close(b.statusDone)
+	b.stopMetrics()
 	b.ln.stopAccepting(time.Second)
 	err := b.server.Close() // also closes the bbolt store
 	if b.dedupePath != "" {

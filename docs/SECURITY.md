@@ -36,16 +36,20 @@ are what remove trust in the broker.
 | Setting | Default | Bounds |
 |---|---|---|
 | `connect_timeout` | 10s | time to send CONNECT; idle sockets are closed |
-| `max_connections`, `max_connections_per_ip` | 1024, 64 | open sockets, before and after auth |
+| `max_connections`, `max_connections_per_ip` | 1024, 64 | open sockets, before and after auth; IPv6 counted per /64 |
+| connections not yet logged in | a quarter of each of the above | when full, the oldest unauthenticated socket is closed, so idle sockets can't lock agents out |
 | `rate_per_second`, `rate_burst` (also per agent) | 20/s, 50 | publishes per agent, including rejected ones |
 | `max_envelope_bytes` | 256 KiB | one message |
-| `max_queued` | 1024 | in-flight plus queued messages per session |
+| `max_queued` | 1024 | in-flight plus queued messages per session; further messages are refused with `queue_full` |
 | `session_expiry` | 7 days | how long an offline agent's queue is kept (also across restarts with `data_dir`) |
 | `dedupe_window` | 10 min | repeat `from`+`id` suppression; capped at 1M entries |
 | `max_clock_skew` | 2 min | allowed `ts` drift |
 | subscriptions | 256 per client | |
+| topic length | 512 bytes | event names can't carry kilobytes into logs and audit records |
+| open requests | 256 per requester, 65,536 total, 24h without a TTL | expired entries swept every second |
 | error envelopes and reject logs | ~2/s per agent | one bad publish can't trigger unbounded output |
-| auth-failure logs | ~1/s per IP | attacker-chosen IDs are truncated in logs |
+| auth-failure and Will-refusal logs | ~1/s per IP | attacker-chosen IDs are truncated in logs |
+| rate-limiter state | idle buckets pruned after 10 min | per-IP keys can't grow without bound |
 
 ## Operator checklist
 
@@ -71,6 +75,10 @@ are what remove trust in the broker.
   broker reloads the file within a second and disconnects the affected
   agent. Nothing needs a restart, and a config that doesn't validate is
   rejected while the old one stays in force.
+- **Keep `metrics_listen` on loopback.** The metrics endpoint has no
+  authentication and names every agent. The broker refuses a non-loopback
+  address unless `allow_insecure` is set; scrape it locally or through an
+  authenticating proxy.
 - **The bootstrapped `admin` identity is an observer.** `agentbus serve`
   creates it on first run. Keep `~/.config/agentbus/tokens/` (mode 0700,
   files 0600) private, or remove `admin` once you've set up your own
@@ -124,11 +132,41 @@ regression tests in `broker/security_test.go`, `client/client_test.go` and
 | Medium | Any agent that could reach a requester could answer its task first with a forged reply; the requester can't know which worker is genuine (found 2026-11-15, after the review) | The broker tracks open requests and refuses replies from anyone but the answerer (`broker/replies_test.go`) |
 | Low | Silent drops to missing agents or workers; MQTT 5 properties forwarded; self-asserted capabilities; presence expiring after 24h; QoS 2 rejection quirk | `no_route`/`no_consumer`; properties stripped; capabilities filtered by grants; presence refreshed; max QoS 1 |
 
+A second review (2026-11-16, five parallel reviewers on security,
+concurrency, the CLI and TUI, the clients and MCP server, and missing
+features) found the following, fixed with regression tests in
+`broker/hardening_test.go`, `broker/replies_internal_test.go`,
+`client/review_test.go`, `cmd/agentbus/mcp_test.go` and others:
+
+| Severity | Finding | Fix |
+|---|---|---|
+| Critical | A config reload during a login could crash the broker (nil agent in `OnSessionEstablished`) | The login is checked again against the current config once the session exists; a stale one is disconnected |
+| Critical | Shutdown waited out `connect_timeout` for sockets still in the handshake | The listener tracks every socket and closes them on shutdown; logins are refused once shutdown starts |
+| High | One agent could fill the open-request table, switching reply checking off for everyone | 256 open requests per requester (its own oldest is evicted), 24h without a TTL, expired entries swept every second |
+| High | A token rotation or removal could miss a login in progress | Same re-check as the crash fix |
+| High | Message IDs were only length-checked and appeared raw in the LLM preamble, so a sender could write its own "trusted" text | IDs and correlation IDs are limited to `A-Z a-z 0-9 . _ : -`; the preamble never includes an invalid field |
+| High | A client `Emit` with a wildcard name put the agent into a reconnect loop | `Emit` validates names; the broker caps topics at 512 bytes |
+| Medium | Pre-auth Will refusals and long event topics could flood the log and rotate the audit file away | Will refusals throttled per IP; topics capped and truncated in logs |
+| Medium | Presence cards went stale on reload: a removed agent stayed online, revoked capabilities and re-pinned keys weren't reflected | Removed agents' cards are cleared and their sessions dropped; changed agents' cards are re-stamped, also on restart |
+| Medium | Idle unauthenticated sockets could take every connection slot | A separate pre-auth budget that evicts its oldest socket when full; IPv6 limits per /64 |
+| Medium | A full offline queue dropped messages silently | Refused with `queue_full` |
+| Medium | A late offline card could overwrite a reconnected agent's online card | The offline card is decided and published under the presence lock |
+| Medium | Two replies to one task could both be accepted; concurrent reloads could apply an older file last | Reply settlement is a single atomic claim; reloads are serialized |
+| Medium | MCP: a second sender reusing a request ID could take the first sender's reply | Pending requests are keyed by sender and ID |
+| Medium | Found while checking the fixes: a quick reconnect under the same agent ID (every CLI command reconnects) could lose its session to mochi's late teardown of the previous connection, so replies to it were refused with `no_route` | The broker watches each reconnect for two seconds and restores the session if mochi deletes it (`broker/guard_internal_test.go`) |
+| Low | Unbounded per-IP limiter map; JSON parsed before rate limiting; reply window shortened by a slow requester clock | Idle buckets pruned; parsing after the limiter; window counted from the later of `ts` and acceptance |
+
 ## Not done yet
+
+- **An upstream data race in mochi 2.7.9.** `TopicsIndex.scanMessages` reads
+  a node's retained path without the lock `RetainMessage` holds while
+  writing it. It shows up under `-race` when a retained presence card is
+  published while another client subscribes. The value written is the same
+  topic string each time, so a torn read is very unlikely to matter, but
+  it needs a fix in mochi (taking the index lock in `Messages`).
 
 - **End-to-end signatures** (Ed25519 `sig` over canonical header fields plus
   a body hash). Until then, authenticity rests on the broker.
 - **Sealed bodies** (X25519 + HKDF + AES-256-GCM with header fields as
   associated data), using pinned `kex` keys. `enc` is only a label today.
 - **mTLS client authentication.**
-- **A metrics endpoint.**

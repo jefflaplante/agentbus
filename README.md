@@ -136,6 +136,11 @@ Mosquitto can't do these things on its own:
 - **Live status for operators.** Every 2 seconds the broker publishes a
   snapshot of itself to `$SYS/agentbus/status`, readable only by observers.
   `agentbus status` and `agentbus dashboard` show it.
+- **Metrics and health (optional).** With `metrics_listen` (loopback
+  only, unless `allow_insecure`), the broker serves Prometheus `/metrics`,
+  `/healthz` and `/readyz`. Request metrics show, for each agent and
+  capability, how many requests are open, answered, errored or expired, and
+  how long replies take. The same numbers are in `agentbus status`.
 - **Retention and audit (optional).** With `data_dir`, sessions, queued
   messages, subscriptions, presence and the dedupe window survive restarts
   (bbolt, embedded). With `audit_file`, every decision goes to a rotated JSONL
@@ -254,7 +259,6 @@ one, set `GOWORK=off` yourself when running `go` directly.
   audit log records decisions, not contents.
 - No mTLS client auth yet, only tokens over TLS.
 - Late replies to a Request that already timed out go to the Inbox handler.
-- No metrics endpoint yet.
 - mochi shares one in-flight packet ID table across both directions, so a
   SUBSCRIBE can be refused with 0x91. The Go client retries. Other clients
   should retry too.

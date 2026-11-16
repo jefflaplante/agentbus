@@ -40,6 +40,12 @@ type reloadInfo struct {
 // TLS, storage, connection and queue limits, intervals) keeps its current
 // value and is listed in RestartNeeded.
 func (b *Broker) Reload(next *Config) (ReloadResult, error) {
+	b.reloadMu.Lock()
+	defer b.reloadMu.Unlock()
+	return b.reloadLocked(next)
+}
+
+func (b *Broker) reloadLocked(next *Config) (ReloadResult, error) {
 	next.ApplyDefaults()
 	if err := next.Validate(); err != nil {
 		return ReloadResult{}, err
@@ -65,6 +71,7 @@ func (b *Broker) Reload(next *Config) (ReloadResult, error) {
 		{"max_connections_per_ip", cur.MaxConnectionsPerIP, next.MaxConnectionsPerIP},
 		{"connect_timeout", cur.ConnectTimeout, next.ConnectTimeout}, {"dedupe_window", cur.DedupeWindow, next.DedupeWindow},
 		{"status_interval", cur.StatusInterval, next.StatusInterval},
+		{"metrics_listen", cur.MetricsListen, next.MetricsListen},
 	} {
 		if !reflect.DeepEqual(f.cur, f.nxt) {
 			res.RestartNeeded = append(res.RestartNeeded, f.name)
@@ -95,23 +102,32 @@ func (b *Broker) Reload(next *Config) (ReloadResult, error) {
 	}
 	slices.Sort(res.Removed)
 
-	b.hook.st.Store(newHookState(&eff))
+	st := newHookState(&eff)
+	b.hook.st.Store(st)
+	// A login that authenticated against the old config but hasn't
+	// finished setting up its session is caught in OnSessionEstablished,
+	// which checks the login again against this state.
 	for _, id := range drop {
 		if cl, ok := b.server.Clients.Get(id); ok && !cl.Closed() {
 			_ = b.server.DisconnectClient(cl, packets.ErrNotAuthorized)
 			res.Disconnected = append(res.Disconnected, id)
 		}
 	}
+	b.hook.applyReload(st, res.Removed, res.Changed)
 	return res, nil
 }
 
 // ReloadFrom loads path and applies it with Reload, recording the outcome
 // for Status.
 func (b *Broker) ReloadFrom(path string) (ReloadResult, error) {
+	// Held across the read and the apply, so a SIGHUP and the file watcher
+	// can't apply an older read after a newer one.
+	b.reloadMu.Lock()
+	defer b.reloadMu.Unlock()
 	cfg, err := LoadConfig(path)
 	if err == nil {
 		var res ReloadResult
-		res, err = b.Reload(cfg)
+		res, err = b.reloadLocked(cfg)
 		if err == nil {
 			b.reload.mu.Lock()
 			b.reload.path, b.reload.loadedAt, b.reload.lastErr = path, time.Now().UTC(), ""

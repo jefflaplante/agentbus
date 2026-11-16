@@ -182,31 +182,49 @@ func (a *app) roundTrip(ctx context.Context, f *msgFlags, timeout time.Duration,
 	}
 	var re *client.RemoteError
 	if errors.As(reqErr, &re) {
+		// Code, sender and reason come from another agent: escape them.
 		lipgloss.Fprintf(a.stderr, "%s %s from %s after %s\n  %s\n", tui.ErrStyle.Render("✗"),
-			tui.ErrStyle.Render(re.Code), tui.AccentStyle.Render(re.From), elapsed, re.Reason)
+			tui.ErrStyle.Render(tui.Clean(re.Code)), tui.AccentStyle.Render(tui.Clean(re.From)), elapsed, tui.Clean(re.Reason))
 		return exitError{1}
 	}
-	lipgloss.Fprintf(a.stderr, "%s %s from %s in %s\n", tui.OKStyle.Render("✓"), reply.Type, tui.AccentStyle.Render(reply.From), elapsed)
+	lipgloss.Fprintf(a.stderr, "%s %s from %s in %s\n", tui.OKStyle.Render("✓"), tui.Clean(string(reply.Type)),
+		tui.AccentStyle.Render(tui.Clean(reply.From)), elapsed)
 	printBody(a, reply.Body)
 	return nil
 }
 
-// printBody pretty-prints a JSON body to stdout.
+// printBody pretty-prints a reply body to the terminal. The body is
+// another agent's, so control characters (escape sequences) are shown
+// escaped, never sent to the terminal; newlines and tabs are kept.
 func printBody(a *app, body json.RawMessage) {
 	if len(body) == 0 {
 		return
 	}
 	var v any
 	if json.Unmarshal(body, &v) != nil {
-		fmt.Fprintln(a.stdout, string(body))
+		fmt.Fprintln(a.stdout, tui.CleanBlock(string(body)))
 		return
 	}
 	if s, ok := v.(string); ok {
-		fmt.Fprintln(a.stdout, s)
+		fmt.Fprintln(a.stdout, tui.CleanBlock(s))
 		return
 	}
 	out, _ := json.MarshalIndent(v, "", "  ")
-	fmt.Fprintln(a.stdout, string(out))
+	fmt.Fprintln(a.stdout, tui.CleanBlock(string(out)))
+}
+
+// handleTypes parses handle --types.
+func handleTypes(s string) (map[a2a.Type]bool, error) {
+	sel := map[a2a.Type]bool{}
+	for _, t := range strings.Split(s, ",") {
+		switch typ := a2a.Type(strings.TrimSpace(t)); typ {
+		case a2a.TypeRequest, a2a.TypeEvent:
+			sel[typ] = true
+		default:
+			return nil, fmt.Errorf("--types: unknown type %q; use request, event or request,event", strings.TrimSpace(t))
+		}
+	}
+	return sel, nil
 }
 
 func newHandleCmd(a *app) *cobra.Command {
@@ -231,9 +249,12 @@ while the handler was down is delivered when it starts.`,
   agentbus handle --exec 'jq -c "{echo: .body}"'`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			sel := map[a2a.Type]bool{}
-			for _, t := range strings.Split(types, ",") {
-				sel[a2a.Type(strings.TrimSpace(t))] = true
+			sel, err := handleTypes(types)
+			if err != nil {
+				return err
+			}
+			if timeout <= 0 {
+				return fmt.Errorf("--timeout must be positive, not %s", timeout)
 			}
 			log := a.logger(false)
 			h := execHandler(execCmd, timeout, sel, log)

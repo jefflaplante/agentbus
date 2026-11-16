@@ -6,39 +6,63 @@
 <circle cx="40" cy="15" r="6" fill="#FEBC2E"/>
 <circle cx="60" cy="15" r="6" fill="#28C840"/>
 <text x="532" y="20" fill="#9A9AAA" text-anchor="middle">agentbus status  →  enter  →  enter</text>
-<clipPath id="term-f5b96963"><rect x="16.0" y="44" width="1032.0" height="608"/></clipPath><g clip-path="url(#term-f5b96963)">
+<clipPath id="term-5a5e43c8"><rect x="16.0" y="44" width="1032.0" height="608"/></clipPath><g clip-path="url(#term-5a5e43c8)">
 <rect x="16.0" y="44.0" width="8.6" height="18" fill="#9F86FF"/>
 <rect x="24.6" y="44.0" width="197.8" height="18" fill="#9F86FF"/>
 <text x="24.6" y="57.0" fill="#FFFFFF" font-weight="bold" textLength="197.8" lengthAdjust="spacingAndGlyphs">agentbus · agent worker</text>
 <rect x="222.4" y="44.0" width="8.6" height="18" fill="#9F86FF"/>
 <text x="239.6" y="57.0" fill="#3DD68C" textLength="51.6" lengthAdjust="spacingAndGlyphs">online</text>
-<text x="291.2" y="57.0" fill="#6C6C6C" textLength="146.2" lengthAdjust="spacingAndGlyphs">  127.0.0.1:55223</text>
-<text x="16.0" y="93.0" fill="#9F86FF" font-weight="bold" textLength="395.6" lengthAdjust="spacingAndGlyphs">Inspect event f090ce8a78ba786ada2a2c352064bb47</text>
-<text x="411.6" y="93.0" fill="#6C6C6C" textLength="266.6" lengthAdjust="spacingAndGlyphs">  a2a/v1/agents/you/inbox  100%</text>
+<text x="291.2" y="57.0" fill="#6C6C6C" textLength="146.2" lengthAdjust="spacingAndGlyphs">  127.0.0.1:60282</text>
+<text x="16.0" y="93.0" fill="#9F86FF" font-weight="bold" textLength="421.4" lengthAdjust="spacingAndGlyphs">Inspect response a864f83eaa70a4139419d64f85b62176</text>
+<text x="437.4" y="93.0" fill="#6C6C6C" textLength="335.4" lengthAdjust="spacingAndGlyphs">  a2a/v1/agents/coordinator/inbox    0%</text>
 <text x="16.0" y="111.0" fill="#6C6C6C" textLength="129.0" lengthAdjust="spacingAndGlyphs">type           </text>
-<text x="145.0" y="111.0" fill="#E4E4E4" textLength="43.0" lengthAdjust="spacingAndGlyphs">event</text>
+<text x="145.0" y="111.0" fill="#E4E4E4" textLength="68.8" lengthAdjust="spacingAndGlyphs">response</text>
 <text x="16.0" y="129.0" fill="#6C6C6C" textLength="129.0" lengthAdjust="spacingAndGlyphs">id             </text>
-<text x="145.0" y="129.0" fill="#E4E4E4" textLength="275.2" lengthAdjust="spacingAndGlyphs">f090ce8a78ba786ada2a2c352064bb47</text>
+<text x="145.0" y="129.0" fill="#E4E4E4" textLength="275.2" lengthAdjust="spacingAndGlyphs">a864f83eaa70a4139419d64f85b62176</text>
 <text x="16.0" y="147.0" fill="#6C6C6C" textLength="129.0" lengthAdjust="spacingAndGlyphs">from           </text>
 <text x="145.0" y="147.0" fill="#E4E4E4" textLength="51.6" lengthAdjust="spacingAndGlyphs">worker</text>
 <text x="16.0" y="165.0" fill="#6C6C6C" textLength="129.0" lengthAdjust="spacingAndGlyphs">to             </text>
-<text x="145.0" y="165.0" fill="#E4E4E4" textLength="25.8" lengthAdjust="spacingAndGlyphs">you</text>
+<text x="145.0" y="165.0" fill="#E4E4E4" textLength="94.6" lengthAdjust="spacingAndGlyphs">coordinator</text>
 <text x="16.0" y="183.0" fill="#6C6C6C" textLength="129.0" lengthAdjust="spacingAndGlyphs">topic          </text>
-<text x="145.0" y="183.0" fill="#E4E4E4" textLength="197.8" lengthAdjust="spacingAndGlyphs">a2a/v1/agents/you/inbox</text>
+<text x="145.0" y="183.0" fill="#E4E4E4" textLength="266.6" lengthAdjust="spacingAndGlyphs">a2a/v1/agents/coordinator/inbox</text>
 <text x="16.0" y="201.0" fill="#6C6C6C" textLength="129.0" lengthAdjust="spacingAndGlyphs">sent           </text>
-<text x="145.0" y="201.0" fill="#E4E4E4" textLength="197.8" lengthAdjust="spacingAndGlyphs">2026-11-15 15:16:28.273</text>
-<text x="342.8" y="201.0" fill="#6C6C6C" textLength="86.0" lengthAdjust="spacingAndGlyphs">  (1s ago)</text>
-<text x="16.0" y="219.0" fill="#6C6C6C" textLength="129.0" lengthAdjust="spacingAndGlyphs">ttl            </text>
-<text x="145.0" y="219.0" fill="#E4E4E4" textLength="43.0" lengthAdjust="spacingAndGlyphs">4.81s</text>
-<text x="188.0" y="219.0" fill="#6C6C6C" textLength="172.0" lengthAdjust="spacingAndGlyphs">  (expires 15:16:33)</text>
+<text x="145.0" y="201.0" fill="#E4E4E4" textLength="197.8" lengthAdjust="spacingAndGlyphs">2026-11-15 19:15:10.614</text>
+<text x="342.8" y="201.0" fill="#6C6C6C" textLength="86.0" lengthAdjust="spacingAndGlyphs">  (2s ago)</text>
+<text x="16.0" y="219.0" fill="#6C6C6C" textLength="129.0" lengthAdjust="spacingAndGlyphs">correlation_id </text>
+<text x="145.0" y="219.0" fill="#E4E4E4" textLength="275.2" lengthAdjust="spacingAndGlyphs">5e9b10cc25c73393a5a9eb6b08943c85</text>
 <text x="16.0" y="255.0" fill="#9F86FF" font-weight="bold" textLength="34.4" lengthAdjust="spacingAndGlyphs">body</text>
-<text x="50.4" y="255.0" fill="#6C6C6C" textLength="86.0" lengthAdjust="spacingAndGlyphs">  50 bytes</text>
+<text x="50.4" y="255.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">  142 bytes</text>
 <text x="16.0" y="273.0" fill="#E4E4E4" textLength="8.6" lengthAdjust="spacingAndGlyphs">{</text>
-<text x="33.2" y="291.0" fill="#9F86FF" font-weight="bold" textLength="51.6" lengthAdjust="spacingAndGlyphs">&#34;kind&#34;</text>
-<text x="84.8" y="291.0" fill="#E4E4E4" textLength="129.0" lengthAdjust="spacingAndGlyphs">: &#34;hello-back&#34;,</text>
-<text x="33.2" y="309.0" fill="#9F86FF" font-weight="bold" textLength="51.6" lengthAdjust="spacingAndGlyphs">&#34;text&#34;</text>
-<text x="84.8" y="309.0" fill="#E4E4E4" textLength="197.8" lengthAdjust="spacingAndGlyphs">: &#34;hi you, worker here&#34;</text>
-<text x="16.0" y="327.0" fill="#E4E4E4" textLength="8.6" lengthAdjust="spacingAndGlyphs">}</text>
+<text x="33.2" y="291.0" fill="#9F86FF" font-weight="bold" textLength="60.2" lengthAdjust="spacingAndGlyphs">&#34;chars&#34;</text>
+<text x="93.4" y="291.0" fill="#E4E4E4" textLength="43.0" lengthAdjust="spacingAndGlyphs">: 60,</text>
+<text x="33.2" y="309.0" fill="#9F86FF" font-weight="bold" textLength="60.2" lengthAdjust="spacingAndGlyphs">&#34;lines&#34;</text>
+<text x="93.4" y="309.0" fill="#E4E4E4" textLength="34.4" lengthAdjust="spacingAndGlyphs">: 1,</text>
+<text x="33.2" y="327.0" fill="#9F86FF" font-weight="bold" textLength="94.6" lengthAdjust="spacingAndGlyphs">&#34;top_words&#34;</text>
+<text x="127.8" y="327.0" fill="#E4E4E4" textLength="25.8" lengthAdjust="spacingAndGlyphs">: [</text>
+<text x="50.4" y="345.0" fill="#E4E4E4" textLength="8.6" lengthAdjust="spacingAndGlyphs">{</text>
+<text x="67.6" y="363.0" fill="#9F86FF" font-weight="bold" textLength="60.2" lengthAdjust="spacingAndGlyphs">&#34;count&#34;</text>
+<text x="127.8" y="363.0" fill="#E4E4E4" textLength="34.4" lengthAdjust="spacingAndGlyphs">: 2,</text>
+<text x="67.6" y="381.0" fill="#9F86FF" font-weight="bold" textLength="51.6" lengthAdjust="spacingAndGlyphs">&#34;word&#34;</text>
+<text x="119.2" y="381.0" fill="#E4E4E4" textLength="60.2" lengthAdjust="spacingAndGlyphs">: &#34;are&#34;</text>
+<text x="50.4" y="399.0" fill="#E4E4E4" textLength="17.2" lengthAdjust="spacingAndGlyphs">},</text>
+<text x="50.4" y="417.0" fill="#E4E4E4" textLength="8.6" lengthAdjust="spacingAndGlyphs">{</text>
+<text x="67.6" y="435.0" fill="#9F86FF" font-weight="bold" textLength="60.2" lengthAdjust="spacingAndGlyphs">&#34;count&#34;</text>
+<text x="127.8" y="435.0" fill="#E4E4E4" textLength="34.4" lengthAdjust="spacingAndGlyphs">: 1,</text>
+<text x="67.6" y="453.0" fill="#9F86FF" font-weight="bold" textLength="51.6" lengthAdjust="spacingAndGlyphs">&#34;word&#34;</text>
+<text x="119.2" y="453.0" fill="#E4E4E4" textLength="94.6" lengthAdjust="spacingAndGlyphs">: &#34;inboxes&#34;</text>
+<text x="50.4" y="471.0" fill="#E4E4E4" textLength="17.2" lengthAdjust="spacingAndGlyphs">},</text>
+<text x="50.4" y="489.0" fill="#E4E4E4" textLength="8.6" lengthAdjust="spacingAndGlyphs">{</text>
+<text x="67.6" y="507.0" fill="#9F86FF" font-weight="bold" textLength="60.2" lengthAdjust="spacingAndGlyphs">&#34;count&#34;</text>
+<text x="127.8" y="507.0" fill="#E4E4E4" textLength="34.4" lengthAdjust="spacingAndGlyphs">: 1,</text>
+<text x="67.6" y="525.0" fill="#9F86FF" font-weight="bold" textLength="51.6" lengthAdjust="spacingAndGlyphs">&#34;word&#34;</text>
+<text x="119.2" y="525.0" fill="#E4E4E4" textLength="51.6" lengthAdjust="spacingAndGlyphs">: &#34;is&#34;</text>
+<text x="50.4" y="543.0" fill="#E4E4E4" textLength="8.6" lengthAdjust="spacingAndGlyphs">}</text>
+<text x="33.2" y="561.0" fill="#E4E4E4" textLength="17.2" lengthAdjust="spacingAndGlyphs">],</text>
+<text x="33.2" y="579.0" fill="#9F86FF" font-weight="bold" textLength="60.2" lengthAdjust="spacingAndGlyphs">&#34;words&#34;</text>
+<text x="93.4" y="579.0" fill="#E4E4E4" textLength="34.4" lengthAdjust="spacingAndGlyphs">: 9,</text>
+<text x="33.2" y="597.0" fill="#9F86FF" font-weight="bold" textLength="68.8" lengthAdjust="spacingAndGlyphs">&#34;worker&#34;</text>
+<text x="102.0" y="597.0" fill="#E4E4E4" textLength="86.0" lengthAdjust="spacingAndGlyphs">: &#34;worker&#34;</text>
+<text x="16.0" y="615.0" fill="#E4E4E4" textLength="8.6" lengthAdjust="spacingAndGlyphs">}</text>
 <text x="24.6" y="633.0" fill="#6C6C6C" textLength="387.0" lengthAdjust="spacingAndGlyphs">↑/↓ pgup/pgdn scroll · y copy JSON · esc back</text>
 </g>
 </svg>

@@ -11,10 +11,13 @@
 package confstore
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"net"
 	neturl "net/url"
 	"os"
@@ -66,19 +69,26 @@ func (l Location) Exists() bool {
 }
 
 // Resolve picks the config file: --config, then $AGENTBUS_CONFIG, then
-// ./broker.json if it exists, then the default location.
+// ./broker.json if it exists, then the default location. The path is
+// made absolute, so the data_dir and token paths derived from it are too.
 func Resolve(flag string) Location {
 	switch {
 	case flag != "":
-		return Location{flag, FromFlag}
+		return Location{absPath(flag), FromFlag}
 	case os.Getenv("AGENTBUS_CONFIG") != "":
-		return Location{os.Getenv("AGENTBUS_CONFIG"), FromEnv}
+		return Location{absPath(os.Getenv("AGENTBUS_CONFIG")), FromEnv}
 	}
 	if _, err := os.Stat("broker.json"); err == nil {
-		abs, _ := filepath.Abs("broker.json")
-		return Location{abs, FromCwd}
+		return Location{absPath("broker.json"), FromCwd}
 	}
 	return Location{filepath.Join(ConfigDir(), "broker.json"), FromDefault}
+}
+
+func absPath(p string) string {
+	if abs, err := filepath.Abs(p); err == nil {
+		return abs
+	}
+	return p
 }
 
 // ConfigDir is $XDG_CONFIG_HOME/agentbus, or ~/.config/agentbus.
@@ -101,19 +111,43 @@ func xdg(env, fallback string) string {
 // Load reads a config for editing: no defaults applied and no validation,
 // so a config that doesn't validate can still be opened and fixed.
 func Load(path string) (*broker.Config, error) {
+	cfg, _, err := load(path)
+	return cfg, err
+}
+
+func load(path string) (*broker.Config, string, error) {
 	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, "", fmt.Errorf("no config at %s; \"agentbus config init\" (or \"agentbus serve\") creates one: %w", path, err)
+	}
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	var c broker.Config
 	if err := json.Unmarshal(data, &c); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
+		return nil, "", fmt.Errorf("parse %s: %w", path, err)
 	}
-	return &c, nil
+	return &c, stampOf(data), nil
+}
+
+// Stamp identifies the config file's current contents ("" if it can't be
+// read). An editor compares stamps to notice changes made by others.
+func Stamp(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return stampOf(data)
+}
+
+func stampOf(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 // Save validates cfg and writes it atomically with mode 0600. Defaults
-// are written out, so the file shows every effective setting.
+// are written out, so the file shows every effective setting. If path is
+// a symlink, the file it points to is replaced.
 func Save(path string, cfg *broker.Config) error {
 	c := *cfg
 	c.Agents = slices.Clone(cfg.Agents)
@@ -125,85 +159,243 @@ func Save(path string, cfg *broker.Config) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	return writeAtomic(path, append(data, '\n'))
+}
+
+// writeAtomic replaces path with data, mode 0600: a private temp file in
+// the same directory, synced, then renamed over the target (the target
+// of a symlink, if path is one).
+func writeAtomic(path string, data []byte) error {
+	if real, err := filepath.EvalSymlinks(path); err == nil {
+		path = real
+	}
+	tmp, err := stageFile(path, data)
+	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, append(data, '\n'), 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
-}
-
-// Bootstrap writes a working config at loc: a loopback listener, state
-// under StateDir, and one observer identity, "admin", whose token goes in
-// the tokens directory. It refuses to overwrite an existing config.
-func Bootstrap(loc Location) (*broker.Config, error) {
-	if loc.Exists() {
-		return nil, fmt.Errorf("%s already exists", loc.Path)
-	}
-	state := StateDir()
-	if loc.Source == FromCwd || loc.Explicit() {
-		state = filepath.Join(filepath.Dir(loc.Path), "state")
-	}
-	cfg := &broker.Config{
-		Listen:    DefaultListen,
-		DataDir:   filepath.Join(state, "data"),
-		AuditFile: filepath.Join(state, "audit.jsonl"),
-	}
-	if _, err := AddAgent(cfg, loc, broker.AgentConfig{ID: AdminID, Observer: true}); err != nil {
-		return nil, err
-	}
-	if err := Save(loc.Path, cfg); err != nil {
-		return nil, err
-	}
-	return cfg, nil
-}
-
-// AddAgent adds an agent with a fresh token, written to its token file.
-// It returns the token file path.
-func AddAgent(cfg *broker.Config, loc Location, a broker.AgentConfig) (string, error) {
-	if !a2a.ValidName(a.ID) {
-		return "", fmt.Errorf("invalid agent id %q: use 1-64 of a-z 0-9 . _ -", a.ID)
-	}
-	if Find(cfg, a.ID) >= 0 {
-		return "", fmt.Errorf("agent %q already exists", a.ID)
-	}
-	tok, hash := broker.NewToken()
-	a.TokenSHA256 = hash
-	if err := WriteToken(loc.TokenFile(a.ID), tok); err != nil {
-		return "", err
-	}
-	cfg.Agents = append(cfg.Agents, a)
-	return loc.TokenFile(a.ID), nil
-}
-
-// RotateToken gives an agent a new token and rewrites its token file. The
-// running broker disconnects the agent once the saved config is reloaded.
-func RotateToken(cfg *broker.Config, loc Location, id string) (string, error) {
-	i := Find(cfg, id)
-	if i < 0 {
-		return "", fmt.Errorf("no agent %q", id)
-	}
-	tok, hash := broker.NewToken()
-	if err := WriteToken(loc.TokenFile(id), tok); err != nil {
-		return "", err
-	}
-	cfg.Agents[i].TokenSHA256 = hash
-	return loc.TokenFile(id), nil
-}
-
-// RemoveAgent deletes an agent and its token file.
-func RemoveAgent(cfg *broker.Config, loc Location, id string) error {
-	i := Find(cfg, id)
-	if i < 0 {
-		return fmt.Errorf("no agent %q", id)
-	}
-	cfg.Agents = slices.Delete(cfg.Agents, i, i+1)
-	if err := os.Remove(loc.TokenFile(id)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
 		return err
 	}
 	return nil
+}
+
+// stageFile writes data to a new 0600 temp file beside path and returns
+// its name; the caller renames or removes it.
+func stageFile(path string, data []byte) (string, error) {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	f, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return "", err
+	}
+	name := f.Name()
+	err = f.Chmod(0o600)
+	if err == nil {
+		_, err = f.Write(data)
+	}
+	if err == nil {
+		err = f.Sync()
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		_ = os.Remove(name)
+		return "", err
+	}
+	return name, nil
+}
+
+// DefaultStateDir is where Bootstrap puts data_dir and the audit log for
+// a config at loc: StateDir for the default location, else a "state"
+// directory beside the config file.
+func DefaultStateDir(loc Location) string {
+	if loc.Source == FromCwd || loc.Explicit() {
+		return filepath.Join(filepath.Dir(absPath(loc.Path)), "state")
+	}
+	return StateDir()
+}
+
+// Bootstrap writes a working config at loc: a loopback listener, state
+// under DefaultStateDir, and one observer identity, "admin", whose token
+// goes in the tokens directory. It refuses to overwrite an existing config.
+func Bootstrap(loc Location) (*broker.Config, error) {
+	loc.Path = absPath(loc.Path)
+	if loc.Exists() {
+		return nil, fmt.Errorf("%s already exists", loc.Path)
+	}
+	state := DefaultStateDir(loc)
+	tx := &Tx{Config: &broker.Config{
+		Listen:    DefaultListen,
+		DataDir:   filepath.Join(state, "data"),
+		AuditFile: filepath.Join(state, "audit.jsonl"),
+	}, loc: loc, fresh: true}
+	if _, err := tx.AddAgent(broker.AgentConfig{ID: AdminID, Observer: true}); err != nil {
+		tx.Abort()
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return tx.Config, nil
+}
+
+// ErrChanged means the config file changed on disk after it was read, so
+// saving would overwrite changes the editor never saw.
+var ErrChanged = errors.New("the config file changed on disk since it was read")
+
+// Tx is one change to the config file. Begin reads the file; the methods
+// change Config and stage token files; Commit saves the config and only
+// then puts the token files in place (or deletes them), so a config that
+// fails to save never leaves the token files out of step with it. Abort
+// discards a Tx that won't be committed.
+type Tx struct {
+	Config *broker.Config
+	loc    Location
+	stamp  string
+	fresh  bool              // creating the file: it must not exist
+	staged map[string]string // agent id -> temp file holding its new token
+	remove []string          // token files to delete after the save
+	done   bool
+}
+
+// Begin reads the config at loc for a change.
+func Begin(loc Location) (*Tx, error) {
+	cfg, stamp, err := load(loc.Path)
+	if err != nil {
+		return nil, err
+	}
+	return &Tx{Config: cfg, loc: loc, stamp: stamp}, nil
+}
+
+// Stamp is the stamp of the file contents the Tx started from.
+func (tx *Tx) Stamp() string { return tx.stamp }
+
+// AddAgent adds an agent with a fresh token and returns the path its
+// token file will have once the Tx commits.
+func (tx *Tx) AddAgent(a broker.AgentConfig) (string, error) {
+	if !a2a.ValidName(a.ID) {
+		return "", fmt.Errorf("invalid agent id %q: use 1-64 of a-z 0-9 . _ -", a.ID)
+	}
+	if Find(tx.Config, a.ID) >= 0 {
+		return "", fmt.Errorf("agent %q already exists", a.ID)
+	}
+	hash, err := tx.stageToken(a.ID)
+	if err != nil {
+		return "", err
+	}
+	a.TokenSHA256 = hash
+	tx.Config.Agents = append(tx.Config.Agents, a)
+	return tx.loc.TokenFile(a.ID), nil
+}
+
+// RotateToken gives an agent a new token, written to its token file when
+// the Tx commits. A running broker disconnects the agent once it reloads
+// the saved config.
+func (tx *Tx) RotateToken(id string) (string, error) {
+	i := Find(tx.Config, id)
+	if i < 0 {
+		return "", fmt.Errorf("no agent %q", id)
+	}
+	hash, err := tx.stageToken(id)
+	if err != nil {
+		return "", err
+	}
+	tx.Config.Agents[i].TokenSHA256 = hash
+	return tx.loc.TokenFile(id), nil
+}
+
+// RemoveAgent deletes an agent; its token file is deleted when the Tx
+// commits.
+func (tx *Tx) RemoveAgent(id string) error {
+	i := Find(tx.Config, id)
+	if i < 0 {
+		return fmt.Errorf("no agent %q", id)
+	}
+	tx.Config.Agents = slices.Delete(tx.Config.Agents, i, i+1)
+	tx.discard(id)
+	tx.remove = append(tx.remove, tx.loc.TokenFile(id))
+	return nil
+}
+
+// Set changes one top-level setting; see Set.
+func (tx *Tx) Set(key, value string) error { return Set(tx.Config, key, value) }
+
+func (tx *Tx) stageToken(id string) (string, error) {
+	tok, hash := broker.NewToken()
+	tmp, err := stageFile(tx.loc.TokenFile(id), []byte(tok+"\n"))
+	if err != nil {
+		return "", err
+	}
+	tx.discard(id)
+	if tx.staged == nil {
+		tx.staged = map[string]string{}
+	}
+	tx.staged[id] = tmp
+	return hash, nil
+}
+
+func (tx *Tx) discard(id string) {
+	if tmp, ok := tx.staged[id]; ok {
+		_ = os.Remove(tmp)
+		delete(tx.staged, id)
+	}
+}
+
+// Commit saves the config, refusing with ErrChanged if the file changed
+// since Begin, then moves staged token files into place and deletes the
+// token files of removed agents. If the save fails, nothing on disk
+// changes.
+func (tx *Tx) Commit() error {
+	if tx.done {
+		return errors.New("config change already committed or aborted")
+	}
+	tx.done = true
+	if tx.fresh && tx.loc.Exists() {
+		tx.abortFiles()
+		return fmt.Errorf("%s already exists", tx.loc.Path)
+	}
+	if !tx.fresh && Stamp(tx.loc.Path) != tx.stamp {
+		tx.abortFiles()
+		return ErrChanged
+	}
+	if err := Save(tx.loc.Path, tx.Config); err != nil {
+		tx.abortFiles()
+		return err
+	}
+	var errs []error
+	for _, id := range slices.Sorted(maps.Keys(tx.staged)) {
+		if err := os.Rename(tx.staged[id], tx.loc.TokenFile(id)); err != nil {
+			_ = os.Remove(tx.staged[id])
+			errs = append(errs, fmt.Errorf("config saved but writing the token file for %s failed (rotate it again): %w", id, err))
+		}
+	}
+	for _, f := range tx.remove {
+		if err := os.Remove(f); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			errs = append(errs, fmt.Errorf("config saved but removing %s failed: %w", f, err))
+		}
+	}
+	tx.staged, tx.remove = nil, nil
+	tx.stamp = Stamp(tx.loc.Path)
+	return errors.Join(errs...)
+}
+
+// Abort discards the staged token files. It's safe after Commit.
+func (tx *Tx) Abort() {
+	if !tx.done {
+		tx.done = true
+		tx.abortFiles()
+	}
+}
+
+func (tx *Tx) abortFiles() {
+	for id := range tx.staged {
+		tx.discard(id)
+	}
+	tx.remove = nil
 }
 
 // Find returns the index of agent id, or -1.
@@ -211,12 +403,10 @@ func Find(cfg *broker.Config, id string) int {
 	return slices.IndexFunc(cfg.Agents, func(a broker.AgentConfig) bool { return a.ID == id })
 }
 
-// WriteToken writes a token file (mode 0600), creating its directory.
+// WriteToken writes a token file, mode 0600 even if the file already
+// existed with another mode, creating its directory.
 func WriteToken(path, token string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	return os.WriteFile(path, []byte(token+"\n"), 0o600)
+	return writeAtomic(path, []byte(token+"\n"))
 }
 
 // URL is the client URL for a broker config: tcp:// or ssl:// to its
@@ -336,14 +526,14 @@ func Set(cfg *broker.Config, key, value string) error {
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return err
 	}
-	known := false
+	var field reflect.Type
 	t := reflect.TypeFor[broker.Config]()
 	for i := range t.NumField() {
 		if name, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ","); name == key {
-			known = true
+			field = t.Field(i).Type
 		}
 	}
-	if !known {
+	if field == nil {
 		return fmt.Errorf("unknown setting %q", key)
 	}
 	v := json.RawMessage(value)
@@ -355,8 +545,26 @@ func Set(cfg *broker.Config, key, value string) error {
 	var next broker.Config
 	dec := json.NewDecoder(strings.NewReader(string(raw)))
 	if err := dec.Decode(&next); err != nil {
-		return fmt.Errorf("%s: %w", key, err)
+		return fmt.Errorf("%s: %q is not %s", key, value, kindOf(field))
 	}
 	*cfg = next
 	return nil
+}
+
+// kindOf describes what a setting of type t accepts, for error messages.
+func kindOf(t reflect.Type) string {
+	if t == reflect.TypeFor[broker.Duration]() {
+		return "a duration (like 90s, 10m or 72h)"
+	}
+	switch t.Kind() {
+	case reflect.String:
+		return `a string (quote it as JSON, '"123"', if it looks like a number)`
+	case reflect.Bool:
+		return "true or false"
+	case reflect.Int, reflect.Int64, reflect.Int32:
+		return "a whole number"
+	case reflect.Float64, reflect.Float32:
+		return "a number"
+	}
+	return "a valid " + t.String()
 }

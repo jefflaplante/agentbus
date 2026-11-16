@@ -139,11 +139,12 @@ and `#` the rest. Anyone may watch any agent's events. Only the agent
 itself may publish under `a2a/v1/events/{its id}/`, so `from` and the
 topic always agree.
 
-The callback gets the envelope, not the topic, so it can't see the event
-name. A producer should set `event` to the name it publishes under:
-`Emit(ctx, "jobs/done", body, client.WithEvent("jobs/done"))`, or
-`agentbus emit --name jobs/done --event jobs/done`. Otherwise, register one
-narrow filter per event the watcher cares about.
+The callback gets the envelope, not the topic. `Emit` copies the event
+name into the envelope's `event` field (unless `WithEvent` sets another),
+so watchers can tell events apart; producers using another client should
+do the same. Event names are 1-256 bytes with no `+`, `#`, NUL or empty
+segments: `Emit` refuses anything else, because the broker would drop the
+connection.
 
 Events are fire-and-forget. A watcher that is offline misses them, unless
 its persistent session already holds the subscription. There is no reply
@@ -182,10 +183,16 @@ hostnames and anything secret out of it, and log those locally instead.
 `agentbus handle` does the opposite: every failure is sent as "handler
 failed", and the command's stderr stays in the local log.
 
-The Go client has no way to choose the code; every returned error is
-`handler_error`. If callers need to tell kinds of failure apart, put a
-stable word at the start of the reason (`invalid: ...`, `unavailable:
-...`), or return a normal response with a status field.
+To let callers tell kinds of failure apart, choose the code:
+
+```go
+return nil, client.Errorf("invalid", `body must be {"text": "..."}`)
+```
+
+Codes are 1-64 chars of `a-z 0-9 _ . -`; anything else falls back to
+`handler_error`. A wrapped `*client.ReplyError` works too. If a handler's
+return value can't be encoded as JSON, the client sends
+`handler_error: reply body could not be encoded` rather than no reply.
 
 ### Body shapes
 
@@ -207,8 +214,10 @@ request has the shape a worker expects, so the worker has to:
 
 The handler's `ctx` ends at the request's deadline: `ts + ttl_ms` when the
 sender set a TTL, or `DefaultTimeout` (5 minutes) after the handler starts
-when it didn't. The Go client sets the TTL from the requester's context
-deadline, and the CLI from `--timeout`.
+when it didn't. The Go client sets the TTL of `Request` and `RequestTask`
+from the requester's context deadline, and the CLI from `--timeout`.
+`Send` and `Emit` carry no TTL, so a one-way message to an offline agent
+waits for it however short the sender's context was.
 
 - Pass `ctx` to everything the handler calls, and stop when it's done.
   After the deadline the requester has given up, so a late answer is
@@ -364,6 +373,19 @@ the Python examples is a working implementation of each one:
 The envelope fields and validation rules are in
 [CONTRACT.md](../CONTRACT.md#envelope).
 
+## Seeing how a service is doing
+
+The broker counts every request it tracks, per target: how many are open,
+answered, errored or expired, and how long replies take (p50 and p95).
+`agentbus status --plain` includes these under `requests`. With
+`metrics_listen` set in the broker config, the same numbers are on
+`/metrics` for Prometheus, as `agentbus_requests_total`,
+`agentbus_requests_open` and the `agentbus_request_duration_seconds`
+histogram. A capability whose `expired` count climbs has workers that are
+too slow, stuck, or offline; one whose `errored` count climbs is
+refusing or failing work. See
+[HOW-IT-WORKS.md](HOW-IT-WORKS.md#request-tracking-and-metrics).
+
 ## Checklist
 
 - Its own agent ID, with `capabilities` for every queue it serves.
@@ -382,11 +404,11 @@ The envelope fields and validation rules are in
 ## Limits
 
 - **Reply permission doesn't survive a broker restart.** Open requests
-  are held in memory (up to 65,536). After a restart, or when the table is
-  full, a reply needs the answerer's `send_to` again.
-- **No custom error codes from Go handlers.** Every returned error is
-  `handler_error`. The Python example's `ReplyError` shows what the Go
-  client could offer.
+  are held in memory: 256 per requester, 65,536 in all. After a restart,
+  or past those limits, a reply needs the answerer's `send_to` again.
 - **No progress messages or streaming.** A request gets one reply. Use
   the long-work pattern above, with events for progress.
-- **Watchers don't see the event name** unless the producer sets `event`.
+- **A full queue refuses new messages.** Once an agent has `max_queued`
+  messages waiting (default 1024), senders get `queue_full` until it
+  catches up. Messages are counted, not bytes, so a queue can hold up to
+  `max_queued` × `max_envelope_bytes` (256 MiB at the defaults).

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"text/tabwriter"
@@ -33,7 +34,8 @@ $AGENTBUS_CONFIG, else ./broker.json, else ~/.config/agentbus/broker.json.`,
 		Example: `  agentbus config                                  # interactive editor
   agentbus config agent add researcher --capability research --send-to conduit-home
   agentbus config env researcher >> ~/.researcher.env
-  agentbus config set rate_per_second 50`,
+  agentbus config set rate_per_second 50
+  agentbus config set tls_cert cert.pem tls_key key.pem listen 0.0.0.0:8883`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			loc := a.location()
@@ -89,14 +91,42 @@ func newConfigPathCmd(a *app) *cobra.Command {
 		RunE: func(*cobra.Command, []string) error {
 			loc := a.location()
 			exists := "exists"
+			state := confstore.DefaultStateDir(loc)
+			data, audit := filepath.Join(state, "data"), filepath.Join(state, "audit.jsonl")
 			if !loc.Exists() {
-				exists = "does not exist yet"
+				exists = "does not exist yet; these are the paths it would get"
+			} else if cfg, err := confstore.Load(loc.Path); err == nil {
+				data, audit = orNone(cfg.DataDir), orNone(cfg.AuditFile)
 			}
-			fmt.Fprintf(a.stdout, "config  %s (%s, %s)\ntokens  %s\nstate   %s\n", loc.Path, loc.Source, exists,
-				loc.TokensDir(), confstore.StateDir())
+			fmt.Fprintf(a.stdout, "config  %s (%s, %s)\ntokens  %s\ndata    %s\naudit   %s\n", loc.Path, loc.Source, exists,
+				loc.TokensDir(), data, audit)
 			return nil
 		},
 	}
+}
+
+func orNone(s string) string {
+	if s == "" {
+		return "(none)"
+	}
+	return s
+}
+
+// change applies fn to the config file and saves it, token files only
+// after the config (see confstore.Tx).
+func change(loc confstore.Location, fn func(tx *confstore.Tx) error) (*broker.Config, error) {
+	tx, err := confstore.Begin(loc)
+	if err != nil {
+		return nil, err
+	}
+	if err := fn(tx); err != nil {
+		tx.Abort()
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return tx.Config, nil
 }
 
 func newConfigShowCmd(a *app) *cobra.Command {
@@ -136,33 +166,44 @@ func settingKeys() []string {
 
 func newConfigSetCmd(a *app) *cobra.Command {
 	return &cobra.Command{
-		Use:   "set KEY VALUE",
-		Short: "Change a broker setting",
-		Long: "Change one top-level broker setting. VALUE is JSON (50, true, \"10m\") or a bare string.\n\nKeys: " +
-			strings.Join(settingKeys(), ", "),
+		Use:   "set KEY VALUE [KEY VALUE]...",
+		Short: "Change broker settings",
+		Long: `Change top-level broker settings. VALUE is JSON (50, true, "10m") or a bare
+string. Several KEY VALUE pairs are applied together and validated and
+saved once, for settings that only make sense together: tls_cert and
+tls_key, or a non-loopback listen address and TLS.
+
+Keys: ` + strings.Join(settingKeys(), ", "),
 		Example: `  agentbus config set rate_per_second 50
   agentbus config set session_expiry 72h
-  agentbus config set listen 0.0.0.0:8883`,
-		Args: cobra.ExactArgs(2),
+  agentbus config set tls_cert /etc/agentbus/cert.pem tls_key /etc/agentbus/key.pem listen 0.0.0.0:8883`,
+		Args: func(_ *cobra.Command, args []string) error {
+			if len(args) == 0 || len(args)%2 != 0 {
+				return errors.New("want KEY VALUE pairs, like: config set rate_per_second 50")
+			}
+			return nil
+		},
 		ValidArgsFunction: func(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
-			if len(args) == 0 {
+			if len(args)%2 == 0 {
 				return settingKeys(), cobra.ShellCompDirectiveNoFileComp
 			}
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		},
 		RunE: func(_ *cobra.Command, args []string) error {
-			loc := a.location()
-			cfg, err := confstore.Load(loc.Path)
+			_, err := change(a.location(), func(tx *confstore.Tx) error {
+				for i := 0; i < len(args); i += 2 {
+					if err := tx.Set(args[i], args[i+1]); err != nil {
+						return err
+					}
+				}
+				return nil
+			})
 			if err != nil {
 				return err
 			}
-			if err := confstore.Set(cfg, args[0], args[1]); err != nil {
-				return err
+			for i := 0; i < len(args); i += 2 {
+				lipgloss.Fprintf(a.stderr, "%s %s = %s\n", tui.OKStyle.Render("✓"), args[i], args[i+1])
 			}
-			if err := confstore.Save(loc.Path, cfg); err != nil {
-				return err
-			}
-			lipgloss.Fprintf(a.stderr, "%s %s = %s\n", tui.OKStyle.Render("✓"), args[0], args[1])
 			return nil
 		},
 	}
@@ -202,19 +243,14 @@ func newConfigAgentCmd(a *app) *cobra.Command {
   agentbus config agent add cli-ops --send-to researcher --send-to conduit-home
   agentbus config agent add grafana --observer`,
 		RunE: func(_ *cobra.Command, args []string) error {
-			loc := a.location()
-			cfg, err := confstore.Load(loc.Path)
-			if err != nil {
+			var file string
+			cfg, err := change(a.location(), func(tx *confstore.Tx) (err error) {
+				file, err = tx.AddAgent(broker.AgentConfig{
+					ID: args[0], Capabilities: caps, SendTo: sendTo, Observer: observer, RatePerSecond: rate, RateBurst: burst,
+				})
 				return err
-			}
-			file, err := confstore.AddAgent(cfg, loc, broker.AgentConfig{
-				ID: args[0], Capabilities: caps, SendTo: sendTo, Observer: observer, RatePerSecond: rate, RateBurst: burst,
 			})
 			if err != nil {
-				return err
-			}
-			if err := confstore.Save(loc.Path, cfg); err != nil {
-				_ = os.Remove(file)
 				return err
 			}
 			lipgloss.Fprintf(a.stderr, "%s added %s; token in %s\n\nConnect as it with:\n", tui.OKStyle.Render("✓"), args[0], file)
@@ -231,15 +267,7 @@ func newConfigAgentCmd(a *app) *cobra.Command {
 	rm := &cobra.Command{
 		Use: "rm ID", Aliases: []string{"remove"}, Short: "Remove an agent and its token file", Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			loc := a.location()
-			cfg, err := confstore.Load(loc.Path)
-			if err != nil {
-				return err
-			}
-			if err := confstore.RemoveAgent(cfg, loc, args[0]); err != nil {
-				return err
-			}
-			if err := confstore.Save(loc.Path, cfg); err != nil {
+			if _, err := change(a.location(), func(tx *confstore.Tx) error { return tx.RemoveAgent(args[0]) }); err != nil {
 				return err
 			}
 			lipgloss.Fprintf(a.stderr, "%s removed %s; a running broker disconnects it\n", tui.OKStyle.Render("✓"), args[0])
@@ -249,16 +277,12 @@ func newConfigAgentCmd(a *app) *cobra.Command {
 	token := &cobra.Command{
 		Use: "token ID", Aliases: []string{"rotate"}, Short: "Rotate an agent's token", Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			loc := a.location()
-			cfg, err := confstore.Load(loc.Path)
-			if err != nil {
+			var file string
+			_, err := change(a.location(), func(tx *confstore.Tx) (err error) {
+				file, err = tx.RotateToken(args[0])
 				return err
-			}
-			file, err := confstore.RotateToken(cfg, loc, args[0])
+			})
 			if err != nil {
-				return err
-			}
-			if err := confstore.Save(loc.Path, cfg); err != nil {
 				return err
 			}
 			lipgloss.Fprintf(a.stderr, "%s new token for %s in %s; a running broker disconnects the old one\n",
@@ -280,45 +304,21 @@ A running broker applies the change within a second.`,
   agentbus config agent edit grafana --observer=false`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			loc := a.location()
-			cfg, err := confstore.Load(loc.Path)
+			var ag broker.AgentConfig
+			_, err := change(loc, func(tx *confstore.Tx) error {
+				i := confstore.Find(tx.Config, args[0])
+				if i < 0 {
+					return fmt.Errorf("no agent %q in %s", args[0], loc.Path)
+				}
+				editAgent(cmd.Flags().Changed, &tx.Config.Agents[i], eCaps, eSendTo, eObserver, eRate, eBurst)
+				ag = tx.Config.Agents[i]
+				return nil
+			})
 			if err != nil {
 				return err
 			}
-			i := confstore.Find(cfg, args[0])
-			if i < 0 {
-				return fmt.Errorf("no agent %q in %s", args[0], loc.Path)
-			}
-			ag := &cfg.Agents[i]
-			nonEmpty := func(v []string) []string {
-				var out []string
-				for _, s := range v {
-					if s != "" {
-						out = append(out, s)
-					}
-				}
-				return out
-			}
-			f := cmd.Flags()
-			if f.Changed("capability") {
-				ag.Capabilities = nonEmpty(eCaps)
-			}
-			if f.Changed("send-to") {
-				ag.SendTo = nonEmpty(eSendTo)
-			}
-			if f.Changed("observer") {
-				ag.Observer = eObserver
-			}
-			if f.Changed("rate") {
-				ag.RatePerSecond = eRate
-			}
-			if f.Changed("burst") {
-				ag.RateBurst = eBurst
-			}
-			if err := confstore.Save(loc.Path, cfg); err != nil {
-				return err
-			}
 			lipgloss.Fprintf(a.stderr, "%s %s: %s; may send to %s; rate %s\n", tui.OKStyle.Render("✓"), ag.ID,
-				tui.AgentRole(*ag), tui.SendTo(*ag), tui.AgentRate(*ag))
+				tui.AgentRole(ag), tui.SendTo(ag), tui.AgentRate(ag))
 			return nil
 		},
 	}
@@ -342,6 +342,34 @@ A running broker applies the change within a second.`,
 	rm.ValidArgsFunction, token.ValidArgsFunction, edit.ValidArgsFunction = agentIDs, agentIDs, agentIDs
 	c.AddCommand(list, add, edit, rm, token)
 	return c
+}
+
+// editAgent applies the "config agent edit" flags that were given.
+func editAgent(changed func(flag string) bool, ag *broker.AgentConfig, caps, sendTo []string, observer bool, rate float64, burst int) {
+	nonEmpty := func(v []string) []string {
+		var out []string
+		for _, s := range v {
+			if s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	if changed("capability") {
+		ag.Capabilities = nonEmpty(caps)
+	}
+	if changed("send-to") {
+		ag.SendTo = nonEmpty(sendTo)
+	}
+	if changed("observer") {
+		ag.Observer = observer
+	}
+	if changed("rate") {
+		ag.RatePerSecond = rate
+	}
+	if changed("burst") {
+		ag.RateBurst = burst
+	}
 }
 
 func newConfigEnvCmd(a *app) *cobra.Command {

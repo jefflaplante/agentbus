@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -31,8 +32,8 @@ func AgentRows(cards []a2a.Presence) []table.Row {
 			keys = "claimed"
 		}
 		rows = append(rows, table.Row{
-			p.Agent, string(p.Status), p.TS.Local().Format("Jan 02 15:04:05"),
-			strings.Join(p.Capabilities, ","), keys, p.Description,
+			Clean(p.Agent), Clean(string(p.Status)), p.TS.Local().Format("Jan 02 15:04:05"),
+			Clean(strings.Join(p.Capabilities, ",")), keys, Clean(p.Description),
 		})
 	}
 	return rows
@@ -88,8 +89,16 @@ func agentColumns(width int) []table.Column {
 }
 
 func (m *AgentsModel) refresh(now time.Time) {
+	var sel string
+	if i := m.table.Cursor(); i >= 0 && i < len(m.cards) {
+		sel = m.cards[i].Agent
+	}
 	m.cards = m.Source()
 	m.table.SetRows(AgentRows(m.cards))
+	// Keep the cursor on the same agent when cards come and go.
+	if i := slices.IndexFunc(m.cards, func(p a2a.Presence) bool { return p.Agent == sel }); sel != "" && i >= 0 {
+		m.table.SetCursor(i)
+	}
 	m.at = now
 }
 

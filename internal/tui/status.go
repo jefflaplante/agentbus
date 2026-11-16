@@ -125,7 +125,7 @@ func AgentStatusRows(agents []broker.AgentStatus) []table.Row {
 			seen = a.LastSeen.Local().Format("15:04:05")
 		}
 		rows = append(rows, table.Row{
-			a.ID, a.State, a.Remote, fmt.Sprint(a.Queued), fmt.Sprint(a.Accepted), fmt.Sprint(a.Rejected), seen, role,
+			Clean(a.ID), Clean(a.State), Clean(a.Remote), fmt.Sprint(a.Queued), fmt.Sprint(a.Accepted), fmt.Sprint(a.Rejected), seen, Clean(role),
 		})
 	}
 	return rows
@@ -146,8 +146,15 @@ func (m StatusModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	switch msg := msg.(type) {
 	case StatusMsg:
+		sel, had := m.selectedAgent()
 		m.prev, m.st, m.have = m.st, broker.Status(msg), true
 		m.table.SetRows(AgentStatusRows(m.st.Agents))
+		// Keep the cursor on the same agent when rows come and go.
+		if had {
+			if i := slices.IndexFunc(m.st.Agents, func(a broker.AgentStatus) bool { return a.ID == sel.ID }); i >= 0 {
+				m.table.SetCursor(i)
+			}
+		}
 		return m, waitForStatus(m.Source)
 	case statusClosedMsg:
 		m.closed = true
@@ -257,8 +264,11 @@ func (m StatusModel) detailKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.feed.selSeq = 0
 			return m, nil
 		}
+		// The feed is shared with the overview, which can't show or
+		// change a pause: leaving the detail always resumes it.
 		m.detail = ""
 		m.feed.setFilter("", nil)
+		m.feed.paused, m.feed.dropped = false, 0
 	case "enter":
 		if it, ok := m.feed.selected(); ok {
 			m.inspect = NewInspector(it, m.width, m.height-2)
@@ -269,6 +279,8 @@ func (m StatusModel) detailKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "e":
 		return m, m.openEditor(m.detail)
+	case "c":
+		// The traffic is every agent's, not just this one's: don't clear it.
 	default:
 		m.feed.feedKeys(k.String())
 	}
@@ -290,28 +302,28 @@ func (m StatusModel) renderDetail(width int) string {
 			as = a
 		}
 	}
-	header := TitleStyle.Render("agentbus · agent "+m.detail) + " " + StatusStyle(a2a.Status(as.State)).Render(as.State)
+	header := TitleStyle.Render("agentbus · agent "+Clean(m.detail)) + " " + StatusStyle(a2a.Status(as.State)).Render(Clean(as.State))
 	if as.Remote != "" {
-		header += SubtleStyle.Render("  " + as.Remote)
+		header += SubtleStyle.Render("  " + Clean(as.Remote))
 	}
 	if m.inspect != nil {
 		return header + "\n\n" + m.inspect.View()
 	}
 	kv := func(k, v string) string { return SubtleStyle.Render(fmt.Sprintf("%-13s", k)) + TextStyle.Render(v) }
-	role := strings.Join(as.Capabilities, ",")
+	role := Clean(strings.Join(as.Capabilities, ","))
 	if role == "" {
 		role = "none"
 	}
 	send := "anyone"
 	if len(as.SendTo) > 0 && !slices.Contains(as.SendTo, "*") {
-		send = strings.Join(as.SendTo, ", ")
+		send = Clean(strings.Join(as.SendTo, ", "))
 	}
 	seen := "never"
 	if !as.LastSeen.IsZero() {
 		seen = as.LastSeen.Local().Format("15:04:05") + " (" + since(as.LastSeen) + " ago)"
 	}
 	broker := []string{AccentStyle.Render("Broker"),
-		kv("state", as.State), kv("queued", fmt.Sprint(as.Queued)),
+		kv("state", Clean(as.State)), kv("queued", fmt.Sprint(as.Queued)),
 		kv("accepted", OKStyle.Render(fmt.Sprint(as.Accepted))), kv("rejected", fmt.Sprint(as.Rejected)),
 		kv("last seen", seen), kv("serves", role), kv("may send to", send), kv("observer", fmt.Sprint(as.Observer)),
 	}
@@ -324,8 +336,8 @@ func (m StatusModel) renderDetail(width int) string {
 				keys = "pinned"
 			}
 		}
-		card = append(card, kv("status", StatusStyle(p.Status).Render(string(p.Status))+SubtleStyle.Render(" since "+p.TS.Local().Format("15:04:05"))),
-			kv("description", p.Description), kv("capabilities", strings.Join(p.Capabilities, ",")), kv("keys", keys),
+		card = append(card, kv("status", StatusStyle(p.Status).Render(Clean(string(p.Status)))+SubtleStyle.Render(" since "+p.TS.Local().Format("15:04:05"))),
+			kv("description", Clean(p.Description)), kv("capabilities", Clean(strings.Join(p.Capabilities, ","))), kv("keys", keys),
 			kv("meta", fmt.Sprintf("%d entries", len(p.Meta))))
 	} else {
 		card = append(card, SubtleStyle.Render("no card: the agent hasn't announced itself"))
@@ -339,7 +351,10 @@ func (m StatusModel) renderDetail(width int) string {
 	}
 	top := lipgloss.JoinHorizontal(lipgloss.Top, panel(broker), panel(card))
 
-	traffic := AccentStyle.Render("Recent traffic") + SubtleStyle.Render(fmt.Sprintf("  %d messages involving %s", len(m.feed.visible()), m.detail))
+	traffic := AccentStyle.Render("Recent traffic") + SubtleStyle.Render(fmt.Sprintf("  %d messages involving %s", len(m.feed.visible()), Clean(m.detail)))
+	if m.feed.paused {
+		traffic += WarnStyle.Render(fmt.Sprintf("  paused (%d not shown) · p to resume", m.feed.dropped))
+	}
 	lines := m.feed.lines(width, max(3, m.height-lipgloss.Height(top)-6))
 	if len(lines) == 0 {
 		lines = []string{SubtleStyle.Render("  none seen since this view opened")}
@@ -347,7 +362,7 @@ func (m StatusModel) renderDetail(width int) string {
 			lines = []string{SubtleStyle.Render("  traffic needs an observer connection")}
 		}
 	}
-	help := "↑/↓ select · enter inspect · i inspect card"
+	help := "↑/↓ select · enter inspect · i inspect card · p pause"
 	if m.EditAgent != nil {
 		help += " · e edit in config"
 	}
@@ -376,8 +391,8 @@ func (m StatusModel) render() string {
 	}
 	st := m.st
 	up := (time.Duration(st.Uptime) * time.Second).String()
-	header := TitleStyle.Render("agentbus · broker") + " " + AccentStyle.Render(st.Listen) +
-		SubtleStyle.Render(fmt.Sprintf("  up %s · %s · mochi %s", up, st.Version, st.Mochi))
+	header := TitleStyle.Render("agentbus · broker") + " " + AccentStyle.Render(Clean(st.Listen)) +
+		SubtleStyle.Render(Clean(fmt.Sprintf("  up %s · %s · mochi %s", up, st.Version, st.Mochi)))
 	header = ansi.Truncate(header, max(width, 20), "…")
 	if m.closed {
 		header += ErrStyle.Render("  disconnected")
@@ -390,7 +405,7 @@ func (m StatusModel) render() string {
 		if !on {
 			return SubtleStyle.Render("off")
 		}
-		return OKStyle.Render(tailTrunc(v, valueWidth))
+		return OKStyle.Render(tailTrunc(Clean(v), valueWidth))
 	}
 	server := []string{AccentStyle.Render("Server"),
 		kv("tls", onOff(st.TLS, "on")),
@@ -421,7 +436,7 @@ func (m StatusModel) render() string {
 	var totalRej int64
 	for _, c := range codes {
 		totalRej += d.Rejected[c]
-		rejects = append(rejects, fmt.Sprintf("%s %d", c, d.Rejected[c]))
+		rejects = append(rejects, fmt.Sprintf("%s %d", Clean(c), d.Rejected[c]))
 	}
 	rejLine := SubtleStyle.Render("none")
 	if len(rejects) > 0 {
@@ -433,6 +448,7 @@ func (m StatusModel) render() string {
 		kv("rejected", rejLine),
 		kv("auth fails", fmt.Sprint(d.AuthFailures)),
 		kv("wills", fmt.Sprintf("%d refused", d.WillsRefused)),
+		kv("requests", requestSummary(st.Requests)),
 	}
 
 	l := st.Limits
@@ -454,6 +470,24 @@ func (m StatusModel) render() string {
 	}
 	help := HelpStyle.Render(helpText + " · q quit · updated " + st.Time.Local().Format("15:04:05"))
 	return header + "\n" + top + "\n" + limits + "\n\n" + m.table.View() + "\n" + help
+}
+
+// requestSummary totals request outcomes across targets: open, answered,
+// errored and expired, with expired highlighted since it means no reply.
+func requestSummary(rs []broker.RequestStats) string {
+	var open int
+	var ok, errored, expired int64
+	for _, r := range rs {
+		open += r.Open
+		ok += r.Answered
+		errored += r.Errored
+		expired += r.Expired
+	}
+	exp := fmt.Sprintf("%d expired", expired)
+	if expired > 0 {
+		exp = ErrStyle.Render(exp)
+	}
+	return fmt.Sprintf("%d open · %d ok · %d err · ", open, ok, errored) + exp
 }
 
 func humanBytes(n int64) string {

@@ -9,6 +9,7 @@ library.
 | `agentbus.py` | The `Agent` class: one connection as one agent, serving and calling |
 | `worker.py` | A service agent: the `wordcount` task queue, an inbox that answers `{"op": "ping"}`, a watcher for `jobs/...` events |
 | `client.py` | A command-line client: `agents`, `request`, `task`, `send`, `emit`, `watch` |
+| `test_agentbus.py` | Unit tests that need no broker: `python3 -m unittest test_agentbus` |
 
 `test/e2e/python_test.go` runs all three against a live broker, together
 with the Go CLI. The test needs a Python with paho-mqtt. Set

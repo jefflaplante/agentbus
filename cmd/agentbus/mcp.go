@@ -82,58 +82,136 @@ Logs go to stderr; stdout carries only MCP traffic.`,
 
 // mcpInbox holds messages that arrived for this agent until the inbox tool
 // reads them. Requests stay pending until reply answers them or they expire.
+//
+// Pending requests are keyed by sender and envelope id ("bob/3fa9..."):
+// envelope ids are chosen by the sender, so an id alone would let one agent
+// reuse another's id and receive the answer meant for it.
 type mcpInbox struct {
 	mu      sync.Mutex
 	msgs    []*a2a.Envelope
 	dropped int
-	pending map[string]chan mcpAnswer
-	arrived chan struct{} // closed and replaced whenever a message arrives
+	pending map[string]*mcpPending
+	sent    map[string]*mcpSent // recent sends by id, to match $broker errors
+	arrived chan struct{}       // closed and replaced whenever a message arrives
+}
+
+// mcpPending is a request waiting for the reply tool.
+type mcpPending struct {
+	ch       chan mcpAnswer // buffered; written at most once, under ib.mu
+	deadline time.Time      // zero if none
 }
 
 type mcpAnswer struct {
 	body any
 	err  error
+	ack  chan error // if set, told whether the answer reached the client
 }
 
-func newMCPInbox() *mcpInbox {
-	return &mcpInbox{pending: map[string]chan mcpAnswer{}, arrived: make(chan struct{})}
+// mcpSent is a recent send or emit. While waiting is true, a $broker error
+// for it goes to ch; afterwards it is queued in the inbox.
+type mcpSent struct {
+	at      time.Time
+	waiting bool
+	ch      chan *a2a.Envelope
 }
+
+const (
+	// mcpSendGrace is how long send and emit wait for the broker to reject
+	// the message. The broker sends its error envelope as it acknowledges
+	// the publish, so a rejection normally arrives within milliseconds.
+	mcpSendGrace = 250 * time.Millisecond
+	// mcpSentMemory is how long a late broker error is still matched to a
+	// send and queued in the inbox.
+	mcpSentMemory = 10 * time.Minute
+	mcpSentMax    = 1000
+	// mcpAckTimeout bounds how long reply waits for the handler to take
+	// the answer. The handler is always waiting, so this is a safety net.
+	mcpAckTimeout = 5 * time.Second
+)
+
+var errMCPExpired = errors.New("the request expired before the reply was sent")
+
+func newMCPInbox() *mcpInbox {
+	return &mcpInbox{pending: map[string]*mcpPending{}, sent: map[string]*mcpSent{}, arrived: make(chan struct{})}
+}
+
+// mcpKey identifies a request for the reply tool.
+func mcpKey(e *a2a.Envelope) string { return e.From + "/" + e.ID }
 
 // handle is the client handler for the inbox and for tasks. Events return
 // at once; requests block until reply answers them or ctx (the request's
 // TTL) ends.
 func (ib *mcpInbox) handle(ctx context.Context, e *a2a.Envelope) (any, error) {
-	if e.Type != a2a.TypeRequest && e.Type != a2a.TypeEvent {
+	switch e.Type {
+	case a2a.TypeRequest, a2a.TypeEvent:
+	case a2a.TypeError:
+		ib.brokerError(e)
+		return nil, nil
+	default:
 		return nil, nil
 	}
-	var answer chan mcpAnswer
+	key := mcpKey(e)
+	var p *mcpPending
 	ib.mu.Lock()
-	if len(ib.msgs) >= mcpInboxMax {
-		ib.msgs = ib.msgs[1:]
-		ib.dropped++
-	}
-	ib.msgs = append(ib.msgs, e)
 	if e.Type == a2a.TypeRequest {
-		answer = make(chan mcpAnswer, 1)
-		ib.pending[e.ID] = answer
+		if _, dup := ib.pending[key]; dup {
+			ib.mu.Unlock()
+			return nil, client.Errorf("duplicate", "a request with this id is already waiting")
+		}
+		p = &mcpPending{ch: make(chan mcpAnswer, 1)}
+		if d, ok := ctx.Deadline(); ok {
+			p.deadline = d
+		}
+		ib.pending[key] = p
 	}
-	close(ib.arrived)
-	ib.arrived = make(chan struct{})
+	ib.pushLocked(e)
 	ib.mu.Unlock()
-	if answer == nil {
+	if p == nil {
 		return nil, nil
 	}
-	defer func() {
-		ib.mu.Lock()
-		delete(ib.pending, e.ID)
-		ib.mu.Unlock()
-	}()
 	select {
-	case ans := <-answer:
+	case ans := <-p.ch:
+		if ans.ack != nil {
+			ans.ack <- nil
+		}
 		return ans.body, ans.err
 	case <-ctx.Done():
+		ib.mu.Lock()
+		if ib.pending[key] == p {
+			delete(ib.pending, key)
+		}
+		ib.mu.Unlock()
+		// An answer may have landed just as ctx ended; tell its sender.
+		select {
+		case ans := <-p.ch:
+			if ans.ack != nil {
+				ans.ack <- errMCPExpired
+			}
+		default:
+		}
 		return nil, errors.New("not answered before the request expired")
 	}
+}
+
+// pushLocked queues e, evicting the oldest message if the inbox is full.
+// An evicted request can no longer be read, so it is refused at once
+// rather than left to wait out its TTL.
+func (ib *mcpInbox) pushLocked(e *a2a.Envelope) {
+	if len(ib.msgs) >= mcpInboxMax {
+		old := ib.msgs[0]
+		ib.msgs = ib.msgs[1:]
+		ib.dropped++
+		if old.Type == a2a.TypeRequest {
+			key := mcpKey(old)
+			if p, ok := ib.pending[key]; ok {
+				delete(ib.pending, key)
+				p.ch <- mcpAnswer{err: client.Errorf("busy", "inbox full")}
+			}
+		}
+	}
+	ib.msgs = append(ib.msgs, e)
+	close(ib.arrived)
+	ib.arrived = make(chan struct{})
 }
 
 // take removes and returns everything held, waiting up to wait for at
@@ -158,16 +236,116 @@ func (ib *mcpInbox) take(ctx context.Context, wait time.Duration) ([]*a2a.Envelo
 	return msgs, dropped
 }
 
-func (ib *mcpInbox) answer(id string, ans mcpAnswer) bool {
+// waiting reports whether the request with key can still be answered, and
+// its deadline (zero if none).
+func (ib *mcpInbox) waiting(key string, now time.Time) (time.Time, bool) {
 	ib.mu.Lock()
 	defer ib.mu.Unlock()
-	ch, ok := ib.pending[id]
-	if !ok {
-		return false
+	p, ok := ib.pending[key]
+	if !ok || (!p.deadline.IsZero() && !now.Before(p.deadline)) {
+		return time.Time{}, false
 	}
-	delete(ib.pending, id)
-	ch <- ans
-	return true
+	return p.deadline, true
+}
+
+// answer hands ans to the handler waiting on key and returns once the
+// handler has taken it, so success means the reply went to the client.
+func (ib *mcpInbox) answer(key string, ans mcpAnswer) error {
+	ack := make(chan error, 1)
+	ans.ack = ack
+	ib.mu.Lock()
+	p, ok := ib.pending[key]
+	if ok && !p.deadline.IsZero() && !time.Now().Before(p.deadline) {
+		ok = false // expired; the handler is about to give up
+	}
+	if !ok {
+		ib.mu.Unlock()
+		if !strings.Contains(key, "/") {
+			return fmt.Errorf("no request %q is waiting: use the full id from the inbox tool, sender/id", key)
+		}
+		return fmt.Errorf("no request %q is waiting: it was already answered, expired, or never arrived", key)
+	}
+	delete(ib.pending, key)
+	p.ch <- ans
+	ib.mu.Unlock()
+	t := time.NewTimer(mcpAckTimeout)
+	defer t.Stop()
+	select {
+	case err := <-ack:
+		return err
+	case <-t.C:
+		return errors.New("the reply was not confirmed in time; it may not have been sent")
+	}
+}
+
+// expectBrokerError starts matching $broker errors to the message with id.
+func (ib *mcpInbox) expectBrokerError(id string) <-chan *a2a.Envelope {
+	now := time.Now()
+	ib.mu.Lock()
+	defer ib.mu.Unlock()
+	if len(ib.sent) >= mcpSentMax {
+		for k, s := range ib.sent {
+			if !s.waiting && now.Sub(s.at) > mcpSentMemory {
+				delete(ib.sent, k)
+			}
+		}
+		if len(ib.sent) >= mcpSentMax {
+			for k, s := range ib.sent { // still full: drop the settled ones
+				if !s.waiting {
+					delete(ib.sent, k)
+				}
+			}
+		}
+	}
+	s := &mcpSent{at: now, waiting: true, ch: make(chan *a2a.Envelope, 1)}
+	ib.sent[id] = s
+	return s.ch
+}
+
+// settle stops waiting for a broker error for id. It returns the error if
+// one arrived; later ones are queued in the inbox. With forget, later ones
+// are dropped too (the message was never published).
+func (ib *mcpInbox) settle(id string, forget bool) *a2a.Envelope {
+	ib.mu.Lock()
+	defer ib.mu.Unlock()
+	s, ok := ib.sent[id]
+	if !ok {
+		return nil
+	}
+	s.waiting = false
+	if forget {
+		delete(ib.sent, id)
+	}
+	select {
+	case e := <-s.ch:
+		return e
+	default:
+		return nil
+	}
+}
+
+// brokerError routes a $broker error about one of this server's sends to
+// the send tool if it is still waiting, or else to the inbox. Errors about
+// anything else were already matched by the client or are noise.
+func (ib *mcpInbox) brokerError(e *a2a.Envelope) {
+	if e.From != a2a.BrokerID {
+		return
+	}
+	ib.mu.Lock()
+	defer ib.mu.Unlock()
+	s, ok := ib.sent[e.CorrelationID]
+	switch {
+	case !ok || time.Since(s.at) > mcpSentMemory:
+		return
+	case s.waiting:
+		select {
+		case s.ch <- e:
+		default:
+		}
+	default:
+		delete(ib.sent, e.CorrelationID)
+		ib.pushLocked(e)
+	}
 }
 
 // Tool inputs. Descriptions become the JSON Schema the model sees.
@@ -225,7 +403,7 @@ type mcpInboxIn struct {
 }
 
 type mcpReplyIn struct {
-	ID    string `json:"id" jsonschema:"id of the request, from the inbox tool"`
+	ID    string `json:"id" jsonschema:"reply id of the request as the inbox tool shows it: sender/id, e.g. bob/3fa9c0"`
 	Body  any    `json:"body,omitempty" jsonschema:"reply body: any JSON value"`
 	Error string `json:"error,omitempty" jsonschema:"set to refuse the request; sent as an error reply with this reason instead of body"`
 }
@@ -271,6 +449,39 @@ func untrusted(e *a2a.Envelope) string {
 // replyResult turns a request's outcome into a tool result. An error reply
 // from another agent is a normal outcome, reported to the model, not a
 // tool failure.
+// brokerRejected reports a $broker error about a send or emit.
+func brokerRejected(what string, e *a2a.Envelope) *mcp.CallToolResult {
+	var b client.ErrorBody
+	_ = e.DecodeBody(&b)
+	r := textResult(fmt.Sprintf("The broker rejected the %s: %s: %s", what, b.Code, b.Reason))
+	r.IsError = true
+	return r
+}
+
+// publishChecked publishes through pub with a fresh envelope id and waits
+// briefly for the broker to reject it. A rejection that arrives later is
+// queued in the inbox instead.
+func publishChecked(ctx context.Context, ib *mcpInbox, opts []client.MsgOption,
+	pub func(opts []client.MsgOption) error) (*a2a.Envelope, error) {
+	id := a2a.NewID()
+	rejected := ib.expectBrokerError(id)
+	opts = append(opts, func(e *a2a.Envelope) { e.ID = id })
+	if err := pub(opts); err != nil {
+		ib.settle(id, true)
+		return nil, err
+	}
+	t := time.NewTimer(mcpSendGrace)
+	defer t.Stop()
+	select {
+	case e := <-rejected:
+		ib.settle(id, true)
+		return e, nil
+	case <-t.C:
+	case <-ctx.Done():
+	}
+	return ib.settle(id, false), nil
+}
+
 func replyResult(reply *a2a.Envelope, err error) (*mcp.CallToolResult, any, error) {
 	var re *client.RemoteError
 	if errors.As(err, &re) {
@@ -326,16 +537,24 @@ func newMCPServer(c *client.Client, ib *mcpInbox, agent, ver string) *mcp.Server
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name:        "send",
-		Description: "Send a one-way event to another agent's inbox. Returns once the broker has accepted it; no reply comes back.",
+		Name: "send",
+		Description: "Send a one-way event to another agent's inbox; no reply comes back. Fails if the broker rejects it " +
+			"(for example no_route for an unknown agent, or not_authorized). A rejection that arrives after the call " +
+			"returns shows up in the inbox as an error from $broker with this message's id as correlation_id.",
 		Annotations: &mcp.ToolAnnotations{Title: "Send to an agent", DestructiveHint: boolp(false), OpenWorldHint: boolp(true)},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpSendIn) (*mcp.CallToolResult, any, error) {
 		opts, err := in.options()
 		if err != nil {
 			return nil, nil, err
 		}
-		if err := c.Send(ctx, in.To, in.Body, opts...); err != nil {
+		rejected, err := publishChecked(ctx, ib, opts, func(opts []client.MsgOption) error {
+			return c.Send(ctx, in.To, in.Body, opts...)
+		})
+		if err != nil {
 			return nil, nil, err
+		}
+		if rejected != nil {
+			return brokerRejected("message to "+in.To, rejected), nil, nil
 		}
 		return textResult("Sent to " + in.To + "."), nil, nil
 	})
@@ -370,16 +589,23 @@ func newMCPServer(c *client.Client, ib *mcpInbox, agent, ver string) *mcp.Server
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name:        "emit",
-		Description: "Broadcast an event on this agent's event topic, for any agent watching it.",
+		Name: "emit",
+		Description: "Broadcast an event on this agent's event topic, for any agent watching it. Fails if the broker " +
+			"rejects it; a rejection that arrives after the call returns shows up in the inbox as an error from $broker.",
 		Annotations: &mcp.ToolAnnotations{Title: "Broadcast an event", DestructiveHint: boolp(false), OpenWorldHint: boolp(true)},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpEmitIn) (*mcp.CallToolResult, any, error) {
 		opts, err := in.options()
 		if err != nil {
 			return nil, nil, err
 		}
-		if err := c.Emit(ctx, in.Name, in.Body, opts...); err != nil {
+		rejected, err := publishChecked(ctx, ib, opts, func(opts []client.MsgOption) error {
+			return c.Emit(ctx, in.Name, in.Body, opts...)
+		})
+		if err != nil {
 			return nil, nil, err
+		}
+		if rejected != nil {
+			return brokerRejected("event "+in.Name, rejected), nil, nil
 		}
 		return textResult("Emitted " + in.Name + "."), nil, nil
 	})
@@ -387,8 +613,9 @@ func newMCPServer(c *client.Client, ib *mcpInbox, agent, ver string) *mcp.Server
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "inbox",
 		Description: "Read and clear messages that other agents sent to this agent. Requests among them wait for an " +
-			"answer: use reply with the request's id before it expires. Set wait_seconds to wait for a message.",
-		Annotations: &mcp.ToolAnnotations{Title: "Read the inbox", ReadOnlyHint: true, OpenWorldHint: boolp(true)},
+			"answer: use reply with the reply id shown (sender/id) before it expires. Errors from $broker report " +
+			"messages this agent sent that the broker rejected. Set wait_seconds to wait for a message.",
+		Annotations: &mcp.ToolAnnotations{Title: "Read the inbox", ReadOnlyHint: false, OpenWorldHint: boolp(true)},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpInboxIn) (*mcp.CallToolResult, any, error) {
 		wait := min(time.Duration(max(in.WaitSeconds, 0))*time.Second, mcpMaxWait)
 		msgs, dropped := ib.take(ctx, wait)
@@ -404,29 +631,38 @@ func newMCPServer(c *client.Client, ib *mcpInbox, agent, ver string) *mcp.Server
 				b.WriteString("\n\n")
 			}
 			b.WriteString(untrusted(e))
-			if e.Type == a2a.TypeRequest {
-				fmt.Fprintf(&b, "\n%s is waiting for an answer: call reply with id %q", e.From, e.ID)
-				if e.TTLMillis > 0 {
-					left := time.Until(e.TS.Add(time.Duration(e.TTLMillis) * time.Millisecond)).Round(time.Second)
-					fmt.Fprintf(&b, " within %s", max(left, 0))
+			switch {
+			case e.Type == a2a.TypeRequest:
+				deadline, ok := ib.waiting(mcpKey(e), time.Now())
+				if !ok {
+					b.WriteString("\nThis request expired or was already answered; it can no longer be replied to.")
+					break
+				}
+				fmt.Fprintf(&b, "\n%s is waiting for an answer: call reply with id %q", e.From, mcpKey(e))
+				if !deadline.IsZero() {
+					fmt.Fprintf(&b, " within %s", max(time.Until(deadline).Round(time.Second), time.Second))
 				}
 				b.WriteString(".")
+			case e.Type == a2a.TypeError && e.From == a2a.BrokerID:
+				fmt.Fprintf(&b, "\nThe broker rejected the message this agent sent with id %q.", e.CorrelationID)
 			}
 		}
 		return textResult(b.String()), nil, nil
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name:        "reply",
-		Description: "Answer a request that arrived in the inbox. Set error instead of body to refuse it.",
+		Name: "reply",
+		Description: "Answer a request that arrived in the inbox, by the reply id the inbox shows (sender/id). Set " +
+			"error instead of body to refuse it. Succeeds only once the reply has been handed to the bus; fails if " +
+			"the request already expired or was answered.",
 		Annotations: &mcp.ToolAnnotations{Title: "Answer a request", DestructiveHint: boolp(false), OpenWorldHint: boolp(true)},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpReplyIn) (*mcp.CallToolResult, any, error) {
 		ans := mcpAnswer{body: in.Body}
 		if in.Error != "" {
 			ans = mcpAnswer{err: errors.New(in.Error)}
 		}
-		if !ib.answer(in.ID, ans) {
-			return nil, nil, fmt.Errorf("no request %q is waiting: it was already answered, expired, or never arrived", in.ID)
+		if err := ib.answer(in.ID, ans); err != nil {
+			return nil, nil, err
 		}
 		return textResult("Reply sent."), nil, nil
 	})

@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -26,7 +27,9 @@ import (
 
 // Handler handles an envelope delivered to this agent. For requests, the
 // returned value becomes the response body; a returned error is sent back
-// as an error envelope. For other types the return values are ignored.
+// as an error envelope with code "handler_error" and the error text as the
+// reason, unless it wraps a *ReplyError, whose code and reason are sent
+// instead. For other types the return values are ignored.
 //
 // ctx is cancelled when the envelope's TTL runs out or the client closes.
 type Handler func(ctx context.Context, env *a2a.Envelope) (reply any, err error)
@@ -190,7 +193,11 @@ func Connect(ctx context.Context, opts Options) (*Client, error) {
 
 	tok := c.mqtt.Connect()
 	if err := wait(ctx, tok); err != nil {
+		// paho is still connecting in the background. Stop it, or a late
+		// CONNACK leaves a connection nobody owns holding this agent ID.
+		// cancel first so a late onConnect does nothing.
 		cancel()
+		c.mqtt.Disconnect(0)
 		return nil, fmt.Errorf("connect %s: %w", opts.BrokerURL, err)
 	}
 	select { // first subscribe and announce done
@@ -217,6 +224,9 @@ func (c *Client) Close() {
 
 // onConnect (re)subscribes and (re)announces after every connect.
 func (c *Client) onConnect() {
+	if c.ctx.Err() != nil {
+		return // closed, or Connect gave up before the CONNACK
+	}
 	filters := map[string]byte{
 		a2a.InboxTopic(c.opts.AgentID): c.qos,
 		a2a.PresenceFilter:             c.qos,
@@ -291,7 +301,8 @@ type MsgOption func(*a2a.Envelope)
 // WithPriority sets the envelope priority (high, normal, low, info).
 func WithPriority(p a2a.Priority) MsgOption { return func(e *a2a.Envelope) { e.Priority = p } }
 
-// WithEvent names what the message is about, e.g. "doorbell_ring".
+// WithEvent names what the message is about, e.g. "doorbell_ring". Emit
+// sets it to the event name unless this option is given.
 func WithEvent(name string) MsgOption { return func(e *a2a.Envelope) { e.Event = name } }
 
 // WithHeaders adds string headers, e.g. {"session": "tg:12345"}.
@@ -306,7 +317,7 @@ func WithHeaders(h map[string]string) MsgOption {
 	}
 }
 
-func (c *Client) build(ctx context.Context, typ a2a.Type, body any, opts []MsgOption) (*a2a.Envelope, error) {
+func (c *Client) build(typ a2a.Type, body any, opts []MsgOption) (*a2a.Envelope, error) {
 	env, err := a2a.New(typ, c.opts.AgentID, body)
 	if err != nil {
 		return nil, err
@@ -314,13 +325,14 @@ func (c *Client) build(ctx context.Context, typ a2a.Type, body any, opts []MsgOp
 	for _, o := range opts {
 		o(env)
 	}
-	setTTL(ctx, env)
 	return env, nil
 }
 
-// Send delivers a one-way event to another agent's inbox.
+// Send delivers a one-way event to another agent's inbox. ctx bounds only
+// the publish: the message has no TTL, so an offline agent with a
+// persistent session gets it when it returns.
 func (c *Client) Send(ctx context.Context, to string, body any, opts ...MsgOption) error {
-	env, err := c.build(ctx, a2a.TypeEvent, body, opts)
+	env, err := c.build(a2a.TypeEvent, body, opts)
 	if err != nil {
 		return err
 	}
@@ -333,10 +345,11 @@ func (c *Client) Send(ctx context.Context, to string, body any, opts ...MsgOptio
 // A TypeError reply is returned as a *RemoteError. Only a reply from the
 // addressed agent (or a $broker error) completes the request.
 func (c *Client) Request(ctx context.Context, to string, body any, opts ...MsgOption) (*a2a.Envelope, error) {
-	env, err := c.build(ctx, a2a.TypeRequest, body, opts)
+	env, err := c.build(a2a.TypeRequest, body, opts)
 	if err != nil {
 		return nil, err
 	}
+	setTTL(ctx, env)
 	env.To = to
 	return c.roundTrip(ctx, a2a.InboxTopic(to), env, to)
 }
@@ -344,10 +357,11 @@ func (c *Client) Request(ctx context.Context, to string, body any, opts ...MsgOp
 // RequestTask sends a request to the work queue for capability. Exactly
 // one worker consuming that capability handles it.
 func (c *Client) RequestTask(ctx context.Context, capability string, body any, opts ...MsgOption) (*a2a.Envelope, error) {
-	env, err := c.build(ctx, a2a.TypeRequest, body, opts)
+	env, err := c.build(a2a.TypeRequest, body, opts)
 	if err != nil {
 		return nil, err
 	}
+	setTTL(ctx, env)
 	env.Capability = capability
 	return c.roundTrip(ctx, a2a.TaskTopic(capability), env, "")
 }
@@ -380,13 +394,40 @@ func (c *Client) roundTrip(ctx context.Context, topic string, env *a2a.Envelope,
 }
 
 // Emit publishes an event on this agent's event topic name (which may
-// contain '/'), for any agent watching it.
+// contain '/'), for any agent watching it. name must be 1-256 bytes with no
+// MQTT wildcards ('+', '#'), NUL, or empty segments. The envelope's event
+// field is set to name unless WithEvent says otherwise (or name is too
+// long for that field). Like Send, the event has no TTL.
 func (c *Client) Emit(ctx context.Context, name string, body any, opts ...MsgOption) error {
-	env, err := c.build(ctx, a2a.TypeEvent, body, opts)
+	if err := validEventName(name); err != nil {
+		return err
+	}
+	env, err := c.build(a2a.TypeEvent, body, opts)
 	if err != nil {
 		return err
 	}
+	if env.Event == "" && len(name) <= a2a.MaxEventLen && !strings.ContainsAny(name, "\n\r") {
+		env.Event = name
+	}
 	return c.Publish(ctx, a2a.EventTopic(c.opts.AgentID, name), env)
+}
+
+// maxEventNameLen caps the name passed to Emit.
+const maxEventNameLen = 256
+
+// validEventName rejects event names the broker would refuse as a topic.
+// A refused QoS 1 publish is resent by paho on every reconnect, so catching
+// it here keeps one bad name from turning into a reconnect loop.
+func validEventName(name string) error {
+	switch {
+	case name == "" || len(name) > maxEventNameLen:
+		return fmt.Errorf("event name must be 1-%d bytes", maxEventNameLen)
+	case strings.ContainsAny(name, "+#\x00"):
+		return fmt.Errorf("event name %q must not contain '+', '#' or NUL", name)
+	case slices.Contains(strings.Split(name, "/"), ""):
+		return fmt.Errorf("event name %q has an empty segment (leading, trailing or double '/')", name)
+	}
+	return nil
 }
 
 // ServeTasks consumes the work queue for capability through a shared
@@ -471,13 +512,25 @@ func (c *Client) dispatch(m paho.Message) {
 		return
 	}
 	if t.Kind == a2a.KindPresence {
+		if len(m.Payload()) == 0 {
+			// The broker clears a removed agent's retained card with an
+			// empty message.
+			c.mu.Lock()
+			delete(c.agents, t.Owner)
+			c.mu.Unlock()
+			return
+		}
 		p, err := a2a.ParsePresence(m.Payload())
 		if err != nil {
 			c.log.Warn("bad presence card", "topic", m.Topic(), "err", err)
 			return
 		}
 		c.mu.Lock()
-		c.agents[p.Agent] = *p
+		// Messages may be handled out of order; never let an older card
+		// replace a newer one.
+		if old, ok := c.agents[p.Agent]; !ok || !p.TS.Before(old.TS) {
+			c.agents[p.Agent] = *p
+		}
 		c.mu.Unlock()
 		return
 	}
@@ -606,10 +659,19 @@ func (c *Client) handle(env *a2a.Envelope, h Handler) {
 		return
 	}
 	if herr != nil {
-		c.reply(env, a2a.TypeError, ErrorBody{Code: "handler_error", Reason: herr.Error()})
+		c.reply(env, a2a.TypeError, errorBodyOf(herr))
 		return
 	}
 	c.reply(env, a2a.TypeResponse, body)
+}
+
+// errorBodyOf is the error reply for an error a handler returned.
+func errorBodyOf(err error) ErrorBody {
+	var re *ReplyError
+	if errors.As(err, &re) && re != nil && replyCodeRE.MatchString(re.Code) {
+		return ErrorBody{Code: re.Code, Reason: re.Reason}
+	}
+	return ErrorBody{Code: "handler_error", Reason: err.Error()}
 }
 
 // reply answers env.
@@ -617,7 +679,14 @@ func (c *Client) reply(env *a2a.Envelope, typ a2a.Type, body any) {
 	reply, err := env.Reply(typ, c.opts.AgentID, body)
 	if err != nil {
 		c.log.Error("build reply", "id", env.ID, "err", err)
-		return
+		if typ != a2a.TypeResponse {
+			return
+		}
+		// Tell the requester rather than leave it waiting for its timeout.
+		if reply, err = env.Reply(a2a.TypeError, c.opts.AgentID,
+			ErrorBody{Code: "handler_error", Reason: "reply body could not be encoded"}); err != nil {
+			return
+		}
 	}
 	pubCtx, pubCancel := context.WithTimeout(c.ctx, 30*time.Second)
 	defer pubCancel()
@@ -631,6 +700,24 @@ type ErrorBody struct {
 	Code   string `json:"code"`
 	Reason string `json:"reason"`
 }
+
+// ReplyError is an error a Handler returns to choose the code and reason of
+// the error reply, e.g. return nil, client.Errorf("not_found", "no job %s", id).
+// Code must be 1-64 characters of a-z, 0-9, '_', '.' or '-'; otherwise the
+// reply falls back to code "handler_error". Wrapped ReplyErrors count too.
+type ReplyError struct {
+	Code   string
+	Reason string
+}
+
+func (e *ReplyError) Error() string { return e.Code + ": " + e.Reason }
+
+// Errorf returns a *ReplyError with code and a formatted reason.
+func Errorf(code, format string, a ...any) *ReplyError {
+	return &ReplyError{Code: code, Reason: fmt.Sprintf(format, a...)}
+}
+
+var replyCodeRE = regexp.MustCompile(`^[a-z0-9_.-]{1,64}$`)
 
 // RemoteError is a TypeError reply from another agent or the broker.
 type RemoteError struct {

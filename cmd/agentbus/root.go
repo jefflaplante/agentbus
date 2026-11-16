@@ -27,6 +27,10 @@ type app struct {
 	plain                        bool
 	verbose                      bool
 
+	// tokenFlag and tokenFileFlag report whether --token or --token-file
+	// was given on the command line (rather than taken from the env).
+	tokenFlag, tokenFileFlag func() bool
+
 	stdin          io.Reader
 	stdout, stderr io.Writer
 }
@@ -63,6 +67,8 @@ JSON or plain text for scripts.`,
 	pf.StringVar(&a.agent, "agent", os.Getenv("AGENTBUS_AGENT"), "this agent's ID (env AGENTBUS_AGENT)")
 	pf.StringVar(&a.token, "token", os.Getenv("AGENTBUS_TOKEN"), "this agent's token; visible in ps, prefer --token-file (env AGENTBUS_TOKEN)")
 	pf.StringVar(&a.tokenFile, "token-file", os.Getenv("AGENTBUS_TOKEN_FILE"), "file containing this agent's token (env AGENTBUS_TOKEN_FILE)")
+	a.tokenFlag = func() bool { return pf.Changed("token") }
+	a.tokenFileFlag = func() bool { return pf.Changed("token-file") }
 	pf.BoolVar(&a.plain, "plain", false, "never use the interactive UI, even on a terminal")
 	pf.BoolVarP(&a.verbose, "verbose", "v", false, "log client activity to stderr")
 
@@ -121,6 +127,15 @@ func (a *app) location() confstore.Location { return confstore.Resolve(a.configF
 // broker config: the URL from its listen address, and the token file for
 // the agent (with "admin" as the agent when only its token is there).
 func (a *app) resolveConnection() {
+	// A credential named on the command line beats one from the env:
+	// --token wins over $AGENTBUS_TOKEN_FILE, --token-file over
+	// $AGENTBUS_TOKEN. (Given both flags, the file wins, as before.)
+	if a.tokenFlag != nil && a.tokenFlag() && !a.tokenFileFlag() {
+		a.tokenFile = ""
+	}
+	if a.tokenFileFlag != nil && a.tokenFileFlag() && !a.tokenFlag() {
+		a.token = ""
+	}
 	loc := a.location()
 	if a.url == "" {
 		a.url = "tcp://localhost:1883"
