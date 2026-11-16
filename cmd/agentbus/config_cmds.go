@@ -29,8 +29,9 @@ settings. Saves are validated. A running broker reloads the file within a
 second: agent, token, permission and rate changes apply at once, and
 listener, TLS and storage changes after a restart.
 
-The subcommands do the same from scripts. The file is --config, else
-$AGENTBUS_CONFIG, else ./broker.json, else ~/.config/agentbus/broker.json.`,
+The subcommands do the same from scripts. The file is
+~/.config/agentbus/broker.json unless --config or $AGENTBUS_CONFIG names
+another; "agentbus config path" shows which one is in use.`,
 		Example: `  agentbus config                                  # interactive editor
   agentbus config agent add researcher --capability research --send-to conduit-home
   agentbus config env researcher >> ~/.researcher.env
@@ -239,6 +240,11 @@ func newConfigAgentCmd(a *app) *cobra.Command {
 	var burst int
 	add := &cobra.Command{
 		Use: "add ID", Short: "Add an agent and create its token file", Args: cobra.ExactArgs(1),
+		Long: `Add an agent to the config and write its token to tokens/ID.token beside
+the config. On a terminal it then prints where the token is and how to
+start the agent, on this machine and on another host ("agentbus config
+agent setup ID" prints that again later). Piped, it prints the agent's
+AGENTBUS_* exports on stdout instead.`,
 		Example: `  agentbus config agent add researcher --capability research --capability summarize
   agentbus config agent add cli-ops --send-to researcher --send-to conduit-home
   agentbus config agent add grafana --observer`,
@@ -253,7 +259,15 @@ func newConfigAgentCmd(a *app) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			lipgloss.Fprintf(a.stderr, "%s added %s; token in %s\n\nConnect as it with:\n", tui.OKStyle.Render("✓"), args[0], file)
+			loc := a.location()
+			if isTerminal(a.stdout) {
+				lipgloss.Fprintf(a.stdout, "%s added %s; a running broker accepts it within a second\n\n%s\n",
+					tui.OKStyle.Render("✓"), args[0], tui.RenderGuide(confstore.Guide(loc, cfg, args[0])))
+				return nil
+			}
+			// Piped: the exports on stdout, for scripts; the rest on stderr.
+			lipgloss.Fprintf(a.stderr, "%s added %s; token in %s\n  \"agentbus config agent setup %s\" shows how to start it\n",
+				tui.OKStyle.Render("✓"), args[0], file, args[0])
 			fmt.Fprint(a.stdout, confstore.ClientEnv(confstore.URL(cfg), args[0], file))
 			return nil
 		},
@@ -285,7 +299,9 @@ func newConfigAgentCmd(a *app) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			lipgloss.Fprintf(a.stderr, "%s new token for %s in %s; a running broker disconnects the old one\n",
+			lipgloss.Fprintf(a.stderr, "%s new token for %s in %s\n"+
+				"  A running broker disconnects clients using the old token. Clients that read this file\n"+
+				"  pick up the new token when they restart; copy it again to any other host that has the old one.\n",
 				tui.OKStyle.Render("✓"), args[0], file)
 			return nil
 		},
@@ -339,8 +355,27 @@ A running broker applies the change within a second.`,
 		}
 		return ids, cobra.ShellCompDirectiveNoFileComp
 	}
-	rm.ValidArgsFunction, token.ValidArgsFunction, edit.ValidArgsFunction = agentIDs, agentIDs, agentIDs
-	c.AddCommand(list, add, edit, rm, token)
+	setup := &cobra.Command{
+		Use: "setup ID", Short: "Show where an agent's token is and how to start it", Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			loc := a.location()
+			cfg, err := confstore.Load(loc.Path)
+			if err != nil {
+				return err
+			}
+			if confstore.Find(cfg, args[0]) < 0 {
+				return fmt.Errorf("no agent %q in %s", args[0], loc.Path)
+			}
+			guide := confstore.Guide(loc, cfg, args[0])
+			if isTerminal(a.stdout) {
+				guide = tui.RenderGuide(guide) + "\n"
+			}
+			lipgloss.Fprint(a.stdout, guide)
+			return nil
+		},
+	}
+	rm.ValidArgsFunction, token.ValidArgsFunction, edit.ValidArgsFunction, setup.ValidArgsFunction = agentIDs, agentIDs, agentIDs, agentIDs
+	c.AddCommand(list, add, setup, edit, rm, token)
 	return c
 }
 

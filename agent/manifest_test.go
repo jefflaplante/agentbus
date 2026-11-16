@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -106,6 +108,7 @@ func TestResolveTokenOrder(t *testing.T) {
 	t.Setenv("AGENTBUS_AGENT", "")
 	t.Setenv("AGENTBUS_TOKEN", "")
 	t.Setenv("AGENTBUS_TOKEN_FILE", "")
+	t.Setenv("AGENTBUS_CONFIG_DIR", "")
 	m := &Manifest{Agent: "probe", Broker: "ssl://bus:8883"}
 	if _, err := Resolve(m, "", "", ""); err == nil || !strings.Contains(err.Error(), "/etc/agentbus/probe.token") {
 		t.Errorf("no token: %v", err)
@@ -121,5 +124,17 @@ func TestResolveTokenOrder(t *testing.T) {
 	t.Setenv("AGENTBUS_URL", "tcp://other:1")
 	if s, _ := Resolve(m, "", "", ""); s.URL != "tcp://other:1" {
 		t.Errorf("AGENTBUS_URL didn't override the manifest: %s", s.URL)
+	}
+	t.Setenv("AGENTBUS_TOKEN", "")
+	cfgDir := filepath.Join(dir, "etc")
+	if err := os.MkdirAll(filepath.Join(cfgDir, "tokens"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "tokens", "probe.token"), []byte("from-dir\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AGENTBUS_CONFIG_DIR", cfgDir)
+	if s, err := Resolve(m, "", "", ""); err != nil || s.Token != "from-dir" {
+		t.Errorf("token in $AGENTBUS_CONFIG_DIR/tokens not found: %+v %v", s, err)
 	}
 }

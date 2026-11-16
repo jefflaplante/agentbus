@@ -188,32 +188,88 @@ func run(outDir string) error {
 		return os.WriteFile(path, []byte(toSVG(title, content, cols)), 0o644)
 	}
 
-	// agentbus status
-	statusCh := make(chan broker.Status)
-	var m tea.Model = tui.NewStatus(statusCh)
-	m = size(m, 120, 25) // tall enough for the five agents, no empty rows
-	for _, st := range snaps[len(snaps)-2:] {
-		m, _ = m.Update(tui.StatusMsg(st))
+	// The console, as explorer, with a request held in its inbox.
+	answerer := tui.NewAnswerer("explorer")
+	console := func(start tui.Tab) *tui.Console {
+		return tui.NewConsole(tui.ConsoleOptions{Agent: "explorer", URL: "tcp://127.0.0.1:1883", Scope: "all agent traffic (observer)",
+			Bus: explorer, Inbox: answerer, Start: start})
 	}
-	if err := write("status.svg", "agentbus status", trimView(m.View().Content), 120); err != nil {
-		return err
-	}
-
-	// agentbus dashboard
-	d := tui.NewDashboard("explorer", "all agent traffic (observer)", explorer.Agents, make(chan tui.Item))
-	d.Status = statusCh
-	m = size(d, 120, 34)
-	m, _ = m.Update(tui.StatusMsg(snaps[len(snaps)-1]))
-	for _, it := range lastN(withoutRepeats(seen), 60) {
-		m, _ = m.Update(tui.ItemMsg(it))
-	}
-	if err := write("dashboard.svg", "agentbus dashboard", m.View().Content, 120); err != nil {
-		return err
+	feedConsole := func(m tea.Model) tea.Model {
+		for _, st := range snaps {
+			m, _ = m.Update(tui.StatusMsg(st))
+		}
+		for _, it := range withoutRepeats(seen) {
+			m, _ = m.Update(tui.ItemMsg(it))
+		}
+		return m
 	}
 
-	// agentbus agents
-	m = size(tui.NewAgents(explorer.Agents), 110, 13)
-	if err := write("agents.svg", "agentbus agents", trimView(m.View().Content), 110); err != nil {
+	// Overview.
+	m := feedConsole(size(console(tui.TabOverview), 120, 34))
+	if err := write("console-overview.svg", "agentbus console", m.View().Content, 120); err != nil {
+		return err
+	}
+	// Agents, then the detail of worker and one of its messages.
+	m = keys(m, "2")
+	if err := write("console-agents.svg", "agentbus console  →  2 Agents", trimView(m.View().Content), 120); err != nil {
+		return err
+	}
+	m = keys(m, "down", "down", "enter")
+	if err := write("console-agent-detail.svg", "agentbus console  →  2 Agents  →  enter", trimView(m.View().Content), 120); err != nil {
+		return err
+	}
+	m = keys(m, "up", "up", "enter")
+	if err := write("inspect.svg", "agentbus console  →  enter on a message", trimView(m.View().Content), 120); err != nil {
+		return err
+	}
+	// Traffic.
+	m = feedConsole(size(console(tui.TabTraffic), 120, 30))
+	if err := write("console-traffic.svg", "agentbus console  →  3 Traffic", m.View().Content, 120); err != nil {
+		return err
+	}
+	// Compose: a task to textstats, sent for real.
+	m = size(console(tui.TabAgents), 120, 30)
+	m = keys(m, "down", "down", "t") // worker → compose a textstats task
+	for _, r := range `{"text": "to be or not to be"}` {
+		m = keys(m, string(r))
+	}
+	var cmd tea.Cmd
+	m, cmd = m.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
+	if cmd != nil {
+		m, _ = m.Update(cmd())
+	}
+	m = keys(m, "esc")
+	if err := write("console-compose.svg", "agentbus console  →  4 Compose", trimView(m.View().Content), 120); err != nil {
+		return err
+	}
+	// Inbox: the coordinator asks explorer something; it waits for an answer.
+	explorerIn, err := client.Connect(ctx, func() client.Options {
+		o := opts("explorer")
+		o.Inbox = answerer.Handle
+		return o
+	}())
+	if err != nil {
+		return err
+	}
+	defer explorerIn.Close()
+	coord, err := client.Connect(ctx, opts("coordinator"))
+	if err != nil {
+		return err
+	}
+	defer coord.Close()
+	go func() {
+		qctx, qcancel := context.WithTimeout(ctx, 90*time.Second)
+		defer qcancel()
+		_, _ = coord.Request(qctx, "explorer", map[string]string{"op": "approve", "job": "nightly-rebuild"})
+	}()
+	m = size(console(tui.TabInbox), 120, 22)
+	select {
+	case e := <-answerer.C():
+		m, _ = m.Update(tui.InboxMsg{Entry: e})
+	case <-time.After(5 * time.Second):
+		return fmt.Errorf("no request reached the console inbox")
+	}
+	if err := write("console-inbox.svg", "agentbus console  →  5 Inbox", trimView(m.View().Content), 120); err != nil {
 		return err
 	}
 
@@ -229,28 +285,6 @@ func run(outDir string) error {
 		m, _ = m.Update(tui.ItemMsg(it))
 	}
 	if err := write("watch.svg", "agentbus watch --filter 'a2a/v1/#'", trimView(m.View().Content), 110); err != nil {
-		return err
-	}
-
-	// agentbus status → enter on worker: the agent detail view.
-	sm := tui.NewStatus(statusCh)
-	sm.Agents = explorer.Agents
-	sm.EditAgent = func(string) tea.Model { return nil } // shows the "e edit in config" hint
-	m = size(sm, 120, 34)
-	for _, st := range snaps[len(snaps)-2:] {
-		m, _ = m.Update(tui.StatusMsg(st))
-	}
-	for _, it := range withoutRepeats(seen) {
-		m, _ = m.Update(tui.ItemMsg(it))
-	}
-	m = keys(m, "down") // coordinator → worker
-	m = keys(m, "enter")
-	if err := write("status-detail.svg", "agentbus status  →  enter", trimView(m.View().Content), 120); err != nil {
-		return err
-	}
-	// …then up and enter: inspect one of the worker's messages.
-	m = keys(m, "up", "up", "enter")
-	if err := write("inspect.svg", "agentbus status  →  enter  →  enter", trimView(m.View().Content), 120); err != nil {
 		return err
 	}
 
@@ -275,7 +309,7 @@ func run(outDir string) error {
 	if err := write("config.svg", "agentbus config", trimView(m.View().Content), 120); err != nil {
 		return err
 	}
-	m = keys(m, "c")
+	m = size(keys(m, "c"), 120, 36)
 	if err := write("config-client.svg", "agentbus config  →  c", trimView(m.View().Content), 120); err != nil {
 		return err
 	}

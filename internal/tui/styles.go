@@ -1,6 +1,7 @@
 // Package tui holds the Bubble Tea views behind the agentbus CLI's
-// interactive commands: the broker status view, the live agents table,
-// the message feed, the request spinner and the dashboard.
+// interactive commands: the console (overview, agents, traffic, compose,
+// inbox and config tabs), the message feed, the config editor and the
+// request spinner.
 //
 // It uses Bubble Tea v2, which asks the terminal for its background
 // color from inside a running program. Bubble Tea v1 asked at package
@@ -10,6 +11,7 @@ package tui
 
 import (
 	"image/color"
+	"strings"
 
 	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
@@ -149,4 +151,29 @@ func tableHeaderStyle() lipgloss.Style {
 
 func tableSelectedStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF")).Background(pal.accent)
+}
+
+// RenderGuide styles a confstore.Guide for the terminal: headings in the
+// accent color, warnings in yellow, and "# ..." notes dimmed.
+func RenderGuide(text string) string {
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	for i, l := range lines {
+		trimmed := strings.TrimLeft(l, " ")
+		switch {
+		case l != "" && !strings.HasPrefix(l, " "):
+			lines[i] = AccentStyle.Render(l)
+		case strings.HasPrefix(trimmed, "! "):
+			lines[i] = WarnStyle.Render(l)
+		default:
+			if cmd, note, ok := strings.Cut(l, "  # "); ok {
+				lines[i] = TextStyle.Render(cmd) + SubtleStyle.Render("  # "+note)
+			} else if strings.HasPrefix(trimmed, "agentbus ") || strings.HasPrefix(trimmed, "export ") ||
+				strings.HasPrefix(trimmed, "scp ") || strings.HasPrefix(trimmed, "ssh ") || strings.HasPrefix(trimmed, "/") {
+				lines[i] = TextStyle.Render(l)
+			} else {
+				lines[i] = SubtleStyle.Render(l)
+			}
+		}
+	}
+	return strings.Join(lines, "\n")
 }

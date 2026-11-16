@@ -207,7 +207,7 @@ every status_interval (default 2s)
                                     # not written to broker.db
 ```
 
-`agentbus status` and `agentbus dashboard` subscribe to it with
+`agentbus console` and `agentbus status --plain` subscribe to it with
 `client.Observe`. See [CLI.md](CLI.md).
 
 ## Presence

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net"
 	"os"
 	"os/signal"
 	"strings"
@@ -27,12 +26,19 @@ func newServeCmd(a *app) *cobra.Command {
 		Short: "Run the broker",
 		Long: `Run the a2a/v1 broker.
 
-The config file is --config, else $AGENTBUS_CONFIG, else ./broker.json,
-else ~/.config/agentbus/broker.json. If none of those exists (and you
-didn't name one), serve creates the default: a loopback listener on
+The config file is ~/.config/agentbus/broker.json unless --config or
+$AGENTBUS_CONFIG names another. Every agentbus command looks there, so
+"agentbus console" in another terminal finds this broker with no flags.
+
+On a server, set $AGENTBUS_CONFIG_DIR (say /etc/agentbus) to keep
+broker.json and tokens/ there, and $AGENTBUS_STATE_DIR (say
+/var/lib/agentbus) for the data and audit log. Without
+$AGENTBUS_STATE_DIR, state goes in a "state" directory beside the config.
+
+If the config doesn't exist, serve creates it: a loopback listener on
 127.0.0.1:1883, storage under ~/.local/state/agentbus, and an "admin"
-observer identity whose token goes in ~/.config/agentbus/tokens/. The
-broker starts right away; "agentbus status" on this machine connects as
+observer identity whose token goes in the tokens/ directory beside it. The
+broker starts right away; "agentbus console" on this machine connects as
 admin automatically.
 
 The running broker reloads the config when the file changes (checked
@@ -40,6 +46,7 @@ every --watch; 0 turns file watching off) or on SIGHUP. Agents, tokens, permissi
 apply at once; listener, TLS, storage and limit changes need a restart.`,
 		Example: `  agentbus serve                      # first run: creates a config and starts
   agentbus serve --config broker.json
+  AGENTBUS_CONFIG_DIR=/etc/agentbus AGENTBUS_STATE_DIR=/var/lib/agentbus agentbus serve
   agentbus serve --log-format json`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -152,29 +159,27 @@ func printServeHelp(a *app, loc confstore.Location, cfg *broker.Config, created 
 	}
 	lipgloss.Fprintf(out, "  %s %s\n\n", head(fmt.Sprintf("%-7s", "agents")), strings.Join(ids, ", "))
 	lipgloss.Fprintln(out, head("Next, in another terminal:"))
-	if _, ok := confstore.ReadToken(loc, confstore.AdminID); ok {
-		lipgloss.Fprintln(out, "  agentbus status                  "+dim("# watch this broker (connects as admin automatically)"))
+	// Another terminal may not have the flag or variable that picked a
+	// non-default config, so name it in every suggested command.
+	cfgArg := ""
+	if loc.Source != confstore.FromDefault {
+		cfgArg = " --config " + loc.Path
 	}
-	lipgloss.Fprintln(out, "  agentbus config                  "+dim("# add agents, client setup, edit settings"))
-	lipgloss.Fprintln(out, "  agentbus config agent add NAME   "+dim("# the same, from a script"))
-	if !loopbackListen(cfg.Listen) && cfg.TLSCert == "" {
+	cmd := func(c, note string) {
+		lipgloss.Fprintln(out, "  agentbus "+c+cfgArg+"\n      "+dim("# "+note))
+	}
+	if cfgArg == "" {
+		cmd = func(c, note string) { lipgloss.Fprintf(out, "  %-31s %s\n", "agentbus "+c, dim("# "+note)) }
+	}
+	if _, ok := confstore.ReadToken(loc, confstore.AdminID); ok {
+		cmd("console", "status, agents, traffic, send and answer messages, config (as admin)")
+	}
+	cmd("config", "add agents, client setup, edit settings")
+	cmd("config agent add NAME", "the same, from a script")
+	if !confstore.Loopback(cfg.Listen) && cfg.TLSCert == "" {
 		lipgloss.Fprintln(out, tui.WarnStyle.Render("  ! listening beyond loopback without TLS: set tls_cert and tls_key"))
 	}
 	lipgloss.Fprintln(out)
-}
-
-// loopbackListen reports whether a listen address only accepts local
-// connections: localhost, 127.0.0.0/8 or ::1 ([::1]:1883).
-func loopbackListen(listen string) bool {
-	host, _, err := net.SplitHostPort(listen)
-	if err != nil {
-		host = strings.Trim(listen, "[]")
-	}
-	if host == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
 }
 
 func newTokenCmd(a *app) *cobra.Command {

@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1064" height="670" viewBox="0 0 1064 670">
+<style>text{font-family:"SF Mono",Menlo,Monaco,Consolas,"DejaVu Sans Mono",monospace;font-size:14px;white-space:pre}</style>
+<rect width="1064" height="670" rx="10" fill="#16161E"/>
+<path d="M0 10a10 10 0 0 1 10-10h1044a10 10 0 0 1 10 10v20H0z" fill="#24242E"/>
+<circle cx="20" cy="15" r="6" fill="#FF5F57"/>
+<circle cx="40" cy="15" r="6" fill="#FEBC2E"/>
+<circle cx="60" cy="15" r="6" fill="#28C840"/>
+<text x="532" y="20" fill="#9A9AAA" text-anchor="middle">agentbus console  →  2 Agents</text>
+<clipPath id="term-36024c5f"><rect x="16.0" y="44" width="1032.0" height="626"/></clipPath><g clip-path="url(#term-36024c5f)">
+<rect x="16.0" y="44.0" width="8.6" height="18" fill="#9F86FF"/>
+<rect x="24.6" y="44.0" width="68.8" height="18" fill="#9F86FF"/>
+<text x="24.6" y="57.0" fill="#FFFFFF" font-weight="bold" textLength="68.8" lengthAdjust="spacingAndGlyphs">agentbus</text>
+<rect x="93.4" y="44.0" width="8.6" height="18" fill="#9F86FF"/>
+<text x="119.2" y="57.0" fill="#6C6C6C" textLength="86.0" lengthAdjust="spacingAndGlyphs">1 Overview</text>
+<text x="222.4" y="57.0" fill="#9F86FF" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">2</text>
+<text x="239.6" y="57.0" fill="#9F86FF" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">A</text>
+<text x="248.2" y="57.0" fill="#9F86FF" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">g</text>
+<text x="256.8" y="57.0" fill="#9F86FF" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">e</text>
+<text x="265.4" y="57.0" fill="#9F86FF" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">n</text>
+<text x="274.0" y="57.0" fill="#9F86FF" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">t</text>
+<text x="282.6" y="57.0" fill="#9F86FF" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">s</text>
+<text x="308.4" y="57.0" fill="#6C6C6C" textLength="77.4" lengthAdjust="spacingAndGlyphs">3 Traffic</text>
+<text x="403.0" y="57.0" fill="#6C6C6C" textLength="77.4" lengthAdjust="spacingAndGlyphs">4 Compose</text>
+<text x="497.6" y="57.0" fill="#6C6C6C" textLength="60.2" lengthAdjust="spacingAndGlyphs">5 Inbox</text>
+<text x="575.0" y="57.0" fill="#6C6C6C" textLength="68.8" lengthAdjust="spacingAndGlyphs">6 Config</text>
+<text x="16.0" y="75.0" fill="#6C6C6C" textLength="34.4" lengthAdjust="spacingAndGlyphs"> as </text>
+<text x="50.4" y="75.0" fill="#9F86FF" font-weight="bold" textLength="68.8" lengthAdjust="spacingAndGlyphs">explorer</text>
+<text x="119.2" y="75.0" fill="#6C6C6C" textLength="464.4" lengthAdjust="spacingAndGlyphs"> · tcp://127.0.0.1:1883 · all agent traffic (observer)</text>
+<text x="583.6" y="75.0" fill="#6C6C6C" textLength="464.4" lengthAdjust="spacingAndGlyphs"> · broker up 4s · 4 clients · 69 accepted · 1 rejecte…</text>
+<text x="16.0" y="93.0" fill="#9F86FF" font-weight="bold" textLength="51.6" lengthAdjust="spacingAndGlyphs">Agents</text>
+<text x="67.6" y="93.0" fill="#6C6C6C" textLength="378.4" lengthAdjust="spacingAndGlyphs">  5 known · 4 online · 1 offline by presence</text>
+<text x="16.0" y="129.0" fill="#6C6C6C" font-weight="bold" textLength="1032.0" lengthAdjust="spacingAndGlyphs">  AGENT            STATE      SERVES           REMOTE                QUEUED ACC    REJ   SEEN     DESCRIPTION           </text>
+<text x="16.0" y="147.0" fill="#9F86FF" font-weight="bold" textLength="17.2" lengthAdjust="spacingAndGlyphs">▌ </text>
+<text x="33.2" y="147.0" fill="#E4E4E4" textLength="94.6" lengthAdjust="spacingAndGlyphs">coordinator</text>
+<text x="179.4" y="147.0" fill="#6C6C6C" textLength="51.6" lengthAdjust="spacingAndGlyphs">● none</text>
+<text x="231.0" y="147.0" fill="#D6D6E0" textLength="817.0" lengthAdjust="spacingAndGlyphs">                                            0      16     0     09:40:26 Demo coordinator      </text>
+<text x="33.2" y="165.0" fill="#E4E4E4" textLength="68.8" lengthAdjust="spacingAndGlyphs">explorer</text>
+<text x="179.4" y="165.0" fill="#3DD68C" textLength="68.8" lengthAdjust="spacingAndGlyphs">● online</text>
+<text x="248.2" y="165.0" fill="#D6D6E0" textLength="799.8" lengthAdjust="spacingAndGlyphs">   observer         127.0.0.1:53520       0      0      0     09:40:24                       </text>
+<text x="33.2" y="183.0" fill="#E4E4E4" textLength="51.6" lengthAdjust="spacingAndGlyphs">worker</text>
+<text x="179.4" y="183.0" fill="#3DD68C" textLength="68.8" lengthAdjust="spacingAndGlyphs">● online</text>
+<text x="248.2" y="183.0" fill="#D6D6E0" textLength="799.8" lengthAdjust="spacingAndGlyphs">   textstats        127.0.0.1:53518       0      28     0     09:40:28 Demo worker: text sta…</text>
+<text x="33.2" y="201.0" fill="#E4E4E4" textLength="68.8" lengthAdjust="spacingAndGlyphs">worker-2</text>
+<text x="179.4" y="201.0" fill="#3DD68C" textLength="68.8" lengthAdjust="spacingAndGlyphs">● online</text>
+<text x="248.2" y="201.0" fill="#D6D6E0" textLength="799.8" lengthAdjust="spacingAndGlyphs">   textstats        127.0.0.1:53519       0      12     0     09:40:27 Demo worker: text sta…</text>
+<text x="33.2" y="219.0" fill="#E4E4E4" textLength="25.8" lengthAdjust="spacingAndGlyphs">you</text>
+<text x="179.4" y="219.0" fill="#3DD68C" textLength="68.8" lengthAdjust="spacingAndGlyphs">● online</text>
+<text x="248.2" y="219.0" fill="#D6D6E0" textLength="481.6" lengthAdjust="spacingAndGlyphs">                    127.0.0.1:53524       0      13     </text>
+<text x="729.8" y="219.0" fill="#FF6B6B" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">1</text>
+<text x="738.4" y="219.0" fill="#D6D6E0" textLength="309.6" lengthAdjust="spacingAndGlyphs">     09:40:28                       </text>
+<text x="24.6" y="651.0" fill="#6C6C6C" textLength="903.0" lengthAdjust="spacingAndGlyphs">↑/↓ select · enter detail · r request · t task · s send · f traffic · i card · 1-6 tabs · ? keys · q quit</text>
+</g>
+</svg>

@@ -1,24 +1,38 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1064" height="652" viewBox="0 0 1064 652">
+<svg xmlns="http://www.w3.org/2000/svg" width="1064" height="616" viewBox="0 0 1064 616">
 <style>text{font-family:"SF Mono",Menlo,Monaco,Consolas,"DejaVu Sans Mono",monospace;font-size:14px;white-space:pre}</style>
-<rect width="1064" height="652" rx="10" fill="#16161E"/>
+<rect width="1064" height="616" rx="10" fill="#16161E"/>
 <path d="M0 10a10 10 0 0 1 10-10h1044a10 10 0 0 1 10 10v20H0z" fill="#24242E"/>
 <circle cx="20" cy="15" r="6" fill="#FF5F57"/>
 <circle cx="40" cy="15" r="6" fill="#FEBC2E"/>
 <circle cx="60" cy="15" r="6" fill="#28C840"/>
-<text x="532" y="20" fill="#9A9AAA" text-anchor="middle">agentbus status  →  enter  →  enter</text>
-<clipPath id="term-5a5e43c8"><rect x="16.0" y="44" width="1032.0" height="608"/></clipPath><g clip-path="url(#term-5a5e43c8)">
+<text x="532" y="20" fill="#9A9AAA" text-anchor="middle">agentbus console  →  enter on a message</text>
+<clipPath id="term-9a079b84"><rect x="16.0" y="44" width="1032.0" height="572"/></clipPath><g clip-path="url(#term-9a079b84)">
 <rect x="16.0" y="44.0" width="8.6" height="18" fill="#9F86FF"/>
-<rect x="24.6" y="44.0" width="197.8" height="18" fill="#9F86FF"/>
-<text x="24.6" y="57.0" fill="#FFFFFF" font-weight="bold" textLength="197.8" lengthAdjust="spacingAndGlyphs">agentbus · agent worker</text>
-<rect x="222.4" y="44.0" width="8.6" height="18" fill="#9F86FF"/>
-<text x="239.6" y="57.0" fill="#3DD68C" textLength="51.6" lengthAdjust="spacingAndGlyphs">online</text>
-<text x="291.2" y="57.0" fill="#6C6C6C" textLength="146.2" lengthAdjust="spacingAndGlyphs">  127.0.0.1:60282</text>
-<text x="16.0" y="93.0" fill="#9F86FF" font-weight="bold" textLength="421.4" lengthAdjust="spacingAndGlyphs">Inspect response a864f83eaa70a4139419d64f85b62176</text>
+<rect x="24.6" y="44.0" width="68.8" height="18" fill="#9F86FF"/>
+<text x="24.6" y="57.0" fill="#FFFFFF" font-weight="bold" textLength="68.8" lengthAdjust="spacingAndGlyphs">agentbus</text>
+<rect x="93.4" y="44.0" width="8.6" height="18" fill="#9F86FF"/>
+<text x="119.2" y="57.0" fill="#6C6C6C" textLength="86.0" lengthAdjust="spacingAndGlyphs">1 Overview</text>
+<text x="222.4" y="57.0" fill="#9F86FF" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">2</text>
+<text x="239.6" y="57.0" fill="#9F86FF" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">A</text>
+<text x="248.2" y="57.0" fill="#9F86FF" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">g</text>
+<text x="256.8" y="57.0" fill="#9F86FF" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">e</text>
+<text x="265.4" y="57.0" fill="#9F86FF" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">n</text>
+<text x="274.0" y="57.0" fill="#9F86FF" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">t</text>
+<text x="282.6" y="57.0" fill="#9F86FF" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">s</text>
+<text x="308.4" y="57.0" fill="#6C6C6C" textLength="77.4" lengthAdjust="spacingAndGlyphs">3 Traffic</text>
+<text x="403.0" y="57.0" fill="#6C6C6C" textLength="77.4" lengthAdjust="spacingAndGlyphs">4 Compose</text>
+<text x="497.6" y="57.0" fill="#6C6C6C" textLength="60.2" lengthAdjust="spacingAndGlyphs">5 Inbox</text>
+<text x="575.0" y="57.0" fill="#6C6C6C" textLength="68.8" lengthAdjust="spacingAndGlyphs">6 Config</text>
+<text x="16.0" y="75.0" fill="#6C6C6C" textLength="34.4" lengthAdjust="spacingAndGlyphs"> as </text>
+<text x="50.4" y="75.0" fill="#9F86FF" font-weight="bold" textLength="68.8" lengthAdjust="spacingAndGlyphs">explorer</text>
+<text x="119.2" y="75.0" fill="#6C6C6C" textLength="464.4" lengthAdjust="spacingAndGlyphs"> · tcp://127.0.0.1:1883 · all agent traffic (observer)</text>
+<text x="583.6" y="75.0" fill="#6C6C6C" textLength="464.4" lengthAdjust="spacingAndGlyphs"> · broker up 4s · 4 clients · 69 accepted · 1 rejecte…</text>
+<text x="16.0" y="93.0" fill="#9F86FF" font-weight="bold" textLength="421.4" lengthAdjust="spacingAndGlyphs">Inspect response e81ffa2ad4d2921fecc9e931fe4b431e</text>
 <text x="437.4" y="93.0" fill="#6C6C6C" textLength="335.4" lengthAdjust="spacingAndGlyphs">  a2a/v1/agents/coordinator/inbox    0%</text>
 <text x="16.0" y="111.0" fill="#6C6C6C" textLength="129.0" lengthAdjust="spacingAndGlyphs">type           </text>
 <text x="145.0" y="111.0" fill="#E4E4E4" textLength="68.8" lengthAdjust="spacingAndGlyphs">response</text>
 <text x="16.0" y="129.0" fill="#6C6C6C" textLength="129.0" lengthAdjust="spacingAndGlyphs">id             </text>
-<text x="145.0" y="129.0" fill="#E4E4E4" textLength="275.2" lengthAdjust="spacingAndGlyphs">a864f83eaa70a4139419d64f85b62176</text>
+<text x="145.0" y="129.0" fill="#E4E4E4" textLength="275.2" lengthAdjust="spacingAndGlyphs">e81ffa2ad4d2921fecc9e931fe4b431e</text>
 <text x="16.0" y="147.0" fill="#6C6C6C" textLength="129.0" lengthAdjust="spacingAndGlyphs">from           </text>
 <text x="145.0" y="147.0" fill="#E4E4E4" textLength="51.6" lengthAdjust="spacingAndGlyphs">worker</text>
 <text x="16.0" y="165.0" fill="#6C6C6C" textLength="129.0" lengthAdjust="spacingAndGlyphs">to             </text>
@@ -26,15 +40,15 @@
 <text x="16.0" y="183.0" fill="#6C6C6C" textLength="129.0" lengthAdjust="spacingAndGlyphs">topic          </text>
 <text x="145.0" y="183.0" fill="#E4E4E4" textLength="266.6" lengthAdjust="spacingAndGlyphs">a2a/v1/agents/coordinator/inbox</text>
 <text x="16.0" y="201.0" fill="#6C6C6C" textLength="129.0" lengthAdjust="spacingAndGlyphs">sent           </text>
-<text x="145.0" y="201.0" fill="#E4E4E4" textLength="197.8" lengthAdjust="spacingAndGlyphs">2026-11-15 19:15:10.614</text>
+<text x="145.0" y="201.0" fill="#E4E4E4" textLength="197.8" lengthAdjust="spacingAndGlyphs">2026-11-16 09:40:26.739</text>
 <text x="342.8" y="201.0" fill="#6C6C6C" textLength="86.0" lengthAdjust="spacingAndGlyphs">  (2s ago)</text>
 <text x="16.0" y="219.0" fill="#6C6C6C" textLength="129.0" lengthAdjust="spacingAndGlyphs">correlation_id </text>
-<text x="145.0" y="219.0" fill="#E4E4E4" textLength="275.2" lengthAdjust="spacingAndGlyphs">5e9b10cc25c73393a5a9eb6b08943c85</text>
+<text x="145.0" y="219.0" fill="#E4E4E4" textLength="275.2" lengthAdjust="spacingAndGlyphs">e5b8f742d418a4f6a0e454d70931c53a</text>
 <text x="16.0" y="255.0" fill="#9F86FF" font-weight="bold" textLength="34.4" lengthAdjust="spacingAndGlyphs">body</text>
-<text x="50.4" y="255.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">  142 bytes</text>
+<text x="50.4" y="255.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">  141 bytes</text>
 <text x="16.0" y="273.0" fill="#E4E4E4" textLength="8.6" lengthAdjust="spacingAndGlyphs">{</text>
 <text x="33.2" y="291.0" fill="#9F86FF" font-weight="bold" textLength="60.2" lengthAdjust="spacingAndGlyphs">&#34;chars&#34;</text>
-<text x="93.4" y="291.0" fill="#E4E4E4" textLength="43.0" lengthAdjust="spacingAndGlyphs">: 60,</text>
+<text x="93.4" y="291.0" fill="#E4E4E4" textLength="43.0" lengthAdjust="spacingAndGlyphs">: 44,</text>
 <text x="33.2" y="309.0" fill="#9F86FF" font-weight="bold" textLength="60.2" lengthAdjust="spacingAndGlyphs">&#34;lines&#34;</text>
 <text x="93.4" y="309.0" fill="#E4E4E4" textLength="34.4" lengthAdjust="spacingAndGlyphs">: 1,</text>
 <text x="33.2" y="327.0" fill="#9F86FF" font-weight="bold" textLength="94.6" lengthAdjust="spacingAndGlyphs">&#34;top_words&#34;</text>
@@ -43,26 +57,23 @@
 <text x="67.6" y="363.0" fill="#9F86FF" font-weight="bold" textLength="60.2" lengthAdjust="spacingAndGlyphs">&#34;count&#34;</text>
 <text x="127.8" y="363.0" fill="#E4E4E4" textLength="34.4" lengthAdjust="spacingAndGlyphs">: 2,</text>
 <text x="67.6" y="381.0" fill="#9F86FF" font-weight="bold" textLength="51.6" lengthAdjust="spacingAndGlyphs">&#34;word&#34;</text>
-<text x="119.2" y="381.0" fill="#E4E4E4" textLength="60.2" lengthAdjust="spacingAndGlyphs">: &#34;are&#34;</text>
+<text x="119.2" y="381.0" fill="#E4E4E4" textLength="60.2" lengthAdjust="spacingAndGlyphs">: &#34;the&#34;</text>
 <text x="50.4" y="399.0" fill="#E4E4E4" textLength="17.2" lengthAdjust="spacingAndGlyphs">},</text>
 <text x="50.4" y="417.0" fill="#E4E4E4" textLength="8.6" lengthAdjust="spacingAndGlyphs">{</text>
 <text x="67.6" y="435.0" fill="#9F86FF" font-weight="bold" textLength="60.2" lengthAdjust="spacingAndGlyphs">&#34;count&#34;</text>
 <text x="127.8" y="435.0" fill="#E4E4E4" textLength="34.4" lengthAdjust="spacingAndGlyphs">: 1,</text>
 <text x="67.6" y="453.0" fill="#9F86FF" font-weight="bold" textLength="51.6" lengthAdjust="spacingAndGlyphs">&#34;word&#34;</text>
-<text x="119.2" y="453.0" fill="#E4E4E4" textLength="94.6" lengthAdjust="spacingAndGlyphs">: &#34;inboxes&#34;</text>
+<text x="119.2" y="453.0" fill="#E4E4E4" textLength="77.4" lengthAdjust="spacingAndGlyphs">: &#34;brown&#34;</text>
 <text x="50.4" y="471.0" fill="#E4E4E4" textLength="17.2" lengthAdjust="spacingAndGlyphs">},</text>
 <text x="50.4" y="489.0" fill="#E4E4E4" textLength="8.6" lengthAdjust="spacingAndGlyphs">{</text>
 <text x="67.6" y="507.0" fill="#9F86FF" font-weight="bold" textLength="60.2" lengthAdjust="spacingAndGlyphs">&#34;count&#34;</text>
 <text x="127.8" y="507.0" fill="#E4E4E4" textLength="34.4" lengthAdjust="spacingAndGlyphs">: 1,</text>
 <text x="67.6" y="525.0" fill="#9F86FF" font-weight="bold" textLength="51.6" lengthAdjust="spacingAndGlyphs">&#34;word&#34;</text>
-<text x="119.2" y="525.0" fill="#E4E4E4" textLength="51.6" lengthAdjust="spacingAndGlyphs">: &#34;is&#34;</text>
+<text x="119.2" y="525.0" fill="#E4E4E4" textLength="60.2" lengthAdjust="spacingAndGlyphs">: &#34;dog&#34;</text>
 <text x="50.4" y="543.0" fill="#E4E4E4" textLength="8.6" lengthAdjust="spacingAndGlyphs">}</text>
 <text x="33.2" y="561.0" fill="#E4E4E4" textLength="17.2" lengthAdjust="spacingAndGlyphs">],</text>
 <text x="33.2" y="579.0" fill="#9F86FF" font-weight="bold" textLength="60.2" lengthAdjust="spacingAndGlyphs">&#34;words&#34;</text>
 <text x="93.4" y="579.0" fill="#E4E4E4" textLength="34.4" lengthAdjust="spacingAndGlyphs">: 9,</text>
-<text x="33.2" y="597.0" fill="#9F86FF" font-weight="bold" textLength="68.8" lengthAdjust="spacingAndGlyphs">&#34;worker&#34;</text>
-<text x="102.0" y="597.0" fill="#E4E4E4" textLength="86.0" lengthAdjust="spacingAndGlyphs">: &#34;worker&#34;</text>
-<text x="16.0" y="615.0" fill="#E4E4E4" textLength="8.6" lengthAdjust="spacingAndGlyphs">}</text>
-<text x="24.6" y="633.0" fill="#6C6C6C" textLength="387.0" lengthAdjust="spacingAndGlyphs">↑/↓ pgup/pgdn scroll · y copy JSON · esc back</text>
+<text x="24.6" y="597.0" fill="#6C6C6C" textLength="387.0" lengthAdjust="spacingAndGlyphs">↑/↓ pgup/pgdn scroll · y copy JSON · esc back</text>
 </g>
 </svg>

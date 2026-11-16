@@ -126,8 +126,8 @@ agentbus task -c weather.forecast --body '{"location":"x; rm -rf ~"}'           
 agentbus task -c weather.forecast --body '{"location":"Seattle, WA","days":30}'  # invalid
 ```
 
-Keep `agentbus dashboard` open in terminal 4 to see each request and
-reply cross the bus.
+Keep `agentbus console --tab traffic` open in terminal 4 to see each
+request and reply cross the bus.
 
 ## Questions
 

@@ -96,96 +96,6 @@ func TestInspectorShowsPresenceTrust(t *testing.T) {
 	}
 }
 
-type stubEditor struct{ id string }
-
-func (s stubEditor) Init() tea.Cmd                       { return nil }
-func (s stubEditor) Update(tea.Msg) (tea.Model, tea.Cmd) { return s, nil }
-func (s stubEditor) View() tea.View                      { return tea.NewView("EDITING " + s.id) }
-
-func TestDashboardFilterInspectEdit(t *testing.T) {
-	d := NewDashboard("explorer", "all", cards, make(chan Item))
-	d.EditAgent = func(id string) tea.Model { return stubEditor{id} }
-	var m tea.Model = sizeTo(d, 140, 30)
-	m, _ = m.Update(ItemMsg(ItemFromEnvelope("t", env(t, "worker", "you", "pong"))))
-	m, _ = m.Update(ItemMsg(ItemFromEnvelope("t", env(t, "coordinator", "you", "hi"))))
-
-	m, _ = press(m, "tab", "enter") // agents panel; filter on the first card (worker)
-	v := plain(m.View().Content)
-	if !strings.Contains(v, "only worker") || strings.Contains(v, "coordinator → you") || !strings.Contains(v, "worker → you") {
-		t.Errorf("filter not applied:\n%s", v)
-	}
-	m, _ = press(m, "esc")
-	if v := plain(m.View().Content); !strings.Contains(v, "coordinator → you") {
-		t.Errorf("esc did not clear the filter:\n%s", v)
-	}
-	m, _ = press(m, "i")
-	if v := plain(m.View().Content); !strings.Contains(v, "presence card of worker") {
-		t.Errorf("i did not inspect the card:\n%s", v)
-	}
-	m, _ = press(m, "esc", "e")
-	if v := m.View().Content; v != "EDITING worker" {
-		t.Errorf("e did not open the editor: %q", v)
-	}
-	m, _ = m.Update(CloseMsg{})
-	if v := plain(m.View().Content); !strings.Contains(v, "dashboard") {
-		t.Error("CloseMsg did not return to the dashboard")
-	}
-
-	m, _ = press(m, "tab", "up", "enter") // traffic panel; select an older message and inspect it
-	if v := plain(m.View().Content); !strings.Contains(v, "Inspect request") {
-		t.Errorf("traffic inspect failed:\n%s", v)
-	}
-}
-
-func TestStatusAgentDetail(t *testing.T) {
-	ch := make(chan broker.Status, 1)
-	sm := NewStatus(ch)
-	sm.Agents = cards
-	sm.EditAgent = func(id string) tea.Model { return stubEditor{id} }
-	var m tea.Model = sizeTo(sm, 140, 40)
-	m, _ = m.Update(StatusMsg(sampleStatus(time.Now(), 5)))
-	m, _ = m.Update(ItemMsg(ItemFromEnvelope("t", env(t, "coordinator", "worker", "ping"))))
-	m, _ = m.Update(ItemMsg(ItemFromEnvelope("t", env(t, "you", "explorer", "x"))))
-
-	m, _ = press(m, "enter") // first agent row: worker
-	v := plain(m.View().Content)
-	for _, want := range []string{"agent worker", "online", "Presence card", "Demo worker", "1 messages involving worker", "coordinator → worker"} {
-		if !strings.Contains(v, want) {
-			t.Errorf("detail missing %q:\n%s", want, v)
-		}
-	}
-	if strings.Contains(v, "you → explorer") {
-		t.Error("detail shows unrelated traffic")
-	}
-	m, _ = press(m, "enter")
-	if v := plain(m.View().Content); !strings.Contains(v, "Inspect request") {
-		t.Errorf("enter did not inspect:\n%s", v)
-	}
-	m, _ = press(m, "esc", "e")
-	if v := m.View().Content; v != "EDITING worker" {
-		t.Errorf("e did not open the editor: %q", v)
-	}
-	m, _ = m.Update(CloseMsg{})
-	m, _ = press(m, "esc")
-	if v := plain(m.View().Content); !strings.Contains(v, "agentbus · broker") {
-		t.Errorf("esc did not return to the overview:\n%s", v)
-	}
-}
-
-func TestAgentsInspectAndEdit(t *testing.T) {
-	am := NewAgents(cards)
-	am.EditAgent = func(id string) tea.Model { return stubEditor{id} }
-	var m tea.Model = sizeTo(am, 120, 20)
-	m, _ = press(m, "enter")
-	if v := plain(m.View().Content); !strings.Contains(v, "presence card of worker") {
-		t.Errorf("enter did not inspect:\n%s", v)
-	}
-	m, _ = press(m, "esc", "e")
-	if v := m.View().Content; v != "EDITING worker" {
-		t.Errorf("e: %q", v)
-	}
-}
-
 func editorAt(t *testing.T) (*ConfigModel, confstore.Location) {
 	t.Helper()
 	loc := confstore.Location{Path: filepath.Join(t.TempDir(), "broker.json"), Source: confstore.FromFlag}
@@ -284,18 +194,29 @@ func TestConfigEditorSettingsAndClient(t *testing.T) {
 	}
 
 	m.tab = 0
-	m.mode, m.client = modeClient, "admin"
+	m.openClient("admin")
 	v := plain(m.View().Content)
-	for _, want := range []string{"Client setup for admin", "AGENTBUS_AGENT=admin", "token file present"} {
+	for _, want := range []string{"Set up admin", "token in", "Token file", loc.TokenFile("admin"),
+		"Start it on this machine", "--agent admin console", "↑/↓ scroll"} {
 		if !strings.Contains(v, want) {
-			t.Errorf("client view missing %q:\n%s", want, v)
+			t.Errorf("start view missing %q:\n%s", want, v)
 		}
+	}
+	for range 40 {
+		m.Update(key("down"))
+	}
+	if v := plain(m.View().Content); !strings.Contains(v, "Start it on another host") || strings.Contains(v, "Start it on this machine") {
+		t.Errorf("start view did not scroll to the end:\n%s", v)
 	}
 	m.Update(key("w"))
 	if b, err := os.ReadFile(filepath.Join(loc.TokensDir(), "admin.env")); err != nil || !strings.Contains(string(b), "AGENTBUS_TOKEN_FILE") {
 		t.Errorf("env file: %v %q", err, b)
 	}
 	m.Update(key("tab"))
+	if v := plain(m.View().Content); !strings.Contains(v, "AGENTBUS_AGENT=admin") {
+		t.Errorf("Shell tab:\n%s", v)
+	}
+	m.Update(key("3"))
 	if v := plain(m.View().Content); !strings.Contains(v, "client.Connect") {
 		t.Errorf("Go tab:\n%s", v)
 	}
@@ -342,20 +263,6 @@ func TestConfigEditorEmbeddedCloses(t *testing.T) {
 func TestNewViewsFitWindow(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {200, 50}} {
 		w, h := size[0], size[1]
-		ch := make(chan broker.Status, 1)
-		sm := NewStatus(ch)
-		sm.Agents = cards
-		var m tea.Model = sizeTo(sm, w, h)
-		m, _ = m.Update(StatusMsg(sampleStatus(time.Now(), 5)))
-		long := env(t, "coordinator", "worker", strings.Repeat("x", 300))
-		for range 40 {
-			m, _ = m.Update(ItemMsg(ItemFromEnvelope("t", long)))
-		}
-		m, _ = press(m, "enter")
-		checkFits(t, "status detail", m.View().Content, w, h)
-		m, _ = press(m, "up", "enter")
-		checkFits(t, "inspector", m.View().Content, w, 0)
-
 		cm, _ := editorAt(t)
 		cm.Update(tea.WindowSizeMsg{Width: w, Height: h})
 		checkFits(t, "config", cm.View().Content, w, h)

@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -78,101 +77,20 @@ func TestUntrustedTextIsEscaped(t *testing.T) {
 
 	st := sampleStatus(time.Now(), 1)
 	st.Agents[0].Remote, st.Decisions.Rejected = "1.2.3.4\x1b[2J", map[string]int64{"code\x1b": 1}
-	sm := NewStatus(make(chan broker.Status))
-	sm.Agents = func() []a2a.Presence {
-		return []a2a.Presence{{Agent: "worker", Status: a2a.StatusOnline, Description: evil}}
-	}
-	var m tea.Model = sizeTo(sm, 160, 40)
+	c := newTestConsole(t, &fakeBus{cards: []a2a.Presence{{Agent: "worker", Status: a2a.StatusOnline, Description: evil},
+		{Agent: "a\x1bb", Capabilities: []string{evil}}}})
+	var m tea.Model = sizeTo(c, 160, 40)
 	m, _ = m.Update(StatusMsg(st))
+	for _, tab := range []string{"1", "2", "3"} {
+		m, _ = press(m, tab)
+		if v := m.View().Content; hasRawControl(v, true) {
+			t.Errorf("tab %s not escaped:\n%q", tab, plain(v))
+		}
+	}
+	m, _ = press(m, "2", "enter")
 	if v := m.View().Content; hasRawControl(v, true) {
-		t.Errorf("status view not escaped:\n%q", plain(v))
+		t.Errorf("agent detail not escaped:\n%q", plain(v))
 	}
-	m, _ = press(m, "enter")
-	if v := m.View().Content; hasRawControl(v, true) {
-		t.Errorf("status detail not escaped:\n%q", plain(v))
-	}
-
-	d := NewDashboard("me", "all", func() []a2a.Presence { return []a2a.Presence{{Agent: "a\x1bb", Capabilities: []string{evil}}} }, make(chan Item))
-	if v := d.View().Content; hasRawControl(v, true) {
-		t.Errorf("dashboard not escaped:\n%q", plain(v))
-	}
-}
-
-// Pause in the status detail is shown there and doesn't outlive it; c
-// doesn't clear the traffic every other agent's detail shares.
-func TestStatusDetailPauseAndClear(t *testing.T) {
-	sm := NewStatus(make(chan broker.Status))
-	sm.Agents = cards
-	var m tea.Model = sizeTo(sm, 140, 40)
-	m, _ = m.Update(StatusMsg(sampleStatus(time.Now(), 5)))
-	m, _ = m.Update(ItemMsg(ItemFromEnvelope("t", env(t, "coordinator", "worker", "ping"))))
-	m, _ = press(m, "enter", "p")
-	m, _ = m.Update(ItemMsg(ItemFromEnvelope("t", env(t, "coordinator", "worker", "again"))))
-	if v := plain(m.View().Content); !strings.Contains(v, "paused (1 not shown)") {
-		t.Errorf("pause not shown in the detail:\n%s", v)
-	}
-	m, _ = press(m, "c")
-	if v := plain(m.View().Content); !strings.Contains(v, "coordinator → worker") {
-		t.Error("c cleared the shared traffic")
-	}
-	m, _ = press(m, "esc")
-	if sm := m.(StatusModel); sm.detail != "" || sm.feed.paused {
-		t.Errorf("leaving the detail left it paused (detail %q)", sm.detail)
-	}
-}
-
-// Selections follow the agent, not the row number, as rows change.
-func TestSelectionFollowsAgent(t *testing.T) {
-	sm := NewStatus(make(chan broker.Status))
-	sm.Agents = cards
-	var m tea.Model = sizeTo(sm, 140, 40)
-	st := sampleStatus(time.Now(), 5) // worker, explorer, you
-	m, _ = m.Update(StatusMsg(st))
-	m, _ = press(m, "down") // explorer
-	st.Agents = append([]broker.AgentStatus{{ID: "aaa", State: "online"}}, st.Agents...)
-	m, _ = m.Update(StatusMsg(st))
-	m, _ = press(m, "enter")
-	if v := plain(m.View().Content); !strings.Contains(v, "agent explorer") {
-		t.Errorf("status: cursor moved off explorer:\n%s", v)
-	}
-
-	list := cards()
-	src := func() []a2a.Presence { return list }
-	var am tea.Model = sizeTo(NewAgents(src), 140, 20)
-	am, _ = press(am, "down") // coordinator
-	list = append([]a2a.Presence{{Agent: "aaa"}}, list...)
-	am, _ = am.Update(tickMsg(time.Now()))
-	am, _ = press(am, "enter")
-	if v := plain(am.View().Content); !strings.Contains(v, "presence card of coordinator") {
-		t.Errorf("agents: cursor moved off coordinator:\n%s", v)
-	}
-
-	list = cards()
-	var dm tea.Model = sizeTo(NewDashboard("me", "all", src, make(chan Item)), 140, 30)
-	dm, _ = press(dm, "tab", "down") // coordinator
-	list = append([]a2a.Presence{{Agent: "aaa"}}, list...)
-	dm, _ = dm.Update(tickMsg(time.Now()))
-	dm, _ = press(dm, "i")
-	if v := plain(dm.View().Content); !strings.Contains(v, "presence card of coordinator") {
-		t.Errorf("dashboard: cursor moved off coordinator:\n%s", v)
-	}
-}
-
-func TestDashboardAgentsScroll(t *testing.T) {
-	var many []a2a.Presence
-	for i := range 60 {
-		many = append(many, a2a.Presence{Agent: fmt.Sprintf("agent-%02d", i), Status: a2a.StatusOnline})
-	}
-	var m tea.Model = sizeTo(NewDashboard("me", "all", func() []a2a.Presence { return many }, make(chan Item)), 120, 24)
-	m, _ = press(m, "tab")
-	for range 40 {
-		m, _ = press(m, "down")
-	}
-	v := plain(m.View().Content)
-	if !strings.Contains(v, "▌ ● agent-40") {
-		t.Errorf("cursor row not visible:\n%s", v)
-	}
-	checkFits(t, "dashboard scrolled", m.View().Content, 120, 24)
 }
 
 // The editor never saves over changes made to the file after it loaded.

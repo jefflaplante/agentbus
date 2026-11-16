@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1064" height="598" viewBox="0 0 1064 598">
+<style>text{font-family:"SF Mono",Menlo,Monaco,Consolas,"DejaVu Sans Mono",monospace;font-size:14px;white-space:pre}</style>
+<rect width="1064" height="598" rx="10" fill="#16161E"/>
+<path d="M0 10a10 10 0 0 1 10-10h1044a10 10 0 0 1 10 10v20H0z" fill="#24242E"/>
+<circle cx="20" cy="15" r="6" fill="#FF5F57"/>
+<circle cx="40" cy="15" r="6" fill="#FEBC2E"/>
+<circle cx="60" cy="15" r="6" fill="#28C840"/>
+<text x="532" y="20" fill="#9A9AAA" text-anchor="middle">agentbus console  →  4 Compose</text>
+<clipPath id="term-71ed128d"><rect x="16.0" y="44" width="1032.0" height="554"/></clipPath><g clip-path="url(#term-71ed128d)">
+<rect x="16.0" y="44.0" width="8.6" height="18" fill="#9F86FF"/>
+<rect x="24.6" y="44.0" width="68.8" height="18" fill="#9F86FF"/>
+<text x="24.6" y="57.0" fill="#FFFFFF" font-weight="bold" textLength="68.8" lengthAdjust="spacingAndGlyphs">agentbus</text>
+<rect x="93.4" y="44.0" width="8.6" height="18" fill="#9F86FF"/>
+<text x="119.2" y="57.0" fill="#6C6C6C" textLength="86.0" lengthAdjust="spacingAndGlyphs">1 Overview</text>
+<text x="222.4" y="57.0" fill="#6C6C6C" textLength="68.8" lengthAdjust="spacingAndGlyphs">2 Agents</text>
+<text x="308.4" y="57.0" fill="#6C6C6C" textLength="77.4" lengthAdjust="spacingAndGlyphs">3 Traffic</text>
+<text x="403.0" y="57.0" fill="#9F86FF" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">4</text>
+<text x="420.2" y="57.0" fill="#9F86FF" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">C</text>
+<text x="428.8" y="57.0" fill="#9F86FF" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">o</text>
+<text x="437.4" y="57.0" fill="#9F86FF" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">m</text>
+<text x="446.0" y="57.0" fill="#9F86FF" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">p</text>
+<text x="454.6" y="57.0" fill="#9F86FF" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">o</text>
+<text x="463.2" y="57.0" fill="#9F86FF" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">s</text>
+<text x="471.8" y="57.0" fill="#9F86FF" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">e</text>
+<text x="497.6" y="57.0" fill="#6C6C6C" textLength="60.2" lengthAdjust="spacingAndGlyphs">5 Inbox</text>
+<text x="575.0" y="57.0" fill="#6C6C6C" textLength="68.8" lengthAdjust="spacingAndGlyphs">6 Config</text>
+<text x="16.0" y="75.0" fill="#6C6C6C" textLength="34.4" lengthAdjust="spacingAndGlyphs"> as </text>
+<text x="50.4" y="75.0" fill="#9F86FF" font-weight="bold" textLength="68.8" lengthAdjust="spacingAndGlyphs">explorer</text>
+<text x="119.2" y="75.0" fill="#6C6C6C" textLength="464.4" lengthAdjust="spacingAndGlyphs"> · tcp://127.0.0.1:1883 · all agent traffic (observer)</text>
+<text x="16.0" y="93.0" fill="#9F86FF" font-weight="bold" textLength="60.2" lengthAdjust="spacingAndGlyphs">Compose</text>
+<text x="76.2" y="93.0" fill="#6C6C6C" textLength="111.8" lengthAdjust="spacingAndGlyphs">  as explorer</text>
+<text x="188.0" y="93.0" fill="#6C6C6C" textLength="103.2" lengthAdjust="spacingAndGlyphs"> · e to edit</text>
+<text x="600.8" y="93.0" fill="#9F86FF" font-weight="bold" textLength="34.4" lengthAdjust="spacingAndGlyphs">Sent</text>
+<text x="635.2" y="93.0" fill="#6C6C6C" textLength="137.6" lengthAdjust="spacingAndGlyphs">  1 this session</text>
+<text x="600.8" y="111.0" fill="#6C6C6C" font-weight="bold" textLength="447.2" lengthAdjust="spacingAndGlyphs">  SENT     MESSAGE           OUTCOME                </text>
+<text x="16.0" y="129.0" fill="#6C6C6C" textLength="103.2" lengthAdjust="spacingAndGlyphs"> Kind       </text>
+<text x="119.2" y="129.0" fill="#6C6C6C" textLength="77.4" lengthAdjust="spacingAndGlyphs"> request </text>
+<text x="205.2" y="129.0" fill="#9F86FF" font-weight="bold" textLength="51.6" lengthAdjust="spacingAndGlyphs">‹task›</text>
+<text x="265.4" y="129.0" fill="#6C6C6C" textLength="51.6" lengthAdjust="spacingAndGlyphs"> send </text>
+<text x="325.6" y="129.0" fill="#6C6C6C" textLength="51.6" lengthAdjust="spacingAndGlyphs"> emit </text>
+<text x="600.8" y="129.0" fill="#9F86FF" font-weight="bold" textLength="17.2" lengthAdjust="spacingAndGlyphs">▌ </text>
+<text x="618.0" y="129.0" fill="#D6D6E0" textLength="232.2" lengthAdjust="spacingAndGlyphs">09:40:28 task textstats    </text>
+<text x="850.2" y="129.0" fill="#3DD68C" font-weight="bold" textLength="86.0" lengthAdjust="spacingAndGlyphs">✓ response</text>
+<text x="936.2" y="129.0" fill="#6C6C6C" textLength="111.8" lengthAdjust="spacingAndGlyphs"> from worker…</text>
+<text x="16.0" y="147.0" fill="#6C6C6C" textLength="103.2" lengthAdjust="spacingAndGlyphs"> Capability </text>
+<text x="119.2" y="147.0" fill="#D6D6E0" textLength="77.4" lengthAdjust="spacingAndGlyphs">textstats</text>
+<text x="16.0" y="165.0" fill="#6C6C6C" textLength="103.2" lengthAdjust="spacingAndGlyphs"> Body       </text>
+<text x="119.2" y="165.0" fill="#D6D6E0" textLength="17.2" lengthAdjust="spacingAndGlyphs">│ </text>
+<text x="136.4" y="165.0" fill="#D6D6E0" textLength="258.0" lengthAdjust="spacingAndGlyphs">{&#34;text&#34;: &#34;to be or not to be&#34;}</text>
+<text x="600.8" y="165.0" fill="#9F86FF" font-weight="bold" textLength="120.4" lengthAdjust="spacingAndGlyphs">task textstats</text>
+<text x="721.2" y="165.0" fill="#6C6C6C" textLength="292.4" lengthAdjust="spacingAndGlyphs">  faced3d03321c7f8e1324d8d3de9c4a1</text>
+<text x="119.2" y="183.0" fill="#D6D6E0" textLength="17.2" lengthAdjust="spacingAndGlyphs">│ </text>
+<text x="600.8" y="183.0" fill="#6C6C6C" textLength="335.4" lengthAdjust="spacingAndGlyphs">response from worker-2 · enter inspects</text>
+<text x="119.2" y="201.0" fill="#D6D6E0" textLength="17.2" lengthAdjust="spacingAndGlyphs">│ </text>
+<text x="600.8" y="201.0" fill="#E4E4E4" textLength="8.6" lengthAdjust="spacingAndGlyphs">{</text>
+<text x="119.2" y="219.0" fill="#D6D6E0" textLength="17.2" lengthAdjust="spacingAndGlyphs">│ </text>
+<text x="618.0" y="219.0" fill="#9F86FF" font-weight="bold" textLength="60.2" lengthAdjust="spacingAndGlyphs">&#34;chars&#34;</text>
+<text x="678.2" y="219.0" fill="#E4E4E4" textLength="43.0" lengthAdjust="spacingAndGlyphs">: 18,</text>
+<text x="119.2" y="237.0" fill="#D6D6E0" textLength="17.2" lengthAdjust="spacingAndGlyphs">│ </text>
+<text x="618.0" y="237.0" fill="#9F86FF" font-weight="bold" textLength="60.2" lengthAdjust="spacingAndGlyphs">&#34;lines&#34;</text>
+<text x="678.2" y="237.0" fill="#E4E4E4" textLength="34.4" lengthAdjust="spacingAndGlyphs">: 1,</text>
+<text x="119.2" y="255.0" fill="#D6D6E0" textLength="17.2" lengthAdjust="spacingAndGlyphs">│ </text>
+<text x="618.0" y="255.0" fill="#9F86FF" font-weight="bold" textLength="94.6" lengthAdjust="spacingAndGlyphs">&#34;top_words&#34;</text>
+<text x="712.6" y="255.0" fill="#E4E4E4" textLength="25.8" lengthAdjust="spacingAndGlyphs">: [</text>
+<text x="119.2" y="273.0" fill="#D6D6E0" textLength="17.2" lengthAdjust="spacingAndGlyphs">│ </text>
+<text x="635.2" y="273.0" fill="#E4E4E4" textLength="8.6" lengthAdjust="spacingAndGlyphs">{</text>
+<text x="119.2" y="291.0" fill="#D6D6E0" textLength="17.2" lengthAdjust="spacingAndGlyphs">│ </text>
+<text x="652.4" y="291.0" fill="#9F86FF" font-weight="bold" textLength="60.2" lengthAdjust="spacingAndGlyphs">&#34;count&#34;</text>
+<text x="712.6" y="291.0" fill="#E4E4E4" textLength="34.4" lengthAdjust="spacingAndGlyphs">: 2,</text>
+<text x="119.2" y="309.0" fill="#D6D6E0" textLength="17.2" lengthAdjust="spacingAndGlyphs">│ </text>
+<text x="652.4" y="309.0" fill="#9F86FF" font-weight="bold" textLength="51.6" lengthAdjust="spacingAndGlyphs">&#34;word&#34;</text>
+<text x="704.0" y="309.0" fill="#E4E4E4" textLength="51.6" lengthAdjust="spacingAndGlyphs">: &#34;be&#34;</text>
+<text x="119.2" y="327.0" fill="#D6D6E0" textLength="17.2" lengthAdjust="spacingAndGlyphs">│ </text>
+<text x="635.2" y="327.0" fill="#E4E4E4" textLength="17.2" lengthAdjust="spacingAndGlyphs">},</text>
+<text x="119.2" y="345.0" fill="#3DD68C" font-weight="bold" textLength="17.2" lengthAdjust="spacingAndGlyphs">✓ </text>
+<text x="136.4" y="345.0" fill="#6C6C6C" textLength="34.4" lengthAdjust="spacingAndGlyphs">JSON</text>
+<text x="635.2" y="345.0" fill="#E4E4E4" textLength="8.6" lengthAdjust="spacingAndGlyphs">{</text>
+<text x="16.0" y="363.0" fill="#6C6C6C" textLength="103.2" lengthAdjust="spacingAndGlyphs"> Priority   </text>
+<text x="119.2" y="363.0" fill="#9F86FF" font-weight="bold" textLength="77.4" lengthAdjust="spacingAndGlyphs">‹default›</text>
+<text x="205.2" y="363.0" fill="#6C6C6C" textLength="51.6" lengthAdjust="spacingAndGlyphs"> high </text>
+<text x="265.4" y="363.0" fill="#6C6C6C" textLength="68.8" lengthAdjust="spacingAndGlyphs"> normal </text>
+<text x="342.8" y="363.0" fill="#6C6C6C" textLength="43.0" lengthAdjust="spacingAndGlyphs"> low </text>
+<text x="394.4" y="363.0" fill="#6C6C6C" textLength="51.6" lengthAdjust="spacingAndGlyphs"> info </text>
+<text x="652.4" y="363.0" fill="#9F86FF" font-weight="bold" textLength="60.2" lengthAdjust="spacingAndGlyphs">&#34;count&#34;</text>
+<text x="712.6" y="363.0" fill="#E4E4E4" textLength="34.4" lengthAdjust="spacingAndGlyphs">: 2,</text>
+<text x="16.0" y="381.0" fill="#6C6C6C" textLength="103.2" lengthAdjust="spacingAndGlyphs"> Event      </text>
+<text x="119.2" y="381.0" fill="#585858" textLength="8.6" lengthAdjust="spacingAndGlyphs">o</text>
+<text x="127.8" y="381.0" fill="#585858" textLength="232.2" lengthAdjust="spacingAndGlyphs">ptional, e.g. doorbell_ring</text>
+<text x="652.4" y="381.0" fill="#9F86FF" font-weight="bold" textLength="51.6" lengthAdjust="spacingAndGlyphs">&#34;word&#34;</text>
+<text x="704.0" y="381.0" fill="#E4E4E4" textLength="51.6" lengthAdjust="spacingAndGlyphs">: &#34;to&#34;</text>
+<text x="16.0" y="399.0" fill="#6C6C6C" textLength="103.2" lengthAdjust="spacingAndGlyphs"> Headers    </text>
+<text x="119.2" y="399.0" fill="#585858" textLength="8.6" lengthAdjust="spacingAndGlyphs">o</text>
+<text x="127.8" y="399.0" fill="#585858" textLength="249.4" lengthAdjust="spacingAndGlyphs">ptional, key=value, key=value</text>
+<text x="635.2" y="399.0" fill="#E4E4E4" textLength="17.2" lengthAdjust="spacingAndGlyphs">},</text>
+<text x="16.0" y="417.0" fill="#6C6C6C" textLength="103.2" lengthAdjust="spacingAndGlyphs"> Timeout    </text>
+<text x="119.2" y="417.0" fill="#D6D6E0" textLength="25.8" lengthAdjust="spacingAndGlyphs">60s</text>
+<text x="635.2" y="417.0" fill="#E4E4E4" textLength="8.6" lengthAdjust="spacingAndGlyphs">{</text>
+<text x="652.4" y="435.0" fill="#9F86FF" font-weight="bold" textLength="60.2" lengthAdjust="spacingAndGlyphs">&#34;count&#34;</text>
+<text x="712.6" y="435.0" fill="#E4E4E4" textLength="34.4" lengthAdjust="spacingAndGlyphs">: 1,</text>
+<text x="119.2" y="453.0" fill="#9F86FF" font-weight="bold" textLength="51.6" lengthAdjust="spacingAndGlyphs">ctrl+s</text>
+<text x="170.8" y="453.0" fill="#6C6C6C" textLength="86.0" lengthAdjust="spacingAndGlyphs"> send task</text>
+<text x="652.4" y="453.0" fill="#9F86FF" font-weight="bold" textLength="51.6" lengthAdjust="spacingAndGlyphs">&#34;word&#34;</text>
+<text x="704.0" y="453.0" fill="#E4E4E4" textLength="60.2" lengthAdjust="spacingAndGlyphs">: &#34;not&#34;</text>
+<text x="635.2" y="471.0" fill="#E4E4E4" textLength="8.6" lengthAdjust="spacingAndGlyphs">}</text>
+<text x="618.0" y="489.0" fill="#E4E4E4" textLength="17.2" lengthAdjust="spacingAndGlyphs">],</text>
+<text x="618.0" y="507.0" fill="#9F86FF" font-weight="bold" textLength="60.2" lengthAdjust="spacingAndGlyphs">&#34;words&#34;</text>
+<text x="678.2" y="507.0" fill="#E4E4E4" textLength="34.4" lengthAdjust="spacingAndGlyphs">: 6,</text>
+<text x="618.0" y="525.0" fill="#9F86FF" font-weight="bold" textLength="68.8" lengthAdjust="spacingAndGlyphs">&#34;worker&#34;</text>
+<text x="686.8" y="525.0" fill="#E4E4E4" textLength="103.2" lengthAdjust="spacingAndGlyphs">: &#34;worker-2&#34;</text>
+<text x="600.8" y="543.0" fill="#E4E4E4" textLength="8.6" lengthAdjust="spacingAndGlyphs">}</text>
+<text x="24.6" y="561.0" fill="#3DD68C" font-weight="bold" textLength="206.4" lengthAdjust="spacingAndGlyphs">✓ sent task to textstats</text>
+<text x="24.6" y="579.0" fill="#6C6C6C" textLength="825.6" lengthAdjust="spacingAndGlyphs">e edit form · ↑/↓ select · enter inspect reply · R reuse · x cancel · 1-6 tabs · ? keys · q quit</text>
+</g>
+</svg>

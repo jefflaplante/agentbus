@@ -8,8 +8,8 @@ acts as an agent from the shell, and shows a running broker in terminal UIs.
 - [Commands](#commands)
 - [Connecting](#connecting)
 - [Interactive or plain](#interactive-or-plain)
-- [Looking inside a running broker](#looking-inside-a-running-broker): `status`, `dashboard`
-- [Watching agents and traffic](#watching-agents-and-traffic): `agents`, `watch`, `listen`
+- [The console](#the-console): `console`, and `status` and `agents` on a terminal
+- [Watching traffic from the shell](#watching-traffic-from-the-shell): `watch`, `listen`
 - [Messaging from the shell](#messaging-from-the-shell): `send`, `request`, `task`, `emit`
 - [Being an agent from the shell](#being-an-agent-from-the-shell): `handle`
 - [Giving a coding agent the bus](#giving-a-coding-agent-the-bus): `mcp`
@@ -25,7 +25,7 @@ No setup needed:
 
 ```bash
 agentbus serve          # first run: creates a config with an admin identity, then starts
-agentbus status         # in another terminal: connects as admin automatically
+agentbus console        # in another terminal: connects as admin automatically
 agentbus config         # add agents, get their client setup, change settings
 ```
 
@@ -41,9 +41,9 @@ any flags.
 
 To run a real deployment from here:
 - **Add an identity for each agent** with `agentbus config` or
-  `agentbus config agent add NAME`.
-- **Give each agent its connection settings** from the editor's client
-  setup screen (`c`) or `agentbus config env NAME`.
+  `agentbus config agent add NAME`. Both then show where the new token
+  file is and the exact commands that start the agent, on this machine and
+  on another host. See [Onboarding an agent](#onboarding-an-agent).
 - **Before listening beyond this host**, set `tls_cert` and `tls_key`.
 
 ## Commands
@@ -70,7 +70,7 @@ Messaging:
 
 Observing:
   agents      List agents and their presence
-  dashboard   Live view of agents and traffic
+  console     Manage the bus from one full-screen console
   listen      Show messages arriving in this agent's inbox
   status      Live view of the running broker
   watch       Watch broadcast events (or, for observers, any traffic)
@@ -84,7 +84,7 @@ Additional Commands:
 
 Flags:
       --agent string        this agent's ID (env AGENTBUS_AGENT)
-      --config string       broker config file (env AGENTBUS_CONFIG; default ./broker.json, else ~/.config/agentbus/broker.json)
+      --config string       broker config file (env AGENTBUS_CONFIG; default ~/.config/agentbus/broker.json)
   -h, --help                help for agentbus
       --plain               never use the interactive UI, even on a terminal
       --token string        this agent's token; visible in ps, prefer --token-file (env AGENTBUS_TOKEN)
@@ -112,6 +112,8 @@ environment variable:
 | `--token-file` | `AGENTBUS_TOKEN_FILE` | file holding the token (preferred) |
 | `--token` | `AGENTBUS_TOKEN` | the token itself; visible in `ps` |
 | `--config` | `AGENTBUS_CONFIG` | the broker config file, for `serve`, `config`, and finding defaults |
+| | `AGENTBUS_CONFIG_DIR` | the directory holding `broker.json` and `tokens/`; default `~/.config/agentbus` |
+| | `AGENTBUS_STATE_DIR` | where a new config puts `data_dir` and the audit log; default `~/.local/state/agentbus` |
 
 A flag beats an environment variable: `--token` is used even when
 `AGENTBUS_TOKEN_FILE` is set, and `--token-file` even when `AGENTBUS_TOKEN`
@@ -123,8 +125,48 @@ When a setting isn't given, it comes from the local broker config:
 - **Token file:** `tokens/<agent>.token` beside the config
 - **Agent:** `admin`, when no agent is named and the admin token is there
 
-The config itself is `--config`, else `$AGENTBUS_CONFIG`, else
-`./broker.json`, else `~/.config/agentbus/broker.json`.
+The config is found in this order:
+1. `--config FILE`
+2. `$AGENTBUS_CONFIG`, a file
+3. `broker.json` in `$AGENTBUS_CONFIG_DIR`
+4. `~/.config/agentbus/broker.json`
+
+The current directory is never searched, so `serve`, `console` and every
+other command find the same file wherever you run them. `agentbus config
+path` shows which file is in use and why.
+
+`AGENTBUS_CONFIG_DIR` moves the whole directory: the config and the
+`tokens/` beside it. Use it for a broker on a server (`/etc/agentbus`, see
+[On a server](#on-a-server)) or for a second broker on one machine. When
+`serve` or `config init` creates a config there, the broker's data and
+audit log go in a `state/` directory beside it, so two brokers never share
+a data directory. `AGENTBUS_STATE_DIR` puts them somewhere else
+(`/var/lib/agentbus`). It only matters when a config is created; after
+that, `data_dir` and `audit_file` in the config decide.
+
+Standalone agents (`agentbus agent run` and the generated programs) also
+look for their token in `$AGENTBUS_CONFIG_DIR/tokens/<agent>.token` before
+`/etc/agentbus/<agent>.token`.
+
+Variables set in your shell are easy to forget. On a terminal, every
+command prints one line naming the `AGENTBUS_*` variables it is using, and
+the console shows them in its header. A failed connection lists the config,
+URL, agent and token it tried, and where each came from:
+
+```text
+agentbus: connect tcp://127.0.0.1:18830: not Authorized
+  config /home/you/demo/.run/broker.json ($AGENTBUS_CONFIG)
+  url    tcp://127.0.0.1:18830 ($AGENTBUS_URL)
+  agent  explorer ($AGENTBUS_AGENT)
+  token  /home/you/demo/.run/tokens/explorer.token ($AGENTBUS_TOKEN_FILE)
+  Settings from AGENTBUS_* variables may be left over from an earlier shell session; unset them to use /home/you/.config/agentbus/broker.json.
+```
+
+To go back to the default setup, unset them:
+
+```bash
+unset AGENTBUS_CONFIG AGENTBUS_URL AGENTBUS_AGENT AGENTBUS_TOKEN_FILE AGENTBUS_TOKEN
+```
 
 The demo writes one env file per identity:
 
@@ -143,33 +185,15 @@ UI. Piped, or with `--plain`, they print text or JSON for scripts:
 
 | Command | Interactive | Plain |
 |---|---|---|
-| `status` | live broker view | one status snapshot as JSON |
-| `agents` | live presence table | the table, printed once (also with `--once`) |
+| `console` (also `ui`, `dashboard`) | the console | not available |
+| `status` | the console, on its Overview tab | one status snapshot as JSON |
+| `agents` | the console, on its Agents tab | the table, printed once (also with `--once`) |
 | `watch` | scrolling feed | one JSON line per message |
 | `listen` | scrolling feed of your inbox | one JSON line per message |
 | `request`, `task` | spinner while waiting, then the reply body pretty-printed | the reply envelope as one JSON line |
-| `dashboard` | presence and traffic side by side | not available |
+| `config` | the config editor | `config show` and the other subcommands |
 
 Errors go to stderr. An error reply, or any failure, exits with status 1.
-
-Every list is selectable, and Enter goes one level deeper. `esc` goes back
-up one level at a time.
-
-| Key | In | Does |
-|---|---|---|
-| `↑` `↓` `pgup` `pgdn` `g` `G` | every list | move the selection; `G` (or moving past the newest) resumes following live traffic |
-| `enter` | `status`, `agents` | open the selected agent (detail view, or its presence card) |
-| `enter` | message lists | open the message in the inspector: every header field and the pretty-printed body |
-| `enter` | dashboard agents panel | show only that agent's traffic (again to clear) |
-| `i` | agent views | inspect the agent's presence card |
-| `e` | agent views | edit the agent in the config editor, when the broker's config file is on this machine |
-| `tab` | `dashboard`, `config` | switch panel or tab |
-| `y` | inspector, client setup | copy the JSON or snippet to the clipboard |
-| `p` / `space`, `c` | feeds | pause or resume, clear; in a `status` agent detail, `p` pauses until you leave it and `c` does nothing (the traffic is shared with every agent) |
-| `esc` | everywhere | back one level; quits at the top |
-| `q` | top-level views | quit |
-| `q` | inspector, `status` agent detail, confirmation prompts, client setup, the config editor opened with `e` | back one level, like `esc` |
-| `ctrl+c` | everywhere | quit |
 
 Text that comes from other agents (presence descriptions and metadata,
 event names, headers, error reasons, message bodies) is shown with control
@@ -177,97 +201,161 @@ characters escaped, as `\x1b` for example, so it can't move the cursor,
 change the terminal, or add rows to `agents --plain` output. JSON output is
 left as JSON.
 
-## Looking inside a running broker
-
-### `status`
+## The console
 
 ```bash
-source demo/.run/explorer.env
-agentbus status            # alias: top
+agentbus console                       # as admin, found next to the local config
+agentbus console --tab compose --agent you
 ```
 
-![agentbus status](images/status.svg)
+One full-screen program for running the bus. It connects as one agent and
+has six tabs:
+
+| Tab | What it is for |
+|---|---|
+| 1 Overview | broker status: server, traffic, decisions, limits, throughput over time, and request outcomes by target |
+| 2 Agents | every agent, joining what the broker reports with its presence card; a detail view with its recent traffic |
+| 3 Traffic | every message the connection can see, filtered by agent, type or text |
+| 4 Compose | send a request, task, one-way event or broadcast, and see each reply |
+| 5 Inbox | messages sent to the console's agent; answer or refuse requests |
+| 6 Config | the [config editor](#setup-agentbus-config), when the broker's config file is on this machine |
+
+What it can see depends on the identity. **Observers** (`admin` is one)
+see all agent traffic and the broker's status snapshots. Any other agent
+sees broadcast events and its own inbox: Overview explains this, and the
+broker columns in Agents stay empty. Compose and Inbox work for every
+agent, within its `send_to` grants.
+
+### Keys
+
+`1`-`6` or `[` and `]` switch tabs from anywhere. `?` lists every key.
+While a text field has focus (Compose, a filter, an answer), keys go to the
+field and `esc` leaves it.
+
+| Key | In | Does |
+|---|---|---|
+| `↑` `↓` `pgup` `pgdn` `g` `G` | every list | move the selection; in a feed, `G` (or moving past the newest) resumes following live traffic |
+| `enter` | Agents | the agent's detail: broker state, presence card, recent traffic |
+| `enter` | message lists, Compose results | open the message in the inspector: every header field and the pretty-printed body |
+| `r` `t` `s` | Agents | open Compose with a request, a task (to the agent's first capability) or a one-way event to the agent |
+| `f` | Agents | show the agent's traffic in the Traffic tab |
+| `i` | Agents | inspect the agent's presence card |
+| `e` | Agents | edit the agent in the Config tab |
+| `/`, `t` | Traffic | filter by text (topic, sender, recipient, IDs, body), or cycle through types |
+| `R` | Traffic, Compose results | copy a message into the Compose form |
+| `p` / `space`, `c` | feeds | pause or resume, clear |
+| `tab`, `shift+tab` | Compose form | next or previous field; in the target field, `tab` first completes a known agent or capability |
+| `←` `→` | Compose form | change the kind or priority |
+| `ctrl+s` | Compose form, an answer | send |
+| `x` | Compose results | cancel a request still waiting |
+| `a`, `x` | Inbox | answer or refuse the selected request |
+| `h` | Inbox | hold requests for you to answer, or refuse them at once |
+| `y` | inspector, client setup | copy the JSON or snippet to the clipboard |
+| `esc` | everywhere | back one level: leave a field, close the inspector, clear a filter, leave a detail |
+| `q` | anywhere but a text field | quit |
+| `ctrl+c` | everywhere | quit |
+
+### Overview
+
+![agentbus console: Overview](images/console-overview.svg)
 
 The broker publishes a snapshot of itself every `status_interval` (default
 2s) to the retained topic `$SYS/agentbus/status`. **Only observer identities
-can read it**, because it lists every agent and its address. Connect as one,
-such as the demo's `explorer` or any agent with `"observer": true` in the
-broker config.
+can read it**, because it lists every agent and its address.
 
 | Section | Shows |
 |---|---|
-| Header | listen address, uptime, version |
-| Server | TLS, `data_dir`, audit file, start time, memory and goroutines |
+| Server | listen address, version and uptime, TLS, `data_dir`, audit file, memory and goroutines |
 | Traffic | connected clients and sessions, messages and bytes in and out, rates per second, in-flight and dropped messages, subscriptions, retained messages |
-| Decisions | accepted envelopes, duplicates, rejections by code, failed logins, refused Will messages. These counters are never throttled, unlike the logs. |
+| Decisions | accepted envelopes, duplicates, rejections by code, failed logins, refused Will messages, and request outcomes. These counters are never throttled, unlike the logs. |
 | Limits | envelope size, rate and burst, queue, session expiry, clock skew, connection caps |
-| Agents | every configured agent: state (`online`; `offline`, with a session holding its queue; or `none`), remote address, queued messages, accepted and rejected counts, last activity, capabilities, `send_to`, observer role |
+| Throughput | message rates in and out, one bar per snapshot since the console started |
+| Requests by target | for each agent inbox and task queue: open requests, answered, errored, expired, evicted, and p50 and p95 reply latency |
 
-The screenshot shows `you` with one rejection: it tried to message
-`coordinator`, which its `send_to` doesn't allow. `coordinator` shows
-`none` because its one-shot run has ended.
-
-Press **enter** on an agent for its detail view:
-- what the broker knows about it: state, queue, counts, last activity,
-  grants
-- its presence card
-- every message it has sent or received since the view opened
-
-![agentbus status → enter: agent detail](images/status-detail.svg)
-
-From the detail view:
-- **enter** on a message opens it in the inspector.
-- **i** inspects the agent's presence card.
-- **e** opens the agent in the [config editor](#setup-agentbus-config).
-  Change its capabilities or `send_to`, or rotate its token, and the
-  running broker applies it within a second.
-
-![the inspector](images/inspect.svg)
-
-Plain mode prints one snapshot as JSON, for scripts and monitoring. It
-waits for a snapshot that shows itself online, so it never prints a stale
-one.
+`agentbus status --plain` prints one snapshot as JSON, for scripts and
+monitoring. It waits for a snapshot that shows itself online, so it never
+prints a stale one.
 
 ```bash
 agentbus status --plain | jq '{up: .uptime_seconds, rejected: .decisions.rejected}'
 ```
 
-### `dashboard`
+### Agents
 
-```bash
-agentbus dashboard
-```
+![agentbus console: Agents](images/console-agents.svg)
 
-![agentbus dashboard](images/dashboard.svg)
+One row per agent, from the broker's status (state, address, queue,
+accepted and rejected counts, last activity, grants) and its presence card
+(description). State is `online`; `offline`, with a session holding its
+queue; or `none`. An agent with no presence card has never announced
+itself.
 
-Presence on the left and live traffic on the right. As an observer it shows
-all agent traffic and a one-line broker summary; otherwise it shows
-broadcast events and your own inbox.
+Enter opens the agent's detail, with every message it has sent or received
+since the console started. Enter on one of those opens the inspector.
 
-`tab` moves between the panels:
-- **Agents panel:** Enter filters the traffic to the selected agent (`esc`
-  clears it), `i` inspects its card, and `e` edits it.
-- **Traffic panel:** Enter opens the selected message in the inspector. The header counts messages by type.
-Here you can see:
-- the coordinator fanning tasks out to two workers
-- their `jobs/done` events
-- a `high`-priority `doorbell_ring`
-- the broker's `not_authorized` error back to `you`
+![agent detail](images/console-agent-detail.svg)
 
-## Watching agents and traffic
+![the inspector](images/inspect.svg)
 
-### `agents`
+### Traffic
 
-```bash
-agentbus agents            # live table; --once or --plain to print once
-```
+![agentbus console: Traffic](images/console-traffic.svg)
 
-![agentbus agents](images/agents.svg)
+As an observer, every message on `a2a/v1/#`: requests, replies, events,
+presence cards, and the broker's own errors. The header counts messages by
+type. `/` filters by text and `t` by type; `f` on an agent in the Agents
+tab filters by agent. `esc` clears the filters one at a time.
 
-Every agent's presence card: status, when it last changed, the capabilities
-the broker grants it, and whether its public keys are `pinned` in the
-broker config or only `claimed`. Enter opens the whole card (description,
-`meta`, keys), and `e` edits the agent.
+In the screenshot:
+- the coordinator fans tasks out to two workers
+- the workers emit `jobs/done` events
+- `you` sends a `high`-priority `doorbell_ring`
+- the broker sends `not_authorized` back to `you`
+
+### Compose
+
+![agentbus console: Compose](images/console-compose.svg)
+
+A form for the four ways to send:
+
+| Kind | Goes to | Waits for a reply |
+|---|---|---|
+| request | an agent's inbox | yes, up to the timeout, which is also the request's TTL |
+| task | a capability's work queue; one worker takes it | yes |
+| send | an agent's inbox, as a one-way event | no |
+| emit | this agent's event topic, for anyone watching | no |
+
+The body is JSON, checked as you type; blank sends no body. Priority,
+event name and headers (`key=value, key=value`) are optional.
+
+Each message stays in the list on the right with its outcome: the reply
+and how long it took, the error code and reason, or no reply within the
+timeout. A send or emit the broker refuses (`not_authorized` when
+`send_to` doesn't allow it, for example) shows the refusal too: the broker
+sends it to the console's inbox, and the console matches it to the message.
+
+### Inbox
+
+![agentbus console: Inbox](images/console-inbox.svg)
+
+Every message sent to the console's agent arrives here, including the
+broker's refusals. A request **waits for you**: `a` answers it with a JSON
+body and `x` refuses it with a reason, which the requester gets as an
+error with code `refused`. A request nobody answers before its TTL runs
+out gets a `timeout` error. Press `h` to refuse requests at once instead,
+with code `not_answering`.
+
+This is useful for testing an agent that asks other agents things: point
+it at the console's identity and answer by hand.
+
+### Config
+
+The [config editor](#setup-agentbus-config), as a tab. It's there when the
+broker config file on this machine is the one for the broker the console
+is connected to (the same listen address), so the console never edits some
+other broker's config.
+
+## Watching traffic from the shell
 
 ### `watch`
 
@@ -279,7 +367,7 @@ agentbus watch --filter 'a2a/v1/#'          # observers: all agent traffic
 
 ![agentbus watch](images/watch.svg)
 
-Any agent can watch events. Filters outside `a2a/v1/events/` need an observer
+`watch` is the Traffic tab on its own, for one filter. Any agent can watch events. Filters outside `a2a/v1/events/` need an observer
 identity. Select a message with `↑`/`↓` and press Enter to inspect it; `G`
 returns to live. Piped, each message is one JSON line: the envelope for event
 filters, or `{"topic":...,"payload":...}` for anything else.
@@ -403,10 +491,10 @@ shown.
 
 | Key | Does |
 |---|---|
-| `a` | add an agent: ID, capabilities, who it may send to, observer, rate limits, pinned keys. Its token file is created. |
+| `a` | add an agent: ID, capabilities, who it may send to, observer, rate limits, pinned keys. Its token file is created, and the setup screen opens on **Start**. |
 | `enter` | edit the selected agent |
-| `c` | client setup for the agent: shell exports, Go code, or MQTT Explorer settings. `y` copies; `w` writes `tokens/<id>.env` |
-| `r` | rotate the agent's token; the old one stops working and the broker disconnects it |
+| `c` | setup for the agent. **Start**: where its token is and how to start it. Then shell exports, Go code, and MQTT Explorer settings. `y` copies; `w` writes `tokens/<id>.env` |
+| `r` | rotate the agent's token; the old one stops working and the broker disconnects it. The setup screen opens, because clients need the new token. |
 | `d` | remove the agent and its token file; the broker disconnects it |
 | `tab` | broker settings |
 
@@ -434,6 +522,7 @@ agentbus config show                         # print the file
 agentbus config agent list
 agentbus config agent add researcher --capability research --send-to conduit-home
 agentbus config agent add grafana --observer
+agentbus config agent setup researcher       # where its token is, and how to start it
 agentbus config agent edit researcher --capability research --capability summarize
 agentbus config agent edit worker-2 --capability=   # stop it serving tasks (empty clears)
 agentbus config agent token researcher       # rotate
@@ -455,8 +544,60 @@ editor rereads the file before every change; if something else changed it
 since, the editor reloads, says so, and saves nothing, so it never
 overwrites changes you haven't seen.
 
-`agent add` prints the new agent's shell exports on stdout, so
-`agentbus config agent add x > x.env` gives you a ready env file.
+Piped, `agent add` prints only the new agent's shell exports on stdout,
+so `agentbus config agent add x > x.env` gives you a ready env file.
+
+### Onboarding an agent
+
+On a terminal, `agentbus config agent add NAME` (and later
+`agentbus config agent setup NAME`) prints everything needed to start the
+agent. The config editor shows the same on the **Start** view of its setup
+screen, right after you add an agent or rotate its token:
+
+```text
+$ agentbus config agent add researcher --capability research --send-to admin
+✓ added researcher; a running broker accepts it within a second
+
+Token file
+  ~/.config/agentbus/tokens/researcher.token
+  Readable only by you (mode 0600). Clients read the token from this file;
+  it is never printed. Keep it out of git and chat.
+
+Start it on this machine
+  agentbus --agent researcher handle --capability research --exec 'CMD'
+      take its research tasks; CMD is your program, run once per task
+  agentbus --agent researcher handle --exec 'CMD'
+      answer requests sent to researcher; CMD runs once per request
+  agentbus --agent researcher listen
+      print messages sent to researcher as they arrive
+  agentbus --agent researcher request --to admin --body '{}'
+      send a request as researcher and print the reply
+  These find the broker and the token from ~/.config/agentbus/broker.json; no other settings needed.
+
+Or set it for this shell, or for a program using the Go or Python client
+  export AGENTBUS_URL=tcp://127.0.0.1:1883
+  export AGENTBUS_AGENT=researcher
+  export AGENTBUS_TOKEN_FILE="$HOME/.config/agentbus/tokens/researcher.token"
+  ...
+
+Start it on another host
+  1. Copy the token file there, readable only by the user that runs the agent:
+       scp "$HOME/.config/agentbus/tokens/researcher.token" HOST:researcher.token
+       ssh HOST 'sudo install -D -m 0600 -o AGENT-USER researcher.token /etc/agentbus/researcher.token && rm researcher.token'
+  2. Start it, pointing at this broker:
+       agentbus --url tcp://BROKER-HOST:1883 --agent researcher --token-file /etc/agentbus/researcher.token handle ...
+  ! The broker listens on 127.0.0.1:1883, this machine only. ...
+```
+
+The commands fit the agent's grants. An agent with a capability gets
+`handle --capability` first, an observer gets `console`, and `request --to`
+uses the first agent it may send to. When the config isn't the default,
+every command includes `--config`, so it works in a terminal that doesn't
+have `AGENTBUS_CONFIG` or `AGENTBUS_CONFIG_DIR` set.
+
+After `agent token NAME` (rotate), clients that read the token file pick up
+the new token when they restart. Any copy on another host has to be
+replaced.
 
 ## Running the broker
 
@@ -468,7 +609,34 @@ agentbus token                                    # a new token + token_sha256, 
 ```
 
 If you name a config file that doesn't exist, `serve` refuses and tells
-you how to create it, rather than silently making a different one.
+you how to create it, rather than silently making a different one. A
+missing config in `$AGENTBUS_CONFIG_DIR` is created, as in the default
+location.
+
+### On a server
+
+Keep the config and tokens in `/etc/agentbus` and the data in
+`/var/lib/agentbus`, owned by a system user:
+
+```bash
+sudo useradd --system --home-dir /var/lib/agentbus --shell /usr/sbin/nologin agentbus
+sudo install -d -o agentbus -g agentbus -m 0700 /etc/agentbus /var/lib/agentbus
+sudo -u agentbus env AGENTBUS_CONFIG_DIR=/etc/agentbus AGENTBUS_STATE_DIR=/var/lib/agentbus \
+  agentbus config init
+sudo cp deploy/agentbus.service /etc/systemd/system/ && sudo systemctl enable --now agentbus
+```
+
+[deploy/agentbus.service](../deploy/agentbus.service) sets both variables
+and runs the broker hardened: read-only system, no home directories, and
+writes only to `/var/lib/agentbus`. Manage it as the same user:
+
+```bash
+sudo -u agentbus env AGENTBUS_CONFIG_DIR=/etc/agentbus agentbus console
+sudo -u agentbus env AGENTBUS_CONFIG_DIR=/etc/agentbus agentbus config agent add NAME
+```
+
+Before listening beyond loopback, set `tls_cert`, `tls_key` and `listen`
+(see [SECURITY.md](SECURITY.md)).
 
 **Live reload.** The broker checks its config file every second (`--watch`;
 `--watch 0` turns file watching off) and reloads on change, or at once on

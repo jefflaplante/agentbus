@@ -119,7 +119,7 @@ level=INFO msg=handled handler=weather.forecast from=claude-code ... ok=true
 
 ## 5. Watch the conversation
 
-With `agentbus dashboard` (as `admin`) open in another terminal, ask
+With `agentbus console --tab traffic` (as `admin`) open in another terminal, ask
 Claude for the forecast in another city. You'll see Claude's task go out
 and the weather agent's response come back.
 

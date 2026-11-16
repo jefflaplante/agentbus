@@ -101,35 +101,13 @@ func cards() []a2a.Presence {
 	}
 }
 
-func TestAgentRowsAndModel(t *testing.T) {
+func TestAgentRows(t *testing.T) {
 	rows := AgentRows(cards())
 	if rows[0][0] != "worker" || rows[0][1] != "online" || rows[0][3] != "textstats" || rows[0][4] != "pinned" {
 		t.Errorf("row = %v", rows[0])
 	}
-
-	var m tea.Model = NewAgents(cards)
-	m, _ = m.Update(tea.WindowSizeMsg{Width: 140, Height: 20})
-	v := plain(m.View().Content)
-	for _, want := range []string{"1 online", "1 offline", "worker", "coordinator", "Demo worker"} {
-		if !strings.Contains(v, want) {
-			t.Errorf("agents view missing %q:\n%s", want, v)
-		}
-	}
-	if _, cmd := m.Update(tickMsg(time.Now())); cmd == nil {
-		t.Error("tick did not schedule the next refresh")
-	}
-}
-
-func TestDashboard(t *testing.T) {
-	ch := make(chan Item, 1)
-	var m tea.Model = NewDashboard("explorer", "all agent traffic (observer)", cards, ch)
-	m, _ = m.Update(tea.WindowSizeMsg{Width: 140, Height: 30})
-	m, _ = m.Update(ItemMsg(ItemFromEnvelope("t", envelope(t))))
-	v := plain(m.View().Content)
-	for _, want := range []string{"as explorer", "observer", "1 up", "worker", "1 msgs", "req 1", "coordinator → worker"} {
-		if !strings.Contains(v, want) {
-			t.Errorf("dashboard missing %q:\n%s", want, v)
-		}
+	if s := BrokerSummary(sampleStatus(time.Now(), 1)); !strings.Contains(s, "3 clients · 40 accepted · 3 rejected") {
+		t.Errorf("summary = %q", s)
 	}
 }
 
@@ -178,28 +156,6 @@ func sampleStatus(at time.Time, in int64) broker.Status {
 	}
 }
 
-func TestStatusModel(t *testing.T) {
-	ch := make(chan broker.Status, 2)
-	var m tea.Model = NewStatus(ch)
-	if v := plain(m.View().Content); !strings.Contains(v, "observer identity") {
-		t.Errorf("empty view should explain the requirement:\n%s", v)
-	}
-	now := time.Now()
-	m, _ = m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
-	m, _ = m.Update(StatusMsg(sampleStatus(now.Add(-2*time.Second), 100)))
-	m, _ = m.Update(StatusMsg(sampleStatus(now, 120)))
-	v := plain(m.View().Content)
-	for _, want := range []string{"127.0.0.1:18830", "up 1h0m0s", "/var/lib/agentbus", "3 connected · 4 sessions",
-		"10.0/s in", "accepted   40", "3  invalid 1 · no_route 2", "worker", "textstats", "observer", "you", "→ worker", "256.0 KiB/envelope"} {
-		if !strings.Contains(v, want) {
-			t.Errorf("status view missing %q:\n%s", want, v)
-		}
-	}
-	if s := BrokerSummary(sampleStatus(now, 1)); !strings.Contains(s, "3 clients · 40 accepted · 3 rejected") {
-		t.Errorf("summary = %q", s)
-	}
-}
-
 func TestTailTrunc(t *testing.T) {
 	if got := tailTrunc("/home/user/agentbus/demo/.run/data", 16); got != "…/demo/.run/data" || len([]rune(got)) != 16 {
 		t.Errorf("got %q", got)
@@ -219,36 +175,6 @@ func TestBackgroundColorSwitchesPalette(t *testing.T) {
 	m.Update(tea.BackgroundColorMsg{Color: lipgloss.Color("#000000")})
 	if pal != darkPalette {
 		t.Error("dark background did not select the dark palette")
-	}
-}
-
-// Layout must fit the window: no line wider than it, and the dashboard
-// no taller. (lipgloss v2 counts borders and padding in Width/Height.)
-func TestViewsFitWindow(t *testing.T) {
-	long := envelope(t)
-	long.Body = []byte(`{"text":"` + strings.Repeat("very long body text ", 30) + `"}`)
-	for _, size := range [][2]int{{80, 24}, {120, 30}, {200, 50}} {
-		w, h := size[0], size[1]
-		ch := make(chan Item, 200)
-		var d tea.Model = NewDashboard("explorer", "all agent traffic (observer)", cards, ch)
-		d, _ = d.Update(tea.WindowSizeMsg{Width: w, Height: h})
-		d, _ = d.Update(StatusMsg(sampleStatus(time.Now(), 5)))
-		for range 100 {
-			d, _ = d.Update(ItemMsg(ItemFromEnvelope("t", long)))
-		}
-		checkFits(t, "dashboard", d.View().Content, w, h)
-
-		sc := make(chan broker.Status, 1)
-		var s tea.Model = NewStatus(sc)
-		s, _ = s.Update(tea.WindowSizeMsg{Width: w, Height: h})
-		st := sampleStatus(time.Now(), 5)
-		st.DataDir = "/very/long/path/" + strings.Repeat("nested/", 20) + "data"
-		s, _ = s.Update(StatusMsg(st))
-		checkFits(t, "status", s.View().Content, w, 0)
-
-		var a tea.Model = NewAgents(cards)
-		a, _ = a.Update(tea.WindowSizeMsg{Width: w, Height: h})
-		checkFits(t, "agents", a.View().Content, w, h)
 	}
 }
 

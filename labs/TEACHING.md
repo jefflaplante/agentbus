@@ -42,7 +42,7 @@ the room:
 | 1 | `agentbus serve`, the broker log |
 | 2 | your commands, as `me` |
 | 3 | the agent being worked on |
-| 4 | `agentbus dashboard` (as `admin`), and later `claude` |
+| 4 | `agentbus console --tab traffic` (as `admin`), and later `claude` |
 
 ## Timing
 
@@ -79,7 +79,7 @@ Claude Code. To the broker, all three are the same thing.
 ## Labs 0 and 1: setup and the broker (15 min)
 
 **Say:**
-- **One binary.** `agentbus` is the broker, the CLI, the dashboards, the
+- **One binary.** `agentbus` is the broker, the CLI, the console, the
   MCP server and the agent generator.
 - **`AGENTBUS_CONFIG`** keeps today's work in `$LAB`. Without it,
   everything goes to `~/.config/agentbus`.
@@ -116,8 +116,9 @@ four failure commands. Linger on them:
 - `unknown_op` lists the ops the agent handles
 - `no_consumer` comes from the broker, before any agent is involved
 
-**Show:** the dashboard in terminal 4 while you send requests. People
-like seeing the traffic.
+**Show:** the console's Traffic tab in terminal 4 while you send
+requests. People like seeing the traffic. Then show Compose: `2`, select
+`hello`, `r`, a body, `ctrl+s`.
 
 **Ask:** "disk.sh refuses `/; rm -rf ~`. Whose job is that check?" The
 handler's. The broker guarantees who sent a message, not that its content
@@ -127,7 +128,7 @@ is safe.
 - **`not Authorized`** when the agent starts right after `config agent
   add`. The broker reloads within a second; run it again.
 - **A missing `export AGENTBUS_AGENT=me`** in terminal 2. Commands then
-  run as `admin`, which works but makes the dashboard confusing.
+  run as `admin`, which works but makes the console's traffic confusing.
 
 ## Lab 3: the weather agent (25 min)
 

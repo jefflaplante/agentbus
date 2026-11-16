@@ -53,10 +53,11 @@ again in these labs.
 agentbus status
 ```
 
-This is a live view. `admin` is online because `status` itself connects
-as `admin`: with no agent named, the CLI uses the admin token it finds
-next to the config. Press `q` to quit. The same snapshot is available as
-JSON:
+This opens the console on its Overview tab: a live view of the broker.
+`admin` is online because the console itself connects as `admin`: with no
+agent named, the CLI uses the admin token it finds next to the config.
+Press `2` for the Agents tab, `?` for every key, and `q` to quit. The same
+snapshot is available as JSON:
 
 ```bash
 agentbus status --plain | python3 -m json.tool | head -30

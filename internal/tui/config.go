@@ -47,6 +47,9 @@ type ConfigModel struct {
 	// Embedded makes quitting return CloseMsg (to a parent view) instead
 	// of ending the program.
 	Embedded bool
+	// Tabbed draws the editor as a tab of the console: no title bar, and
+	// the console handles leaving.
+	Tabbed bool
 
 	tab      int // 0 agents, 1 broker settings
 	agents   table.Model
@@ -59,7 +62,8 @@ type ConfigModel struct {
 	confirm string       // confirmation prompt
 	onYes   func() error
 	client  string // agent shown in the client setup view
-	clientF int    // 0 shell, 1 go, 2 mqtt
+	clientF int    // 0 start guide, 1 shell, 2 go, 3 mqtt
+	scroll  int    // first line of the start guide shown
 
 	flash    string
 	flashErr bool
@@ -260,6 +264,16 @@ func (m *ConfigModel) selectedAgent() (broker.AgentConfig, bool) {
 	return m.cfg.Agents[i], true
 }
 
+// Focus selects agent id in the agents table.
+func (m *ConfigModel) Focus(id string) {
+	if i := confstore.Find(m.cfg, id); i >= 0 {
+		m.tab = 0
+		m.agents.Focus()
+		m.settings.Blur()
+		m.agents.SetCursor(i)
+	}
+}
+
 func (m *ConfigModel) say(format string, a ...any) {
 	m.flash, m.flashErr = fmt.Sprintf(format, a...), false
 }
@@ -365,7 +379,7 @@ func (m *ConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case "c":
 		if a, ok := m.selectedAgent(); ok {
-			m.mode, m.client, m.clientF = modeClient, a.ID, 0
+			m.openClient(a.ID)
 		}
 	case "d", "x", "delete", "backspace":
 		if a, ok := m.selectedAgent(); ok {
@@ -515,7 +529,9 @@ func (m *ConfigModel) agentForm(a *broker.AgentConfig) tea.Cmd {
 			if i := confstore.Find(m.cfg, next.ID); i >= 0 {
 				m.agents.SetCursor(i)
 			}
-			m.say("added %s · token in %s · press c for client setup", next.ID, file)
+			// Go straight to where the token is and how to start the agent.
+			m.openClient(next.ID)
+			m.say("added %s · token in %s", next.ID, confstore.Tilde(file))
 			return nil
 		}
 		err := m.change(func(tx *confstore.Tx) error {
@@ -563,7 +579,8 @@ func (m *ConfigModel) askRotate(id string) {
 		if err != nil {
 			return err
 		}
-		m.say("new token for %s in %s", id, file)
+		m.openClient(id)
+		m.say("new token for %s in %s · restart its clients; copy it again to other hosts", id, confstore.Tilde(file))
 		return nil
 	}
 }
@@ -622,23 +639,41 @@ func (m *ConfigModel) tlsForm(vals map[string]string) tea.Cmd {
 	})
 }
 
+// clientTabs name the client setup views.
+var clientTabs = []string{"Start", "Shell", "Go", "MQTT Explorer / MQTTX"}
+
+// openClient shows how to start agent id: where its token is and the
+// commands, on the Start view.
+func (m *ConfigModel) openClient(id string) {
+	m.mode, m.client, m.clientF, m.scroll = modeClient, id, 0, 0
+}
+
 func (m *ConfigModel) updateClient(msg tea.Msg) (tea.Model, tea.Cmd) {
 	k, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return m, nil
 	}
 	url, file := confstore.URL(m.cfg), m.loc.TokenFile(m.client)
+	n := len(clientTabs)
 	switch k.String() {
 	case "esc", "q", "c":
 		m.mode = modeList
 	case "tab", "right", "l":
-		m.clientF = (m.clientF + 1) % 3
+		m.clientF = (m.clientF + 1) % n
 	case "shift+tab", "left", "h":
-		m.clientF = (m.clientF + 2) % 3
-	case "1", "2", "3":
+		m.clientF = (m.clientF + n - 1) % n
+	case "1", "2", "3", "4":
 		m.clientF = int(k.String()[0] - '1')
+	case "down", "j":
+		m.scroll++
+	case "up", "k":
+		m.scroll = max(0, m.scroll-1)
+	case "pgdown", "space":
+		m.scroll += max(1, m.guideRows()-1)
+	case "pgup":
+		m.scroll = max(0, m.scroll-max(1, m.guideRows()-1))
 	case "y":
-		m.say("copied %s setup to the clipboard", []string{"shell", "Go", "MQTT"}[m.clientF])
+		m.say("copied %s to the clipboard", []string{"the start guide", "shell setup", "Go setup", "MQTT settings"}[m.clientF])
 		return m, tea.SetClipboard(m.clientText(url, file))
 	case "w":
 		envFile := strings.TrimSuffix(file, ".token") + ".env"
@@ -653,18 +688,27 @@ func (m *ConfigModel) updateClient(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *ConfigModel) clientText(url, file string) string {
 	switch m.clientF {
-	case 1:
-		return confstore.GoSnippet(url, m.client, file)
+	case 0:
+		return confstore.Guide(m.loc, m.cfg, m.client)
 	case 2:
+		return confstore.GoSnippet(url, m.client, file)
+	case 3:
 		return confstore.MQTTSettings(url, m.client, file)
 	}
 	return confstore.ClientEnv(url, m.client, file)
 }
 
+// guideRows is how many lines of the start guide fit on screen.
+func (m *ConfigModel) guideRows() int { return max(4, m.height-11) }
+
 func (m *ConfigModel) View() tea.View { return fullScreen(m.render()) }
 
 func (m *ConfigModel) render() string {
-	header := TitleStyle.Render("agentbus · config") + " " + TextStyle.Render(confstore.Tilde(m.loc.Path)) +
+	title := TitleStyle.Render("agentbus · config") + " "
+	if m.Tabbed {
+		title = AccentStyle.Render("Config") + " "
+	}
+	header := title + TextStyle.Render(confstore.Tilde(m.loc.Path)) +
 		SubtleStyle.Render(fmt.Sprintf("  %d agents · saved on every change, applied live", len(m.cfg.Agents)))
 	header = ansi.Truncate(header, max(m.width, 20), "…")
 	tabs := func(name string, on bool) string {
@@ -686,6 +730,9 @@ func (m *ConfigModel) render() string {
 		leave := "q quit"
 		if m.Embedded {
 			leave = "q back"
+		}
+		if m.Tabbed {
+			leave = "1-6 other tabs"
 		}
 		if m.tab == 0 {
 			body = m.agents.View()
@@ -712,22 +759,46 @@ func (m *ConfigModel) render() string {
 
 func (m *ConfigModel) renderClient() (string, string) {
 	url, file := confstore.URL(m.cfg), m.loc.TokenFile(m.client)
-	names := []string{"Shell", "Go", "MQTT Explorer / MQTTX"}
 	var tabs []string
-	for i, n := range names {
+	for i, n := range clientTabs {
 		if i == m.clientF {
 			tabs = append(tabs, AccentStyle.Underline(true).Render(n))
 		} else {
 			tabs = append(tabs, SubtleStyle.Render(n))
 		}
 	}
-	tokState := OKStyle.Render("token file present")
+	tokState := OKStyle.Render("token in " + confstore.Tilde(file))
 	if _, ok := confstore.ReadToken(m.loc, m.client); !ok {
 		tokState = ErrStyle.Render("token file missing: press esc, then r to create one")
 	}
+	head := AccentStyle.Render("Set up "+m.client) + "  " + tokState + "\n\n" + " " + strings.Join(tabs, "   ") + "\n"
+	keys := "tab switch · y copy · w write " + m.client + ".env · esc back"
+	if m.clientF == 0 {
+		// Wrap rather than truncate: a cut-off path or command is useless.
+		w := max(m.width-2, 30)
+		var lines []string
+		for _, l := range strings.Split(RenderGuide(confstore.Guide(m.loc, m.cfg, m.client)), "\n") {
+			indent := strings.Repeat(" ", len(ansi.Strip(l))-len(strings.TrimLeft(ansi.Strip(l), " "))+4)
+			for i, part := range strings.Split(ansi.Wrap(l, w-len(indent), " /"), "\n") {
+				if i > 0 {
+					part = indent + part
+				}
+				lines = append(lines, " "+part)
+			}
+		}
+		rows := m.guideRows()
+		m.scroll = min(m.scroll, max(0, len(lines)-rows))
+		end := min(len(lines), m.scroll+rows)
+		shown := lines[m.scroll:end]
+		more := ""
+		if len(lines) > rows {
+			more = SubtleStyle.Render(fmt.Sprintf(" lines %d-%d of %d · ↑/↓ scroll", m.scroll+1, end, len(lines)))
+			keys = "↑/↓ scroll · " + keys
+		}
+		return head + "\n" + strings.Join(shown, "\n") + "\n" + more, keys
+	}
 	box := PanelStyle.Width(min(m.width-2, 100)).Render(TextStyle.Render(m.clientText(url, file)))
-	body := AccentStyle.Render("Client setup for "+m.client) + "  " + tokState + "\n\n" +
-		" " + strings.Join(tabs, "   ") + "\n" + box + "\n" +
+	body := head + box + "\n" +
 		SubtleStyle.Render(" The token is never shown here: clients read it from "+confstore.Tilde(file))
-	return body, "tab switch · y copy · w write " + m.client + ".env · esc back"
+	return body, keys
 }

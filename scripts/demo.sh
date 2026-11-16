@@ -107,7 +107,7 @@ fi
 step "The bus is still up. In another terminal, from $(basename "$ROOT")/:"
 cat <<'EOF'
 
-  source demo/.run/you.env                  # act as agent "you"
+  source demo/.run/you.env                  # act as agent "you" (until you unset AGENTBUS_* or close this shell)
 
   bin/agentbus agents                       # who's online, with what capabilities
   bin/agentbus request --to worker --body '{"op":"ping"}'
@@ -131,8 +131,7 @@ cat <<'EOF'
 
   # Look inside the running broker (explorer is an observer).
   # enter drills into an agent or message; e edits the agent's config.
-  (source demo/.run/explorer.env && bin/agentbus status)
-  (source demo/.run/explorer.env && bin/agentbus dashboard)
+  (source demo/.run/explorer.env && bin/agentbus console)
 
   # Manage agents and settings; the running broker applies saves live
   (source demo/.run/explorer.env && bin/agentbus config)

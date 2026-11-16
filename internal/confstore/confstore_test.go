@@ -18,6 +18,8 @@ func isolate(t *testing.T) string {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
 	t.Setenv("XDG_STATE_HOME", filepath.Join(home, "state"))
 	t.Setenv("AGENTBUS_CONFIG", "")
+	t.Setenv("AGENTBUS_CONFIG_DIR", "")
+	t.Setenv("AGENTBUS_STATE_DIR", "")
 	wd, _ := os.Getwd()
 	t.Cleanup(func() { _ = os.Chdir(wd) })
 	if err := os.Chdir(home); err != nil {
@@ -34,8 +36,8 @@ func TestResolveOrder(t *testing.T) {
 	if err := os.WriteFile("broker.json", []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if loc := Resolve(""); loc.Source != FromCwd {
-		t.Errorf("cwd: %+v", loc)
+	if loc := Resolve(""); loc.Source != FromDefault {
+		t.Errorf("./broker.json must not be picked up from the current directory: %+v", loc)
 	}
 	t.Setenv("AGENTBUS_CONFIG", "/etc/agentbus.json")
 	if loc := Resolve(""); loc.Source != FromEnv || !loc.Explicit() {
@@ -365,5 +367,95 @@ func TestClientEnvUsesHomeAndWorksInShell(t *testing.T) {
 	}
 	if s := GoSnippet("tcp://h:1", "w", file); !strings.Contains(s, `filepath.Join(os.Getenv("HOME"), ".config/agentbus/tokens/w.token")`) {
 		t.Errorf("go snippet = %s", s)
+	}
+}
+
+// $AGENTBUS_CONFIG_DIR moves the config and tokens; state goes beside
+// them unless $AGENTBUS_STATE_DIR names another directory. --config and
+// $AGENTBUS_CONFIG still win.
+func TestConfigDirEnv(t *testing.T) {
+	home := isolate(t)
+	etc := filepath.Join(home, "etc", "agentbus")
+	t.Setenv("AGENTBUS_CONFIG_DIR", etc)
+	loc := Resolve("")
+	if loc.Path != filepath.Join(etc, "broker.json") || loc.Source != FromDir || loc.Explicit() {
+		t.Fatalf("resolve: %+v", loc)
+	}
+	cfg, err := Bootstrap(loc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DataDir != filepath.Join(etc, "state", "data") {
+		t.Errorf("data_dir = %s, want it beside the config", cfg.DataDir)
+	}
+	if _, ok := ReadToken(loc, AdminID); !ok || loc.TokensDir() != filepath.Join(etc, "tokens") {
+		t.Errorf("admin token not under %s/tokens", etc)
+	}
+
+	srv := filepath.Join(home, "srv")
+	t.Setenv("AGENTBUS_CONFIG_DIR", srv)
+	t.Setenv("AGENTBUS_STATE_DIR", filepath.Join(home, "var", "lib", "agentbus"))
+	cfg, err = Bootstrap(Resolve(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DataDir != filepath.Join(home, "var", "lib", "agentbus", "data") {
+		t.Errorf("data_dir = %s, want it under $AGENTBUS_STATE_DIR", cfg.DataDir)
+	}
+
+	t.Setenv("AGENTBUS_CONFIG", "/x/broker.json")
+	if loc := Resolve(""); loc.Source != FromEnv {
+		t.Errorf("$AGENTBUS_CONFIG lost to $AGENTBUS_CONFIG_DIR: %+v", loc)
+	}
+	if loc := Resolve("y.json"); loc.Source != FromFlag {
+		t.Errorf("--config lost: %+v", loc)
+	}
+}
+
+// The guide names the token file and gives start commands that fit the
+// agent's grants, with --config only when the config isn't the default.
+func TestGuide(t *testing.T) {
+	isolate(t)
+	loc := Resolve("")
+	cfg, err := Bootstrap(loc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := Begin(loc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.AddAgent(broker.AgentConfig{ID: "researcher", Capabilities: []string{"research"}, SendTo: []string{"admin"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	cfg = tx.Config
+	g := Guide(loc, cfg, "researcher")
+	for _, want := range []string{
+		loc.TokenFile("researcher"),
+		"agentbus --agent researcher handle --capability research --exec 'CMD'",
+		"agentbus --agent researcher request --to admin",
+		"export AGENTBUS_AGENT=researcher",
+		"/etc/agentbus/researcher.token",
+		"--url tcp://BROKER-HOST:1883 --agent researcher --token-file /etc/agentbus/researcher.token",
+		"this machine only",
+	} {
+		if !strings.Contains(g, want) {
+			t.Errorf("guide lacks %q:\n%s", want, g)
+		}
+	}
+	if strings.Contains(g, "--config") || strings.Contains(g, "missing") || strings.Contains(g, " console ") {
+		t.Errorf("default config, present token, not an observer:\n%s", g)
+	}
+	if g := Guide(loc, cfg, "admin"); !strings.Contains(g, "agentbus --agent admin console") {
+		t.Errorf("observer guide lacks the console:\n%s", g)
+	}
+
+	other := Location{Path: filepath.Join(t.TempDir(), "broker.json"), Source: FromDir}
+	if g := Guide(other, cfg, "researcher"); !strings.Contains(g, "agentbus --config "+other.Path+" --agent researcher") ||
+		!strings.Contains(g, "missing") {
+		t.Errorf("non-default config without the token:\n%s", g)
 	}
 }

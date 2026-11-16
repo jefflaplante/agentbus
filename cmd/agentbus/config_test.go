@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/jefflaplante/agentbus/broker"
 	"github.com/jefflaplante/agentbus/internal/confstore"
 )
@@ -29,6 +31,13 @@ func TestConfigCommands(t *testing.T) {
 	out, _, err = runCLI(t, "", "config", "agent", "add", "worker", "--capability", "stats", "--send-to", "admin")
 	if err != nil || !strings.Contains(out, "AGENTBUS_AGENT=worker") || !strings.Contains(out, "worker.token") {
 		t.Fatalf("add: %v %q", err, out)
+	}
+	if out, _, _ = runCLI(t, "", "config", "agent", "setup", "worker"); !strings.Contains(out, "agentbus --agent worker handle --capability stats") ||
+		!strings.Contains(out, "Start it on another host") {
+		t.Errorf("setup:\n%s", out)
+	}
+	if _, stderr, err := runCLI(t, "", "config", "agent", "token", "worker"); err != nil || !strings.Contains(stderr, "copy it again") {
+		t.Errorf("rotate: %v %s", err, stderr)
 	}
 	if out, _, _ = runCLI(t, "", "config", "agent", "list"); !strings.Contains(out, "serves stats") || !strings.Contains(out, "admin") {
 		t.Errorf("list:\n%s", out)
@@ -303,8 +312,57 @@ func TestLoopbackListen(t *testing.T) {
 		"127.0.0.1:1883": true, "localhost:1883": true, "[::1]:1883": true, "::1": true, "127.5.5.5:1": true,
 		"0.0.0.0:1883": false, ":1883": false, "[::]:1883": false, "10.0.0.1:1883": false, "127.example.com:1": false,
 	} {
-		if got := loopbackListen(listen); got != want {
+		if got := confstore.Loopback(listen); got != want {
 			t.Errorf("%s: %v", listen, got)
 		}
+	}
+}
+
+// The serve banner suggests the console, and repeats --config when the
+// config isn't the default, so another terminal finds the same broker.
+func TestServeHelpNamesConfig(t *testing.T) {
+	isolate(t)
+	dir := t.TempDir()
+	for _, tc := range []struct {
+		loc  confstore.Location
+		want string
+	}{
+		{confstore.Location{Path: filepath.Join(dir, "default", "broker.json"), Source: confstore.FromDefault}, "agentbus console "},
+		{confstore.Location{Path: filepath.Join(dir, "alt", "broker.json"), Source: confstore.FromEnv},
+			"agentbus console --config " + filepath.Join(dir, "alt", "broker.json")},
+	} {
+		cfg, err := confstore.Bootstrap(tc.loc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var errb bytes.Buffer
+		printServeHelp(&app{stderr: &errb}, tc.loc, cfg, true)
+		if out := ansi.Strip(errb.String()); !strings.Contains(out, tc.want) {
+			t.Errorf("banner lacks %q:\n%s", tc.want, out)
+		}
+	}
+}
+
+// With $AGENTBUS_CONFIG_DIR set, config init and every client command use
+// that directory; nothing lands in ~/.config/agentbus.
+func TestConfigDirEnvCLI(t *testing.T) {
+	isolate(t)
+	dir := filepath.Join(t.TempDir(), "etc", "agentbus")
+	t.Setenv("AGENTBUS_CONFIG_DIR", dir)
+	if _, _, err := runCLI(t, "", "config", "init"); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err := runCLI(t, "", "config", "path")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{filepath.Join(dir, "broker.json") + " (AGENTBUS_CONFIG_DIR, exists)",
+		filepath.Join(dir, "tokens"), filepath.Join(dir, "state", "data")} {
+		if !strings.Contains(out, want) {
+			t.Errorf("config path lacks %q:\n%s", want, out)
+		}
+	}
+	if _, err := os.Stat(confstore.DefaultConfigDir()); err == nil {
+		t.Error("created the default config directory too")
 	}
 }

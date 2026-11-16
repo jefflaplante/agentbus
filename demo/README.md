@@ -59,24 +59,27 @@ Look inside the running broker. The demo's `explorer` identity is an
 observer, which the broker status needs:
 
 ```bash
-source demo/.run/explorer.env
-bin/agentbus status       # live broker view; q to quit
-bin/agentbus dashboard    # agents and traffic side by side
+(source demo/.run/explorer.env && bin/agentbus console)   # 1-6 switch tabs, ? for keys, q to quit
 ```
 
-![agentbus status during the demo](../docs/images/status.svg)
+The parentheses run it in a subshell, so the demo's settings don't stay in
+your shell. The rest of this page sources env files directly to keep the
+examples short. Those `AGENTBUS_*` variables stay set until you close the
+terminal or `unset` them, and they point every later `agentbus` command at
+the demo broker rather than your own. Every command prints a line naming
+them while they are set.
 
-![agentbus dashboard during the demo](../docs/images/dashboard.svg)
+![agentbus console during the demo](../docs/images/console-overview.svg)
 
 Run the coordinator again in another terminal and watch the traffic and
 counters move.
 
-Every view drills down. In `status`, select an agent and press Enter for
-its detail and recent traffic, then Enter on a message to inspect it. In
-`dashboard`, Enter on an agent filters the traffic to it. Press `e` to edit
-the selected agent in the config editor:
+Every tab drills down. In Agents (2), select an agent and press Enter for
+its detail and recent traffic, then Enter on a message to inspect it. `t`
+opens Compose with a task for the agent's capability; `ctrl+s` sends it and
+the reply shows beside the form. `e` edits the agent in the Config tab:
 
-![agent detail](../docs/images/status-detail.svg)
+![agent detail](../docs/images/console-agent-detail.svg)
 
 Manage the demo's agents and settings. The demo's env files point the CLI
 at the demo's config, so changes apply to the running bus:

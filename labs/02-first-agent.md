@@ -97,12 +97,17 @@ agentbus task -c nobody.home --body '{}'                      # no_consumer: nob
 **Terminal 4** (exports first, but **not** `AGENTBUS_AGENT`):
 
 ```bash
-agentbus dashboard
+agentbus console --tab traffic
 ```
 
 It connects as `admin`, an observer, so it shows everyone's traffic.
-Rerun the requests in terminal 2 and watch them arrive. Use `tab` to
-switch panels, `enter` to inspect a message, and `q` to quit.
+Rerun the requests in terminal 2 and watch them arrive. Use `↑`/`↓` and
+`enter` to inspect a message, and `q` to quit.
+
+You can send from the console too. Press `2` for Agents, select `hello`,
+and press `r`: the Compose tab opens with a request to `hello`. Type
+`{"op": "ping"}` as the body and press `ctrl+s`. The reply shows beside
+the form.
 
 ## 6. Stop it
 

@@ -3,7 +3,7 @@
 An agent-to-agent message bus over MQTT for conduit and other AI agents.
 One Go binary runs the broker and also works as a CLI client.
 
-![agentbus dashboard: agents and live traffic](docs/images/dashboard.svg)
+![agentbus console: broker status, throughput and request outcomes](docs/images/console-overview.svg)
 
 - **[CONTRACT.md](CONTRACT.md)** is the language-neutral spec: topics, the
   envelope, request/reply, presence and rejection rules. Any MQTT client
@@ -52,15 +52,17 @@ for the walkthrough, [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md) for
 the diagrams, and [docs/DESKTOP-CLIENTS.md](docs/DESKTOP-CLIENTS.md) to watch
 the bus in MQTT Explorer, MQTTX or `mosquitto_sub`.
 
-To look inside the running broker from the same binary:
+To run the bus from the same binary, open the console:
 
 ```bash
-source demo/.run/explorer.env
-bin/agentbus status      # live broker view: traffic, decisions, every agent
-bin/agentbus dashboard   # agents and live traffic side by side
+(source demo/.run/explorer.env && bin/agentbus console)   # status, agents, traffic, compose, inbox, config
 ```
 
-![agentbus status](docs/images/status.svg)
+It has a tab each for the broker's status, every agent, live traffic,
+sending messages and reading their replies, answering requests sent to you,
+and editing the config.
+
+![agentbus console: live traffic](docs/images/console-traffic.svg)
 
 [docs/CLI.md](docs/CLI.md) covers every command, with screenshots and usage
 recipes.
@@ -93,8 +95,8 @@ bin/agentbus task --capability summarize --body '{"text":"..."}'
 bin/agentbus agents
 ```
 
-On a terminal, `status`, `agents`, `watch`, `listen`, `request`, `task` and
-`dashboard` are interactive. Piped, or with `--plain`, they print JSON or
+On a terminal, `console`, `status`, `agents`, `watch`, `listen`, `request`
+and `task` are interactive. Piped, or with `--plain`, they print JSON or
 plain text for scripts.
 
 From Go:
@@ -153,7 +155,7 @@ Mosquitto can't do these things on its own:
   can't take tasks or send as another agent.
 - **Live status for operators.** Every 2 seconds the broker publishes a
   snapshot of itself to `$SYS/agentbus/status`, readable only by observers.
-  `agentbus status` and `agentbus dashboard` show it.
+  `agentbus console` shows it, with throughput and request outcomes.
 - **Metrics and health (optional).** With `metrics_listen` (loopback
   only, unless `allow_insecure`), the broker serves Prometheus `/metrics`,
   `/healthz` and `/readyz`. Request metrics show, for each agent and
@@ -229,7 +231,7 @@ broker/           contract-enforcing broker on mochi-mqtt
 client/           Go client (paho, MQTT 3.1.1)
 agent/            standalone agent runtime: manifest, command runner, Go handler registry
 cmd/agentbus/     the binary: Cobra commands (serve, client, TUIs, agent generator)
-internal/tui/     Bubble Tea views: status, agents, feed, dashboard
+internal/tui/     Bubble Tea views: the console, feeds, config editor, request spinner
 demo/agents/      worker and coordinator agents (library)
 demo/cmd/         their binaries
 test/e2e/         functional tests over real processes

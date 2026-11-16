@@ -32,23 +32,16 @@ func (a *app) runTUI(ctx context.Context, m tea.Model) error {
 	return err
 }
 
-// editAgentFunc opens the config editor on an agent, embedded in a view.
-// It's only offered when the local config file is the one for the broker
-// we're connected to (same URL), so e never edits some other broker.
-func (a *app) editAgentFunc() func(string) tea.Model {
+// configFunc opens the config editor for the console. It's only offered
+// when the local config file is the one for the broker we're connected to
+// (same URL), so the console never edits some other broker.
+func (a *app) configFunc() func() (*tui.ConfigModel, error) {
 	loc := a.location()
 	cfg, err := confstore.Load(loc.Path)
 	if err != nil || confstore.URL(cfg) != a.url {
 		return nil
 	}
-	return func(id string) tea.Model {
-		m, err := tui.NewConfigEditor(loc, id)
-		if err != nil {
-			return nil
-		}
-		m.Embedded = true
-		return m
-	}
+	return func() (*tui.ConfigModel, error) { return tui.NewConfigEditor(loc, "") }
 }
 
 // lineEncoder writes JSON lines. Handlers for different subscriptions
@@ -82,22 +75,19 @@ func newAgentsCmd(a *app) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "agents",
 		Short: "List agents and their presence",
-		Long: `Show every agent's presence card. On a terminal this is a live table
-that updates as agents come and go (q to quit). With --once, --plain or
-when piped, print the table once.`,
+		Long: `Show every agent's presence card. On a terminal this opens the console
+on its Agents tab (see agentbus console). With --once, --plain or when
+piped, print the table once.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			live := a.interactive() && !once
-			c, err := a.connect(cmd.Context(), live, nil)
+			if a.interactive() && !once {
+				return a.runConsole(cmd.Context(), tui.TabAgents)
+			}
+			c, err := a.connect(cmd.Context(), false, nil)
 			if err != nil {
 				return err
 			}
 			defer c.Close()
-			if live {
-				m := tui.NewAgents(c.Agents)
-				m.EditAgent = a.editAgentFunc()
-				return a.runTUI(cmd.Context(), m)
-			}
 			time.Sleep(500 * time.Millisecond) // let retained presence cards arrive
 			tw := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
 			fmt.Fprintln(tw, "AGENT\tSTATUS\tSINCE\tCAPABILITIES\tKEYS\tDESCRIPTION")
@@ -107,7 +97,7 @@ when piped, print the table once.`,
 			return tw.Flush()
 		},
 	}
-	c.Flags().BoolVar(&once, "once", false, "print the table once instead of the live view")
+	c.Flags().BoolVar(&once, "once", false, "print the table once instead of opening the console")
 	return c
 }
 
@@ -224,64 +214,100 @@ On a terminal this is a live feed; piped or with --plain, JSON lines.`,
 	return c
 }
 
-func newDashboardCmd(a *app) *cobra.Command {
-	return &cobra.Command{
-		Use:   "dashboard",
-		Short: "Live view of agents and traffic",
-		Long: `A full-screen view with every agent's presence on the left and live
-traffic on the right. Connected as an observer it shows all agent
-traffic; otherwise it shows broadcast events and this agent's inbox.
-Needs a terminal.`,
+func newConsoleCmd(a *app) *cobra.Command {
+	var tab string
+	c := &cobra.Command{
+		Use:     "console",
+		Aliases: []string{"ui", "dashboard"},
+		Short:   "Manage the bus from one full-screen console",
+		Long: `A full-screen console for the whole bus, one tab each for:
+
+  1 Overview  broker status, throughput and request outcomes
+  2 Agents    every agent, its broker state and presence card
+  3 Traffic   live messages, filtered by agent, type or text
+  4 Compose   send requests, tasks, events and broadcasts, and see replies
+  5 Inbox     messages to this agent; answer or refuse requests
+  6 Config    agents, tokens, client setup and broker settings
+
+Connected as an observer (admin is one) it sees all traffic and the
+broker's status; otherwise events and its own inbox. Config is
+available when the broker's config file is on this machine. Press ? in
+the console for every key. Needs a terminal.`,
+		Example: `  agentbus console
+  agentbus console --tab compose --agent you`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if !a.interactive() {
-				return errors.New("dashboard needs a terminal; for scripts use watch --plain")
+				return errors.New("console needs a terminal; for scripts use status --plain, watch --plain or request")
 			}
-			ctx := cmd.Context()
-			items := make(feed, 4096)
-			var observing atomic.Bool
-			c, err := a.connect(ctx, true, func(o *client.Options) {
-				o.Inbox = func(_ context.Context, e *a2a.Envelope) (any, error) {
-					if !observing.Load() { // an observer already sees its inbox via Observe
-						items.push(tui.ItemFromEnvelope(a2a.InboxTopic(o.AgentID), e))
-					}
-					if e.Type == a2a.TypeRequest {
-						return nil, errors.New("dashboard does not answer requests")
-					}
-					return nil, nil
-				}
-			})
+			start, err := parseTab(tab)
 			if err != nil {
 				return err
 			}
-			defer c.Close()
-
-			scope := "all agent traffic (observer)"
-			observing.Store(true)
-			err = c.Observe(ctx, a2a.Root+"/#", func(topic string, payload []byte) {
-				items.push(tui.ItemFromMessage(topic, payload))
-			})
-			if err != nil {
-				observing.Store(false)
-				scope = "events and your inbox (not an observer)"
-				err = c.WatchEvents(ctx, a2a.Root+"/events/#", func(e *a2a.Envelope) {
-					items.push(tui.ItemFromEnvelope(a2a.EventTopic(e.From, ""), e))
-				})
-				if err != nil {
-					return err
-				}
-			}
-			d := tui.NewDashboard(a.agent, scope, c.Agents, items)
-			d.EditAgent = a.editAgentFunc()
-			if observing.Load() {
-				statuses := make(chan broker.Status, 4)
-				if err := observeStatus(ctx, c, statuses); err == nil {
-					d.Status = statuses
-				}
-			}
-			return a.runTUI(ctx, d)
+			return a.runConsole(cmd.Context(), start)
 		},
 	}
+	c.Flags().StringVar(&tab, "tab", "overview", "tab to start on: overview, agents, traffic, compose, inbox or config")
+	return c
+}
+
+func parseTab(s string) (tui.Tab, error) {
+	for i, name := range []string{"overview", "agents", "traffic", "compose", "inbox", "config"} {
+		if strings.EqualFold(s, name) || s == fmt.Sprint(i+1) {
+			return tui.Tab(i), nil
+		}
+	}
+	return 0, fmt.Errorf("--tab %q: use overview, agents, traffic, compose, inbox or config", s)
+}
+
+// runConsole connects and runs the console, starting on tab start.
+func (a *app) runConsole(ctx context.Context, start tui.Tab) error {
+	items := make(feed, 4096)
+	var observing atomic.Bool
+	var inbox *tui.Answerer
+	c, err := a.connect(ctx, true, func(o *client.Options) {
+		inbox = tui.NewAnswerer(o.AgentID)
+		o.Description = "agentbus console"
+		o.Inbox = func(hctx context.Context, e *a2a.Envelope) (any, error) {
+			if !observing.Load() { // an observer already sees its inbox via Observe
+				items.push(tui.ItemFromEnvelope(a2a.InboxTopic(o.AgentID), e))
+			}
+			return inbox.Handle(hctx, e)
+		}
+	})
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	scope := "all agent traffic (observer)"
+	observing.Store(true)
+	err = c.Observe(ctx, a2a.Root+"/#", func(topic string, payload []byte) {
+		items.push(tui.ItemFromMessage(topic, payload))
+	})
+	if err != nil {
+		observing.Store(false)
+		scope = "events and your inbox (not an observer)"
+		err = c.WatchEvents(ctx, a2a.Root+"/events/#", func(e *a2a.Envelope) {
+			items.push(tui.ItemFromEnvelope(a2a.EventTopic(e.From, ""), e))
+		})
+		if err != nil {
+			return err
+		}
+	}
+	opt := tui.ConsoleOptions{Agent: a.agent, URL: a.url, Scope: scope, Bus: c, Traffic: items,
+		Inbox: inbox, Config: a.configFunc(), Start: start}
+	for _, v := range a.fromEnv() {
+		name, _, _ := strings.Cut(v, "=")
+		opt.Env = append(opt.Env, "$"+name)
+	}
+	if observing.Load() {
+		statuses := make(chan broker.Status, 4)
+		if err := observeStatus(ctx, c, statuses); err == nil {
+			opt.Status = statuses
+		}
+	}
+	return a.runTUI(ctx, tui.NewConsole(opt))
 }
 
 // observeStatus subscribes to the broker's status topic and decodes each
@@ -313,15 +339,18 @@ The broker publishes this every status_interval (default 2s) to
 $SYS/agentbus/status, which only observer identities can read; connect
 as one (for example the demo's "explorer").
 
-On a terminal this is a live view (q to quit). Piped or with --plain,
-print one status snapshot as JSON and exit.`,
+On a terminal this opens the console on its Overview tab (see agentbus
+console). Piped or with --plain, print one status snapshot as JSON and
+exit.`,
 		Example: `  agentbus status --agent explorer --token-file explorer.token
   agentbus status --plain | jq '.decisions'`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			tuiMode := a.interactive()
-			c, err := a.connect(ctx, tuiMode, nil)
+			if a.interactive() {
+				return a.runConsole(ctx, tui.TabOverview)
+			}
+			c, err := a.connect(ctx, false, nil)
 			if err != nil {
 				return err
 			}
@@ -329,17 +358,6 @@ print one status snapshot as JSON and exit.`,
 			statuses := make(chan broker.Status, 16)
 			if err := observeStatus(ctx, c, statuses); err != nil {
 				return fmt.Errorf("broker status needs an observer identity (\"observer\": true in the broker config): %w", err)
-			}
-			if tuiMode {
-				m := tui.NewStatus(statuses)
-				m.Agents, m.EditAgent = c.Agents, a.editAgentFunc()
-				traffic := make(feed, 4096)
-				if c.Observe(ctx, a2a.Root+"/#", func(topic string, payload []byte) {
-					traffic.push(tui.ItemFromMessage(topic, payload))
-				}) == nil {
-					m.Traffic = traffic
-				}
-				return a.runTUI(ctx, m)
 			}
 			// The retained snapshot can be up to status_interval old. Wait
 			// for one that shows this agent online: it was taken after we

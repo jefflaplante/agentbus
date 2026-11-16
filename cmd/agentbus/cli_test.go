@@ -269,7 +269,8 @@ func TestStatusPlain(t *testing.T) {
 // isolate keeps tests away from the real ~/.config/agentbus and env.
 func isolate(t *testing.T) {
 	t.Helper()
-	for _, k := range []string{"AGENTBUS_URL", "AGENTBUS_AGENT", "AGENTBUS_TOKEN", "AGENTBUS_TOKEN_FILE", "AGENTBUS_CONFIG"} {
+	for _, k := range []string{"AGENTBUS_URL", "AGENTBUS_AGENT", "AGENTBUS_TOKEN", "AGENTBUS_TOKEN_FILE", "AGENTBUS_CONFIG",
+		"AGENTBUS_CONFIG_DIR", "AGENTBUS_STATE_DIR"} {
 		t.Setenv(k, "")
 	}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
@@ -349,5 +350,38 @@ func TestHandleRejectsBadFlags(t *testing.T) {
 	}
 	if sel, err := handleTypes("request, event"); err != nil || !sel["request"] || !sel["event"] {
 		t.Errorf("request, event: %v %v", sel, err)
+	}
+}
+
+// A failed connect says which settings were used and where each came
+// from, and points at AGENTBUS_* variables that may be left over.
+func TestConnectErrorNamesSources(t *testing.T) {
+	b := startCLIBus(t)
+	isolate(t)
+	t.Setenv("AGENTBUS_AGENT", "cli")
+	t.Setenv("AGENTBUS_TOKEN", "wrong")
+	_, _, err := runCLI(t, "", "--url", b.url, "agents", "--plain")
+	if err == nil {
+		t.Fatal("connected with a wrong token")
+	}
+	for _, want := range []string{"url    " + b.url + " (--url)", "agent  cli ($AGENTBUS_AGENT)",
+		"token  (given directly) ($AGENTBUS_TOKEN)", "default location, does not exist", "left over"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error lacks %q:\n%v", want, err)
+		}
+	}
+}
+
+// fromEnv lists the variables in effect, hides a token's value, and
+// leaves out a variable its flag overrides.
+func TestFromEnv(t *testing.T) {
+	isolate(t)
+	t.Setenv("AGENTBUS_CONFIG", "/x/broker.json")
+	t.Setenv("AGENTBUS_AGENT", "explorer")
+	t.Setenv("AGENTBUS_TOKEN", "secret")
+	a := &app{changed: func(f string) bool { return f == "agent" }}
+	got := strings.Join(a.fromEnv(), " ")
+	if got != "AGENTBUS_CONFIG=/x/broker.json AGENTBUS_TOKEN=(set)" {
+		t.Errorf("fromEnv = %q", got)
 	}
 }

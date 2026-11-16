@@ -8,6 +8,11 @@
 //	~/.config/agentbus/broker.json        config (0600)
 //	~/.config/agentbus/tokens/<id>.token  one token per agent (0600)
 //	~/.local/state/agentbus/              data_dir and audit log
+//
+// $AGENTBUS_CONFIG_DIR replaces ~/.config/agentbus, for a server
+// (/etc/agentbus) or a second broker on one machine. Its state then goes
+// in a "state" directory beside the config, unless $AGENTBUS_STATE_DIR
+// names another (/var/lib/agentbus).
 package confstore
 
 import (
@@ -43,7 +48,7 @@ type Source string
 const (
 	FromFlag    Source = "--config"
 	FromEnv     Source = "AGENTBUS_CONFIG"
-	FromCwd     Source = "./broker.json"
+	FromDir     Source = "AGENTBUS_CONFIG_DIR"
 	FromDefault Source = "default location"
 )
 
@@ -53,7 +58,9 @@ type Location struct {
 	Source Source
 }
 
-// Explicit reports whether the user named this path (flag or env).
+// Explicit reports whether the user named this file (flag or env). A
+// directory from $AGENTBUS_CONFIG_DIR isn't explicit: serve and config
+// create the config there when it's missing, as in the default location.
 func (l Location) Explicit() bool { return l.Source == FromFlag || l.Source == FromEnv }
 
 // TokensDir is the token directory beside the config file.
@@ -69,8 +76,9 @@ func (l Location) Exists() bool {
 }
 
 // Resolve picks the config file: --config, then $AGENTBUS_CONFIG, then
-// ./broker.json if it exists, then the default location. The path is
-// made absolute, so the data_dir and token paths derived from it are too.
+// broker.json in $AGENTBUS_CONFIG_DIR, then the default location. It never looks in the current directory, so every
+// command finds the same file wherever it runs. The path is made
+// absolute, so the data_dir and token paths derived from it are too.
 func Resolve(flag string) Location {
 	switch {
 	case flag != "":
@@ -78,10 +86,10 @@ func Resolve(flag string) Location {
 	case os.Getenv("AGENTBUS_CONFIG") != "":
 		return Location{absPath(os.Getenv("AGENTBUS_CONFIG")), FromEnv}
 	}
-	if _, err := os.Stat("broker.json"); err == nil {
-		return Location{absPath("broker.json"), FromCwd}
+	if d := os.Getenv("AGENTBUS_CONFIG_DIR"); d != "" {
+		return Location{filepath.Join(absPath(d), "broker.json"), FromDir}
 	}
-	return Location{filepath.Join(ConfigDir(), "broker.json"), FromDefault}
+	return Location{filepath.Join(DefaultConfigDir(), "broker.json"), FromDefault}
 }
 
 func absPath(p string) string {
@@ -91,11 +99,26 @@ func absPath(p string) string {
 	return p
 }
 
-// ConfigDir is $XDG_CONFIG_HOME/agentbus, or ~/.config/agentbus.
-func ConfigDir() string { return xdg("XDG_CONFIG_HOME", ".config") }
+// ConfigDir holds broker.json and the tokens directory:
+// $AGENTBUS_CONFIG_DIR, else DefaultConfigDir.
+func ConfigDir() string {
+	if d := os.Getenv("AGENTBUS_CONFIG_DIR"); d != "" {
+		return absPath(d)
+	}
+	return DefaultConfigDir()
+}
 
-// StateDir is $XDG_STATE_HOME/agentbus, or ~/.local/state/agentbus.
-func StateDir() string { return xdg("XDG_STATE_HOME", filepath.Join(".local", "state")) }
+// DefaultConfigDir is $XDG_CONFIG_HOME/agentbus, or ~/.config/agentbus.
+func DefaultConfigDir() string { return xdg("XDG_CONFIG_HOME", ".config") }
+
+// StateDir is $AGENTBUS_STATE_DIR, else $XDG_STATE_HOME/agentbus, else
+// ~/.local/state/agentbus.
+func StateDir() string {
+	if d := os.Getenv("AGENTBUS_STATE_DIR"); d != "" {
+		return absPath(d)
+	}
+	return xdg("XDG_STATE_HOME", filepath.Join(".local", "state"))
+}
 
 func xdg(env, fallback string) string {
 	if d := os.Getenv(env); d != "" {
@@ -210,10 +233,11 @@ func stageFile(path string, data []byte) (string, error) {
 }
 
 // DefaultStateDir is where Bootstrap puts data_dir and the audit log for
-// a config at loc: StateDir for the default location, else a "state"
-// directory beside the config file.
+// a config at loc: $AGENTBUS_STATE_DIR when set; else StateDir for the
+// default location, and a "state" directory beside any other config, so
+// two brokers never share a data_dir.
 func DefaultStateDir(loc Location) string {
-	if loc.Source == FromCwd || loc.Explicit() {
+	if os.Getenv("AGENTBUS_STATE_DIR") == "" && loc.Source != FromDefault {
 		return filepath.Join(filepath.Dir(absPath(loc.Path)), "state")
 	}
 	return StateDir()

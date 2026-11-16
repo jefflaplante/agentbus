@@ -25,8 +25,8 @@ type Settings struct {
 // Resolve picks connection settings: explicit values first, then
 // AGENTBUS_URL / AGENTBUS_AGENT / AGENTBUS_TOKEN / AGENTBUS_TOKEN_FILE,
 // then the manifest's broker and token_file, then the standard token
-// locations /etc/agentbus/<agent>.token and
-// ~/.config/agentbus/tokens/<agent>.token.
+// locations: $AGENTBUS_CONFIG_DIR/tokens/<agent>.token when that's set,
+// /etc/agentbus/<agent>.token and ~/.config/agentbus/tokens/<agent>.token.
 func Resolve(m *Manifest, url, agentID, tokenFile string) (Settings, error) {
 	s := Settings{URL: first(url, os.Getenv("AGENTBUS_URL"), m.Broker, "tcp://127.0.0.1:1883"),
 		AgentID: first(agentID, os.Getenv("AGENTBUS_AGENT"), m.Agent)}
@@ -42,7 +42,11 @@ func Resolve(m *Manifest, url, agentID, tokenFile string) (Settings, error) {
 	candidates := []string{tokenFile, os.Getenv("AGENTBUS_TOKEN_FILE"), m.TokenFile}
 	explicit := first(candidates...) != ""
 	if !explicit {
-		candidates = []string{"/etc/agentbus/" + s.AgentID + ".token"}
+		candidates = nil
+		if d := os.Getenv("AGENTBUS_CONFIG_DIR"); d != "" {
+			candidates = append(candidates, filepath.Join(d, "tokens", s.AgentID+".token"))
+		}
+		candidates = append(candidates, "/etc/agentbus/"+s.AgentID+".token")
 		if home, err := os.UserHomeDir(); err == nil {
 			candidates = append(candidates, filepath.Join(home, ".config", "agentbus", "tokens", s.AgentID+".token"))
 		}

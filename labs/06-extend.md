@@ -76,7 +76,8 @@ expired, and how long replies took.
 agentbus status
 ```
 
-The Decisions panel has a `requests` row. Per target:
+The console's Overview tab has a `requests` row in the Decisions panel,
+and a "Requests by target" table with latencies. As JSON:
 
 ```bash
 agentbus status --plain | python3 -c 'import json,sys; [print(r) for r in json.load(sys.stdin).get("requests", [])]'

@@ -1,0 +1,55 @@
+# systemd unit for the agentbus broker on a server.
+#
+# Config and tokens live in /etc/agentbus, data and the audit log in
+# /var/lib/agentbus. Setup, once:
+#
+#   sudo useradd --system --home-dir /var/lib/agentbus --shell /usr/sbin/nologin agentbus
+#   sudo install -d -o agentbus -g agentbus -m 0700 /etc/agentbus /var/lib/agentbus
+#   sudo install -m 0755 agentbus /usr/local/bin/agentbus
+#   sudo -u agentbus env AGENTBUS_CONFIG_DIR=/etc/agentbus AGENTBUS_STATE_DIR=/var/lib/agentbus \
+#     agentbus config init
+#   sudo cp agentbus.service /etc/systemd/system/ && sudo systemctl enable --now agentbus
+#
+# Manage it as the same user, with the same two variables:
+#
+#   sudo -u agentbus env AGENTBUS_CONFIG_DIR=/etc/agentbus agentbus console
+#   sudo -u agentbus env AGENTBUS_CONFIG_DIR=/etc/agentbus agentbus config agent add NAME
+#
+# The broker rereads /etc/agentbus/broker.json within a second of a change,
+# so adding agents needs no restart. "systemctl reload agentbus" sends
+# SIGHUP, which reloads at once.
+
+[Unit]
+Description=agentbus broker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=agentbus
+Group=agentbus
+Environment=AGENTBUS_CONFIG_DIR=/etc/agentbus
+Environment=AGENTBUS_STATE_DIR=/var/lib/agentbus
+StateDirectory=agentbus
+StateDirectoryMode=0700
+ExecStart=/usr/local/bin/agentbus serve --log-format json
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=2s
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/agentbus
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
