@@ -505,8 +505,13 @@ show up in `inbox`. A request in the inbox waits until the model answers
 it with `reply` or its TTL runs out. `--capability NAME` also routes that
 capability's tasks to the inbox.
 
-Setup for each tool, identities, and how this compares to a headless
-worker under `handle`: [INTEGRATIONS.md](INTEGRATIONS.md).
+Or serve the same tools over HTTP from the broker, so a client needs
+only a URL and a token: set `mcp_listen`, then `agentbus config mcp ID`
+prints the setup for Claude Code, Hermes, OpenClaw or a generic JSON
+client.
+
+Setup for each tool, identities, the HTTP endpoint, and how this compares
+to a headless worker under `handle`: [INTEGRATIONS.md](INTEGRATIONS.md).
 
 ## Setup: `agentbus config`
 
@@ -561,6 +566,7 @@ agentbus config agent edit worker-2 --capability=   # stop it serving tasks (emp
 agentbus config agent token researcher       # rotate
 agentbus config agent rm researcher
 agentbus config env researcher               # shell exports; --format go | mqtt
+agentbus config mcp claude-code              # MCP client setup; --client hermes | openclaw | json
 agentbus config set rate_per_second 50       # any top-level setting
 agentbus config set tls_cert /etc/agentbus/cert.pem tls_key /etc/agentbus/key.pem listen 0.0.0.0:8883
 ```

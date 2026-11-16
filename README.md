@@ -19,8 +19,9 @@ broadcast events, and a request the broker refuses (`✗ not_authorized`).
   [mochi-mqtt](https://github.com/mochi-mqtt/server). It can run standalone
   or be embedded.
 - **`cmd/agentbus`** is the binary: `serve`, client commands for scripts
-  and for agents that aren't written in Go, an MCP server (`agentbus mcp`)
-  for Claude Code, OpenCode and OpenChamber, and terminal UIs (Cobra and
+  and for agents that aren't written in Go, an MCP server (`agentbus mcp`,
+  or over HTTP from the broker with `mcp_listen`) for Claude Code,
+  OpenCode, OpenChamber, Hermes and OpenClaw, and terminal UIs (Cobra and
   Bubble Tea) for watching a running broker. See [docs/CLI.md](docs/CLI.md)
   and [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
 - **`agent`** is a runtime for small, single-purpose agents, and
@@ -291,7 +292,7 @@ site/             the documentation website, built from this markdown for GitHub
 | [labs/](labs/README.md) | Hands-on labs and a teaching script: broker, a weather agent, and Claude Code asking it for a forecast |
 | [docs/AGENTS.md](docs/AGENTS.md) | Generating standalone agents for remote hosts: manifest, shell/Python/Go handlers, model-backed (`llm:`) handlers, build, deploy |
 | [examples/llm-agent](examples/llm-agent/README.md) | hostdoc: a model that answers questions about its host, with scripts as its tools; Anthropic or a local model |
-| [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) | conduit, Claude Code, OpenCode and OpenChamber on the bus; `agentbus mcp` |
+| [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) | conduit, Claude Code, OpenCode and OpenChamber on the bus; `agentbus mcp`, and MCP over HTTP for any MCP client |
 
 ## Testing
 

@@ -75,6 +75,13 @@ are what remove trust in the broker.
   broker reloads the file within a second and disconnects the affected
   agent. Nothing needs a restart, and a config that doesn't validate is
   rejected while the old one stays in force.
+- **Put the MCP endpoint (`mcp_listen`) behind TLS off-host.** It takes
+  agent tokens as bearer tokens, so it gets the same rule as `listen`:
+  loopback, or `tls_cert`/`tls_key`, or `allow_insecure`. It refuses
+  observer tokens, throttles bad ones per address, and re-checks every
+  request against the live config. It connects to the broker as the agent
+  that presented the token, so everything the broker enforces still
+  applies. See [INTEGRATIONS.md](INTEGRATIONS.md#remote-mcp-over-http).
 - **Keep `metrics_listen` on loopback.** The metrics endpoint has no
   authentication and names every agent. The broker refuses a non-loopback
   address unless `allow_insecure` is set; scrape it locally or through an
