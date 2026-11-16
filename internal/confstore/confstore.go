@@ -454,6 +454,29 @@ func URL(cfg *broker.Config) string {
 	return scheme + "://" + net.JoinHostPort(host, port)
 }
 
+// MCPURL is the URL of the broker's MCP endpoint: mcp_url if set, or
+// else built from mcp_listen. It is "" when the endpoint is off.
+func MCPURL(cfg *broker.Config) string {
+	if cfg.MCPURL != "" {
+		return cfg.MCPURL
+	}
+	if cfg.MCPListen == "" {
+		return ""
+	}
+	host, port, err := net.SplitHostPort(cfg.MCPListen)
+	if err != nil {
+		return ""
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "localhost"
+	}
+	scheme := "http"
+	if cfg.TLSCert != "" {
+		scheme = "https"
+	}
+	return scheme + "://" + net.JoinHostPort(host, port) + "/mcp"
+}
+
 // HomeRel returns path relative to the user's home directory, if it's
 // inside it.
 func HomeRel(path string) (string, bool) {

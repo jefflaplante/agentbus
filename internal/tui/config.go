@@ -193,7 +193,7 @@ var settingOrder = []string{
 	"listen", "tls_cert", "tls_key", "allow_insecure", "data_dir", "audit_file", "audit_max_bytes", "audit_keep",
 	"rate_per_second", "rate_burst", "max_clock_skew", "max_envelope_bytes", "max_queued", "session_expiry",
 	"dedupe_window", "max_connections", "max_connections_per_ip", "connect_timeout", "status_interval",
-	"metrics_listen",
+	"metrics_listen", "mcp_listen", "mcp_url",
 }
 
 func settingValues(c *broker.Config) map[string]string {
@@ -206,7 +206,7 @@ func settingValues(c *broker.Config) map[string]string {
 		"session_expiry": dur(c.SessionExpiry), "dedupe_window": dur(c.DedupeWindow),
 		"max_connections": strconv.Itoa(c.MaxConnections), "max_connections_per_ip": strconv.Itoa(c.MaxConnectionsPerIP),
 		"connect_timeout": dur(c.ConnectTimeout), "status_interval": dur(c.StatusInterval),
-		"metrics_listen": c.MetricsListen,
+		"metrics_listen": c.MetricsListen, "mcp_listen": c.MCPListen, "mcp_url": c.MCPURL,
 	}
 }
 
