@@ -1,4 +1,4 @@
-package main
+package mcpbus
 
 import (
 	"context"
@@ -15,19 +15,70 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jefflaplante/agentbus/a2a"
+	"github.com/jefflaplante/agentbus/broker"
 	"github.com/jefflaplante/agentbus/client"
 )
 
-// mcpSession connects agent "cli" to the bus, serves it over an in-memory
-// MCP transport, and returns the client side of that MCP session.
-func mcpSession(t *testing.T, b *cliBus) *mcp.ClientSession {
+// testBus is a broker with agents cli, bob (serves "stats") and ops (an
+// observer), and their tokens.
+type testBus struct {
+	url    string
+	tokens map[string]string
+	srv    *broker.Broker
+}
+
+func startTestBus(t *testing.T) *testBus {
+	t.Helper()
+	b := &testBus{tokens: map[string]string{}}
+	cfg := &broker.Config{Listen: "127.0.0.1:0"}
+	for _, a := range []broker.AgentConfig{
+		{ID: "cli"}, {ID: "bob", Capabilities: []string{"stats"}}, {ID: "ops", Observer: true},
+	} {
+		tok, hash := broker.NewToken()
+		a.TokenSHA256 = hash
+		b.tokens[a.ID] = tok
+		cfg.Agents = append(cfg.Agents, a)
+	}
+	srv, err := broker.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = srv.Close() })
+	b.url, b.srv = "tcp://"+srv.Addr(), srv
+	return b
+}
+
+// bob connects as a Go agent with the given inbox that serves "stats".
+func (b *testBus) bob(t *testing.T, inbox client.Handler) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	ib := newMCPInbox()
+	c, err := client.Connect(ctx, client.Options{
+		BrokerURL: b.url, AgentID: "bob", Token: b.tokens["bob"], CleanSession: true,
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Inbox: inbox,
+		Tasks: map[string]client.Handler{"stats": func(_ context.Context, e *a2a.Envelope) (any, error) {
+			return map[string]int{"bytes": len(e.Body)}, nil
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(c.Close)
+}
+
+// mcpSession connects agent "cli" to the bus, serves it over an in-memory
+// MCP transport, and returns the client side of that MCP session.
+func mcpSession(t *testing.T, b *testBus) *mcp.ClientSession {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	ib := NewInbox()
 	c, err := client.Connect(ctx, client.Options{
 		BrokerURL: b.url, AgentID: "cli", Token: b.tokens["cli"], CleanSession: true,
-		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Inbox: ib.handle,
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Inbox: ib.Handle,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -36,7 +87,7 @@ func mcpSession(t *testing.T, b *cliBus) *mcp.ClientSession {
 	st, ct := mcp.NewInMemoryTransports()
 	srvCtx, stop := context.WithCancel(context.Background())
 	t.Cleanup(stop)
-	go func() { _ = newMCPServer(c, ib, "cli", "test").Run(srvCtx, st) }()
+	go func() { _ = NewServer(c, ib, "cli", "test").Run(srvCtx, st) }()
 	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).Connect(ctx, ct, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -64,7 +115,7 @@ func call(t *testing.T, cs *mcp.ClientSession, name string, args map[string]any)
 }
 
 func TestMCPTools(t *testing.T) {
-	b := startCLIBus(t)
+	b := startTestBus(t)
 	got := make(chan *a2a.Envelope, 4)
 	b.bob(t, func(_ context.Context, e *a2a.Envelope) (any, error) {
 		got <- e
@@ -129,7 +180,7 @@ func TestMCPTools(t *testing.T) {
 }
 
 func TestMCPInboxAndReply(t *testing.T) {
-	b := startCLIBus(t)
+	b := startTestBus(t)
 	cs := mcpSession(t, b)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -201,14 +252,14 @@ func TestMCPInboxAndReply(t *testing.T) {
 }
 
 func TestMCPInboxRequestExpires(t *testing.T) {
-	ib := newMCPInbox()
+	ib := NewInbox()
 	e, _ := a2a.New(a2a.TypeRequest, "bob", "q")
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	if _, err := ib.handle(ctx, e); err == nil || !strings.Contains(err.Error(), "expired") {
+	if _, err := ib.Handle(ctx, e); err == nil || !strings.Contains(err.Error(), "expired") {
 		t.Errorf("err = %v", err)
 	}
-	if err := ib.answer(mcpKey(e), mcpAnswer{body: 1}); err == nil {
+	if err := ib.answer(replyID(e), answerMsg{body: 1}); err == nil {
 		t.Error("answered an expired request")
 	}
 	if msgs, _ := ib.take(context.Background(), 0); len(msgs) != 1 {
@@ -217,13 +268,13 @@ func TestMCPInboxRequestExpires(t *testing.T) {
 }
 
 func TestMCPInboxDropsOldest(t *testing.T) {
-	ib := newMCPInbox()
-	for range mcpInboxMax + 5 {
+	ib := NewInbox()
+	for range InboxMax + 5 {
 		e, _ := a2a.New(a2a.TypeEvent, "bob", 1)
-		_, _ = ib.handle(context.Background(), e)
+		_, _ = ib.Handle(context.Background(), e)
 	}
 	msgs, dropped := ib.take(context.Background(), 0)
-	if len(msgs) != mcpInboxMax || dropped != 5 {
+	if len(msgs) != InboxMax || dropped != 5 {
 		t.Errorf("held %d, dropped %d", len(msgs), dropped)
 	}
 }
@@ -243,7 +294,7 @@ func asRemote(err error, re **client.RemoteError) bool { return errors.As(err, r
 // Envelope ids are chosen by senders. A second sender reusing an id must
 // not receive the answer meant for the first.
 func TestMCPInboxSameIDFromTwoSenders(t *testing.T) {
-	ib := newMCPInbox()
+	ib := NewInbox()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	alice, _ := a2a.New(a2a.TypeRequest, "alice", "q")
@@ -256,22 +307,22 @@ func TestMCPInboxSameIDFromTwoSenders(t *testing.T) {
 	}
 	out := make(chan res, 2)
 	for _, e := range []*a2a.Envelope{alice, mallory} {
-		go func() { b, err := ib.handle(ctx, e); out <- res{e.From, b, err} }()
+		go func() { b, err := ib.Handle(ctx, e); out <- res{e.From, b, err} }()
 	}
 	waitFor(t, func() bool { msgs, _ := ib.peekLen(); return msgs == 2 }, "both requests to queue")
-	if err := ib.answer(mcpKey(alice), mcpAnswer{body: "for alice"}); err != nil {
+	if err := ib.answer(replyID(alice), answerMsg{body: "for alice"}); err != nil {
 		t.Fatal(err)
 	}
 	if r := <-out; r.from != "alice" || r.body != "for alice" {
 		t.Fatalf("%s's request received the reply meant for alice (%v)", r.from, r.body)
 	}
-	if err := ib.answer(mcpKey(mallory), mcpAnswer{body: "for mallory"}); err != nil {
+	if err := ib.answer(replyID(mallory), answerMsg{body: "for mallory"}); err != nil {
 		t.Fatalf("mallory's request is no longer pending: %v", err)
 	}
 	if r := <-out; r.from != "mallory" || r.body != "for mallory" {
 		t.Fatalf("got %+v", r)
 	}
-	if err := ib.answer(alice.ID, mcpAnswer{body: 1}); err == nil || !strings.Contains(err.Error(), "sender/id") {
+	if err := ib.answer(alice.ID, answerMsg{body: 1}); err == nil || !strings.Contains(err.Error(), "sender/id") {
 		t.Errorf("bare id: %v", err)
 	}
 }
@@ -286,14 +337,14 @@ type deadlineCtx struct {
 func (c deadlineCtx) Deadline() (time.Time, bool) { return c.d, true }
 
 func TestMCPAnswerAfterExpiryFails(t *testing.T) {
-	ib := newMCPInbox()
+	ib := NewInbox()
 	e, _ := a2a.New(a2a.TypeRequest, "bob", "q")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go func() { _, _ = ib.handle(deadlineCtx{ctx, time.Now().Add(50 * time.Millisecond)}, e) }()
+	go func() { _, _ = ib.Handle(deadlineCtx{ctx, time.Now().Add(50 * time.Millisecond)}, e) }()
 	waitFor(t, func() bool { n, _ := ib.peekLen(); return n == 1 }, "the request to queue")
 	time.Sleep(100 * time.Millisecond)
-	if err := ib.answer(mcpKey(e), mcpAnswer{body: 1}); err == nil {
+	if err := ib.answer(replyID(e), answerMsg{body: 1}); err == nil {
 		t.Fatal("reply accepted for an expired request")
 	}
 }
@@ -301,14 +352,14 @@ func TestMCPAnswerAfterExpiryFails(t *testing.T) {
 // If ctx ends just as an answer lands, reply must say it was not sent.
 func TestMCPAnswerRacingExpiryReportsFailure(t *testing.T) {
 	for range 200 {
-		ib := newMCPInbox()
+		ib := NewInbox()
 		e, _ := a2a.New(a2a.TypeRequest, "bob", "q")
 		ctx, cancel := context.WithCancel(context.Background())
 		handled := make(chan error, 1)
-		go func() { _, err := ib.handle(ctx, e); handled <- err }()
+		go func() { _, err := ib.Handle(ctx, e); handled <- err }()
 		waitFor(t, func() bool { n, _ := ib.peekLen(); return n == 1 }, "the request to queue")
 		go cancel()
-		aerr := ib.answer(mcpKey(e), mcpAnswer{body: 1})
+		aerr := ib.answer(replyID(e), answerMsg{body: 1})
 		herr := <-handled
 		if aerr == nil && herr != nil {
 			t.Fatalf("reply reported sent, but the handler gave up: %v", herr)
@@ -320,16 +371,16 @@ func TestMCPAnswerRacingExpiryReportsFailure(t *testing.T) {
 }
 
 func TestMCPInboxEvictedRequestRefused(t *testing.T) {
-	ib := newMCPInbox()
+	ib := NewInbox()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	req, _ := a2a.New(a2a.TypeRequest, "bob", "q")
 	done := make(chan error, 1)
-	go func() { _, err := ib.handle(ctx, req); done <- err }()
+	go func() { _, err := ib.Handle(ctx, req); done <- err }()
 	waitFor(t, func() bool { n, _ := ib.peekLen(); return n == 1 }, "the request to queue")
-	for range mcpInboxMax {
+	for range InboxMax {
 		e, _ := a2a.New(a2a.TypeEvent, "bob", 1)
-		_, _ = ib.handle(ctx, e)
+		_, _ = ib.Handle(ctx, e)
 	}
 	select {
 	case err := <-done:
@@ -343,7 +394,7 @@ func TestMCPInboxEvictedRequestRefused(t *testing.T) {
 }
 
 func TestMCPInboxListsExpiredRequests(t *testing.T) {
-	b := startCLIBus(t)
+	b := startTestBus(t)
 	cs := mcpSession(t, b)
 	bob, err := client.Connect(context.Background(), client.Options{BrokerURL: b.url, AgentID: "bob", Token: b.tokens["bob"],
 		CleanSession: true, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
@@ -364,7 +415,7 @@ func TestMCPInboxListsExpiredRequests(t *testing.T) {
 }
 
 func TestMCPToolAnnotations(t *testing.T) {
-	b := startCLIBus(t)
+	b := startTestBus(t)
 	cs := mcpSession(t, b)
 	tools, err := cs.ListTools(context.Background(), nil)
 	if err != nil {
@@ -380,7 +431,7 @@ func TestMCPToolAnnotations(t *testing.T) {
 // The broker rejects publishes asynchronously, with a $broker error
 // envelope. send must report it rather than claim success.
 func TestMCPSendReportsBrokerRejection(t *testing.T) {
-	b := startCLIBus(t)
+	b := startTestBus(t)
 	b.bob(t, nil)
 	cs := mcpSession(t, b)
 	out, isErr := call(t, cs, "send", map[string]any{"to": "nobody", "body": 1})
@@ -391,7 +442,7 @@ func TestMCPSendReportsBrokerRejection(t *testing.T) {
 	if out, isErr = call(t, cs, "send", map[string]any{"to": "bob", "body": 1}); isErr {
 		t.Errorf("send to bob: %s", out)
 	}
-	if d := time.Since(start); d > mcpSendGrace+500*time.Millisecond {
+	if d := time.Since(start); d > sendGrace+500*time.Millisecond {
 		t.Errorf("successful send took %s", d)
 	}
 	if out, isErr = call(t, cs, "emit", map[string]any{"name": "jobs/#", "body": 1}); !isErr {
@@ -405,7 +456,7 @@ func TestMCPSendReportsBrokerRejection(t *testing.T) {
 // A rejection that arrives after send returned is queued in the inbox;
 // unrelated $broker errors and errors from other agents are not.
 func TestMCPLateBrokerErrorQueued(t *testing.T) {
-	ib := newMCPInbox()
+	ib := NewInbox()
 	id := a2a.NewID()
 	ib.expectBrokerError(id)
 	if e := ib.settle(id, false); e != nil {
@@ -417,7 +468,7 @@ func TestMCPLateBrokerErrorQueued(t *testing.T) {
 		return e
 	}
 	for _, e := range []*a2a.Envelope{brokerErr("bob", id), brokerErr(a2a.BrokerID, a2a.NewID()), brokerErr(a2a.BrokerID, id)} {
-		_, _ = ib.handle(context.Background(), e)
+		_, _ = ib.Handle(context.Background(), e)
 	}
 	msgs, _ := ib.take(context.Background(), 0)
 	if len(msgs) != 1 || msgs[0].From != a2a.BrokerID || msgs[0].CorrelationID != id {
@@ -426,7 +477,7 @@ func TestMCPLateBrokerErrorQueued(t *testing.T) {
 }
 
 // peekLen is the number of messages held, for tests.
-func (ib *mcpInbox) peekLen() (int, int) {
+func (ib *Inbox) peekLen() (int, int) {
 	ib.mu.Lock()
 	defer ib.mu.Unlock()
 	return len(ib.msgs), len(ib.pending)
