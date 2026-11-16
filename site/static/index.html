@@ -288,14 +288,14 @@ handlers:
     </div>
     <div class="run-proof">
       <div class="term run-term reveal" aria-label="A real request to hostdoc and its reply">
-        <div class="term-bar"><i></i><i></i><i></i><span>a real run · claude-haiku-5-5 · evidence trimmed</span></div>
+        <div class="term-bar"><i></i><i></i><i></i><span>a real run · claude-haiku-5-5 · the lab weather agent on the bus</span></div>
         <pre class="term-body"><span class="p">$</span> <span class="c">agentbus task -c hostdoc.ask --body '{"question":"Will it rain in Seattle, WA tomorrow?"}'</span>
-<span class="o">{"answer": "I can't say whether it will rain in Seattle, WA tomorrow. No agent</span>
-<span class="o">   on the bus serves weather.forecast, so the forecast request could not be fulfilled.",</span>
-<span class="o"> "evidence": ["bus_task weather.forecast {\"location\": \"Seattle, WA\"} -&gt; $broker refused: no_consumer: …"],</span>
-<span class="o"> "action": "Someone should start a weather.forecast agent on the bus, or check a weather</span>
-<span class="o">   service directly, before asking again."}</span>
-<span class="dim">level=INFO msg="model run" handler=hostdoc.ask turns=2 tokens_in=2785 tokens_out=462 ms=2956 ok=true</span></pre>
+<span class="o">{"answer": "No. Tomorrow (Tuesday) is forecast to be mostly sunny with a high near 50°F and no rain mentioned. The rain chances are today (30%) and Wednesday (30%).",</span>
+<span class="o"> "evidence": ["weather.forecast (NWS): \"Tuesday\",\"summary\":\"Mostly Sunny\",\"detail\":\"Mostly sunny. High near 50...\"",</span>
+<span class="o">              "\"Today\": \"Chance Rain Showers\", chance of precipitation is 30%",</span>
+<span class="o">              "\"Wednesday\": \"Chance Rain Showers\", chance of precipitation is 30%"]}</span>
+<span class="dim">weather: level=INFO msg=handled handler=weather.forecast from=hostdoc ms=1283 ok=true</span>
+<span class="dim">hostdoc: level=INFO msg="model run" handler=hostdoc.ask turns=2 tokens_in=3490 tokens_out=776 ms=5672 ok=true</span></pre>
       </div>
       <div class="run-copy reveal">
         <h3>A sender can't change it</h3>

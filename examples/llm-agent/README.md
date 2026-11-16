@@ -56,8 +56,34 @@ level=INFO msg="model run" handler=hostdoc.ask model=claude-haiku-5-5 turns=2 to
 ```
 
 To see it use the bus, start the [lab weather agent](../../labs/weather-agent)
-and ask about the weather: the model hands a `weather.forecast` task to
-it. Without one, it tells you nobody serves that capability.
+with an identity granted `weather.forecast`, and ask about the weather:
+
+```bash
+agentbus config agent add weather --capability weather.forecast
+(cd ../../labs/weather-agent && agentbus agent run -v)   # in another terminal
+
+agentbus task --capability hostdoc.ask --timeout 2m \
+  --body '{"question": "Will it rain in Seattle, WA tomorrow?"}'
+```
+
+The model hands a `weather.forecast` task to the weather agent, which asks
+the National Weather Service, and then answers from that forecast. From a
+real run:
+
+```json
+{"answer": "No. Tomorrow (Tuesday) is forecast to be mostly sunny with a high near 50°F and no rain mentioned. The rain chances are today (30%) and Wednesday (30%).",
+ "evidence": ["weather.forecast (NWS): \"Tuesday\",\"summary\":\"Mostly Sunny\",\"detail\":\"Mostly sunny. High near 50...\"",
+              "\"Today\": \"Chance Rain Showers\", chance of precipitation is 30%",
+              "\"Wednesday\": \"Chance Rain Showers\", chance of precipitation is 30%"]}
+```
+
+```text
+weather: level=INFO msg=handled handler=weather.forecast from=hostdoc ms=1283 ok=true
+hostdoc: level=INFO msg="model run" handler=hostdoc.ask turns=2 tokens_in=3490 tokens_out=776 ms=5672 ok=true
+```
+
+With no weather agent running, the model says that nobody serves
+`weather.forecast`, instead of guessing.
 
 ## Run it on a local model
 
