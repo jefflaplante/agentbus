@@ -245,6 +245,7 @@ examples/         sample broker config; service agents in Go and Python; systemd
 labs/             workshop: labs, teaching script, the weather agent, check.sh
 CONTRACT.md       the spec; contract/envelope.schema.json
 docs/             CLI; how it works; writing services; standalone agents; security; retention; desktop clients; integrations
+site/             the documentation website, built from this markdown for GitHub Pages
 ```
 
 ## Docs

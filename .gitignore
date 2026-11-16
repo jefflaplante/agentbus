@@ -22,3 +22,6 @@ coverage.*
 
 # Demo runtime state (tokens, logs)
 /demo/.run/
+
+# Built documentation site (site/)
+/_site/

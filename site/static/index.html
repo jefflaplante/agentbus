@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>agentbus · a message bus for AI agents</title>
+<meta name="description" content="agentbus is an agent-to-agent message bus over MQTT: one Go binary that runs a broker which enforces the contract, a CLI, a full-screen console, and a runtime for small agents.">
+<meta name="theme-color" content="#07090f">
+<meta property="og:title" content="agentbus · a message bus for AI agents">
+<meta property="og:description" content="Inboxes, task queues and events for AI agents, over MQTT, with a broker that checks every message.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<div class="grain" aria-hidden="true"></div>
+
+<header class="nav" id="nav">
+  <a class="brand" href="#/" aria-label="agentbus home">
+    <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="9" class="hub"/><g class="spokes"><path d="M32 23C32 14 22 12 14 14"/><path d="M41 32C50 32 52 22 50 14"/><path d="M32 41C32 50 42 52 50 50" class="g"/><path d="M23 32C14 32 12 42 14 50" class="a"/></g><g class="ends"><circle cx="14" cy="14" r="4"/><circle cx="50" cy="14" r="4"/><circle cx="50" cy="50" r="4"/><circle cx="14" cy="50" r="4"/></g></svg>
+    <span>agentbus</span>
+  </a>
+  <nav class="nav-links" aria-label="Main">
+    <a href="#/home/patterns">How it talks</a>
+    <a href="#/home/console">Console</a>
+    <a href="#/home/languages">Code</a>
+    <a href="#/home/labs">Labs</a>
+    <a href="#/docs/overview">Docs</a>
+  </nav>
+  <button class="search-trigger" id="search-open" type="button" aria-label="Search the docs">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+    <span>Search docs</span><kbd>/</kbd>
+  </button>
+  <a class="gh" href="https://github.com/jefflaplante/agentbus" aria-label="agentbus on GitHub">
+    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+  </a>
+  <button class="menu" id="menu" type="button" aria-label="Menu" aria-expanded="false"><span></span><span></span></button>
+</header>
+
+<main id="home" class="view">
+  <!-- ============================== HERO ============================== -->
+  <section class="hero" id="top">
+    <canvas id="bus" aria-hidden="true"></canvas>
+    <div class="hero-veil" aria-hidden="true"></div>
+    <div class="hero-inner">
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="pulse"></span>MQTT <span class="wide">· contract <code>a2a/v1</code></span> · one Go binary</p>
+        <h1 class="hero-title">
+          <span class="line">Agents talk.</span>
+          <span class="line">The broker</span>
+          <span class="line"><span class="shimmer">keeps them honest.</span></span>
+        </h1>
+        <p class="hero-sub">agentbus gives AI agents inboxes, shared task queues and broadcast events over MQTT. Every message passes a broker that checks who sent it, who may receive it, and whether it is still worth delivering.</p>
+        <div class="hero-cta">
+          <a class="btn primary" href="#/docs/overview">Get started <span aria-hidden="true">→</span></a>
+          <a class="btn ghost" href="#/docs/contract">Read the contract</a>
+        </div>
+        <div class="install" role="group" aria-label="Install command">
+          <span class="prompt">$</span>
+          <code id="install-cmd">go install github.com/jefflaplante/agentbus/cmd/agentbus@latest</code>
+          <button class="copy" type="button" data-copy-text="go install github.com/jefflaplante/agentbus/cmd/agentbus@latest" aria-label="Copy install command">copy</button>
+        </div>
+      </div>
+      <div class="hero-side" aria-hidden="true">
+        <div class="legend">
+          <span class="k req">request</span><span class="k resp">reply</span><span class="k evt">event</span><span class="k err">refused</span>
+        </div>
+        <span class="hint">click anywhere on the bus to broadcast an event</span>
+      </div>
+    </div>
+    <div class="wire" aria-hidden="true">
+      <div class="wire-label">live wire</div>
+      <div class="wire-track" id="wire"></div>
+    </div>
+    <a class="scroll-cue" href="#/home/patterns" aria-label="Scroll to how agents talk"><span></span></a>
+  </section>
+
+  <!-- ============================== FIRST RUN ============================== -->
+  <section class="section first-run" id="first-run">
+    <div class="first-run-grid">
+      <div class="section-head reveal">
+        <p class="kicker">00 · first run</p>
+        <h2>A broker and a working agent in four commands</h2>
+        <p class="lede">The first <code>serve</code> writes a config with an admin identity to <code>~/.config/agentbus</code>. Every other command finds it there, so nothing else needs flags. Adding an agent prints where its token is and how to start it.</p>
+        <a class="more" href="#/docs/cli/quick-start">The quick start →</a>
+      </div>
+      <div class="term reveal" aria-label="An example terminal session">
+        <div class="term-bar"><i></i><i></i><i></i><span>~/bus — zsh</span></div>
+        <pre class="term-body" id="typed" aria-live="off"></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== NUMBERS ============================== -->
+  <section class="strip reveal">
+    <div class="stat"><b data-count="1">0</b><span>binary: broker, CLI, console, MCP server</span></div>
+    <div class="stat"><b data-count="4">0</b><span>topic shapes, everything else refused</span></div>
+    <div class="stat"><b data-count="8">0</b><span>rejection codes, each sent back to the sender</span></div>
+    <div class="stat"><b data-count="0">0</b><span>dependencies in the contract package</span></div>
+  </section>
+
+  <!-- ============================== PATTERNS ============================== -->
+  <section class="section" id="patterns">
+    <div class="section-head reveal">
+      <p class="kicker">01 · how it talks</p>
+      <h2>Three ways to send a message</h2>
+      <p class="lede">Every payload is one JSON envelope on one of four topic shapes under <code>a2a/v1/</code>. Pick the shape by who should get it.</p>
+    </div>
+    <div class="patterns">
+      <article class="pattern reveal" style="--accent: var(--req)">
+        <svg class="diagram" viewBox="0 0 320 170" aria-hidden="true">
+          <path id="p-in-1" class="track" d="M60 85 C120 30 200 30 260 85"/>
+          <path id="p-in-2" class="track" d="M260 85 C200 140 120 140 60 85"/>
+          <circle class="node" cx="60" cy="85" r="18"/><text x="60" y="125">coordinator</text>
+          <circle class="node" cx="260" cy="85" r="18"/><text x="260" y="125">researcher</text>
+          <circle class="dot req" r="6"><animateMotion dur="3.2s" repeatCount="indefinite" keyPoints="0;1;1" keyTimes="0;0.45;1" calcMode="linear"><mpath href="#p-in-1"/></animateMotion></circle>
+          <circle class="dot resp" r="6" opacity="0"><animateMotion dur="3.2s" repeatCount="indefinite" keyPoints="0;0;1" keyTimes="0;0.5;1" calcMode="linear"><mpath href="#p-in-2"/></animateMotion><animate attributeName="opacity" dur="3.2s" repeatCount="indefinite" values="0;0;1;1;0" keyTimes="0;0.49;0.5;0.98;1"/></circle>
+        </svg>
+        <h3>Inbox: request and reply</h3>
+        <p>Send to one agent by name. A request carries a TTL and gets exactly one reply or error, matched by <code>correlation_id</code>.</p>
+        <code class="topic">a2a/v1/agents/{id}/inbox</code>
+      </article>
+      <article class="pattern reveal" style="--accent: var(--resp)">
+        <svg class="diagram" viewBox="0 0 320 170" aria-hidden="true">
+          <path id="p-q-0" class="track" d="M40 85 L150 85"/>
+          <path id="p-q-1" class="track" d="M150 85 C200 85 220 35 270 35"/>
+          <path id="p-q-2" class="track" d="M150 85 L270 85"/>
+          <path id="p-q-3" class="track" d="M150 85 C200 85 220 135 270 135"/>
+          <circle class="node" cx="40" cy="85" r="14"/>
+          <rect class="queue" x="128" y="66" width="44" height="38" rx="9"/>
+          <circle class="node small" cx="270" cy="35" r="12"/><circle class="node small" cx="270" cy="85" r="12"/><circle class="node small" cx="270" cy="135" r="12"/>
+          <text x="150" y="128">$share</text><text x="40" y="120">caller</text>
+          <circle class="dot resp" r="5"><animateMotion dur="1.2s" repeatCount="indefinite"><mpath href="#p-q-0"/></animateMotion></circle>
+          <circle class="dot resp" r="5"><animateMotion dur="3.6s" begin="0s" repeatCount="indefinite" keyPoints="0;1;1" keyTimes="0;0.3;1" calcMode="linear"><mpath href="#p-q-1"/></animateMotion></circle>
+          <circle class="dot resp" r="5"><animateMotion dur="3.6s" begin="1.2s" repeatCount="indefinite" keyPoints="0;1;1" keyTimes="0;0.3;1" calcMode="linear"><mpath href="#p-q-2"/></animateMotion></circle>
+          <circle class="dot resp" r="5"><animateMotion dur="3.6s" begin="2.4s" repeatCount="indefinite" keyPoints="0;1;1" keyTimes="0;0.3;1" calcMode="linear"><mpath href="#p-q-3"/></animateMotion></circle>
+        </svg>
+        <h3>Task queue: one of many workers</h3>
+        <p>Send to a capability, not an agent. A shared subscription hands each task to exactly one worker, so adding workers spreads the load.</p>
+        <code class="topic">a2a/v1/tasks/{capability}</code>
+      </article>
+      <article class="pattern reveal" style="--accent: var(--evt)">
+        <svg class="diagram" viewBox="0 0 320 170" aria-hidden="true">
+          <circle class="node" cx="160" cy="85" r="16"/>
+          <circle class="ring" cx="160" cy="85" r="16"><animate attributeName="r" values="16;120" dur="2.4s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.9;0" dur="2.4s" repeatCount="indefinite"/></circle>
+          <circle class="ring" cx="160" cy="85" r="16"><animate attributeName="r" values="16;120" dur="2.4s" begin="1.2s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.9;0" dur="2.4s" begin="1.2s" repeatCount="indefinite"/></circle>
+          <circle class="node small" cx="50" cy="40" r="11"/><circle class="node small" cx="270" cy="40" r="11"/><circle class="node small" cx="40" cy="130" r="11"/><circle class="node small" cx="280" cy="130" r="11"/><circle class="node small" cx="160" cy="155" r="9"/>
+          <text x="160" y="30">jobs/done</text>
+        </svg>
+        <h3>Events: broadcast</h3>
+        <p>Publish under your own name; anyone may subscribe with wildcards. No replies, no routing decisions, just a record that something happened.</p>
+        <code class="topic">a2a/v1/events/{id}/{name...}</code>
+      </article>
+    </div>
+    <div class="envelope reveal">
+      <div class="envelope-copy">
+        <h3>One envelope for all of it</h3>
+        <p>Inbox, task and event payloads share one JSON shape. The broker parses it, checks <code>from</code> against the connection, checks <code>to</code> against the topic, drops it if <code>ts + ttl_ms</code> has passed, and re-encodes it before delivery.</p>
+        <a class="more" href="#/docs/contract/envelope">The envelope, field by field →</a>
+      </div>
+      <pre class="code envelope-code"><code data-lang="json">{
+  "v": 1,
+  "id": "6f1c0e9a2b7d4c3e8a9b0c1d2e3f4a5b",
+  "type": "request",
+  "from": "claude-code",
+  "to": "weather",
+  "ts": "2026-11-15T16:04:05.123Z",
+  "ttl_ms": 60000,
+  "capability": "weather.forecast",
+  "body": {"location": "Seattle, WA", "days": 2}
+}</code></pre>
+    </div>
+  </section>
+
+  <!-- ============================== HONEST ============================== -->
+  <section class="section honest" id="honest">
+    <div class="section-head reveal">
+      <p class="kicker">02 · the broker says no</p>
+      <h2>Every publish is checked</h2>
+      <p class="lede">mochi-mqtt does the protocol work. One agentbus hook turns it into a broker that knows about agents: each has a token, a list of who it may message, and the task queues it may serve. A refused message gets an <code>error</code> envelope back, so a pending request fails at once instead of timing out.</p>
+    </div>
+    <div class="codes">
+      <div class="code-card reveal"><span class="stamp">not_authorized</span><p>Writing to a topic you don't own, or to an inbox outside <code>send_to</code>.</p></div>
+      <div class="code-card reveal"><span class="stamp">invalid</span><p>Malformed envelope, a forged <code>from</code>, a <code>to</code> that doesn't match the topic, a stale <code>ts</code>.</p></div>
+      <div class="code-card reveal"><span class="stamp">rate_limited</span><p>Over the per-agent rate: 20 a second, burst 50, unless configured.</p></div>
+      <div class="code-card reveal"><span class="stamp">expired</span><p><code>ts + ttl_ms</code> has passed. Nobody wants yesterday's request.</p></div>
+      <div class="code-card reveal"><span class="stamp">too_large</span><p>Over <code>max_envelope_bytes</code>, 256 KiB by default.</p></div>
+      <div class="code-card reveal"><span class="stamp">no_route</span><p>The recipient isn't configured, or is offline with nowhere to queue.</p></div>
+      <div class="code-card reveal"><span class="stamp">no_consumer</span><p>Nobody serves the task's capability.</p></div>
+      <div class="code-card reveal"><span class="stamp">queue_full</span><p>The recipient has been away a while and its queue is at <code>max_queued</code>.</p></div>
+    </div>
+    <p class="aside reveal">Replies are policed too: a reply must come from the agent that took the request, once. <a href="#/docs/security">What the broker does and doesn't protect →</a></p>
+  </section>
+
+  <!-- ============================== CONSOLE ============================== -->
+  <section class="section" id="console">
+    <div class="section-head reveal">
+      <p class="kicker">03 · see the bus</p>
+      <h2>A console for the whole bus</h2>
+      <p class="lede"><code>agentbus console</code> is one full-screen view: broker status, every agent, live traffic, a form for sending, an inbox for answering, and the config editor. These are real screens, rendered from a live bus.</p>
+    </div>
+    <div class="showcase reveal">
+      <div class="tabs" role="tablist" aria-label="Console tabs">
+        <button role="tab" aria-selected="true" data-shot="console-overview">1 Overview</button>
+        <button role="tab" aria-selected="false" data-shot="console-agents">2 Agents</button>
+        <button role="tab" aria-selected="false" data-shot="console-traffic">3 Traffic</button>
+        <button role="tab" aria-selected="false" data-shot="console-compose">4 Compose</button>
+        <button role="tab" aria-selected="false" data-shot="console-inbox">5 Inbox</button>
+        <button role="tab" aria-selected="false" data-shot="config-client">6 Config</button>
+      </div>
+      <div class="screen" id="screen">
+        <img id="shot" src="r/docs/images/console-overview.svg" alt="agentbus console, Overview tab" loading="lazy">
+      </div>
+      <p class="caption" id="shot-caption">Broker status, throughput over time, and request outcomes by target.</p>
+    </div>
+  </section>
+
+  <!-- ============================== LANGUAGES ============================== -->
+  <section class="section" id="languages">
+    <div class="section-head reveal">
+      <p class="kicker">04 · bring any agent</p>
+      <h2>Go, Python, a shell script, or Claude</h2>
+      <p class="lede"><a href="#/docs/contract">CONTRACT.md</a> is language-neutral: any MQTT client that follows it can join. These are ready-made.</p>
+    </div>
+    <div class="code-tabs reveal">
+      <div class="tabs" role="tablist" aria-label="Client languages">
+        <button role="tab" aria-selected="true" data-pane="go">Go</button>
+        <button role="tab" aria-selected="false" data-pane="py">Python</button>
+        <button role="tab" aria-selected="false" data-pane="sh">Shell</button>
+        <button role="tab" aria-selected="false" data-pane="yaml">Standalone agent</button>
+        <button role="tab" aria-selected="false" data-pane="mcp">Claude Code</button>
+      </div>
+      <div class="pane active" data-pane="go">
+        <pre class="code"><code data-lang="go">c, err := client.Connect(ctx, client.Options{
+    BrokerURL: url, AgentID: "counter", Token: tok,
+    Description: `wordcount: body {"text": string}, replies {"words": int}.`,
+    Tasks:       map[string]client.Handler{"wordcount": wordcount},
+})
+
+// A handler's return value is the reply body.
+func wordcount(ctx context.Context, e *a2a.Envelope) (any, error) {
+    var b struct{ Text string `json:"text"` }
+    if err := e.DecodeBody(&amp;b); err != nil {
+        return nil, client.Errorf("invalid", `body must be {"text": "..."}`)
+    }
+    return map[string]int{"words": len(strings.Fields(b.Text))}, nil
+}</code></pre>
+        <p class="pane-note">The Go client, on paho over MQTT 3.1.1. <a href="#/docs/services">Writing a service agent →</a></p>
+      </div>
+      <div class="pane" data-pane="py">
+        <pre class="code"><code data-lang="python">from agentbus import Agent, ReplyError
+
+def summarize(env):
+    body = env.get("body")
+    if not isinstance(body, dict) or "text" not in body:
+        raise ReplyError("invalid", 'body must be {"text": "..."}')  # the caller sees this
+    return {"summary": body["text"][:100]}                          # the reply body
+
+agent = Agent.from_env(
+    "summarizer",
+    description='summarize: body {"text": string}, replies {"summary": string}',
+    tasks={"summarize": summarize},
+    max_concurrent=2,
+)
+with agent:
+    reply = agent.request("researcher", {"q": "..."}, timeout=120)</code></pre>
+        <p class="pane-note">One file on paho-mqtt. <a href="#/docs/python">The Python example →</a></p>
+      </div>
+      <div class="pane" data-pane="sh">
+        <pre class="code"><code data-lang="bash">agentbus config agent add weather --capability weather.forecast   # prints where its token is
+
+# answer every weather.forecast task with a script
+agentbus --agent weather handle --capability weather.forecast --exec ./forecast.sh
+
+# from anywhere else on the bus
+agentbus task -c weather.forecast --body '{"location":"Seattle, WA","days":2}'
+agentbus request --to weather --body '{"op":"ping"}'
+agentbus emit --name jobs/done --body '{"id":42}'</code></pre>
+        <p class="pane-note">The CLI is a client too: <code>handle</code> runs a command per message, envelope on stdin, reply on stdout. <a href="#/docs/cli">The CLI →</a></p>
+      </div>
+      <div class="pane" data-pane="yaml">
+        <pre class="code"><code data-lang="yaml">agent: disk-agent                       # agent ID; AGENTBUS_AGENT overrides
+description: Disk usage on build hosts  # starts the presence description
+max_concurrent: 4                       # handlers at once; beyond that, "busy"
+timeout: 60s                            # default per handler
+drain: 30s                              # on SIGTERM, time for running handlers
+allow_from: [ops, conduit-home]         # default sender allow-list; all if unset
+handlers:
+  - task: disk.usage                    # trigger
+    script: scripts/disk.sh             # action
+    timeout: 10s</code></pre>
+        <p class="pane-note"><code>agentbus agent build --target linux/amd64</code> turns the manifest into one static binary, about 6.5 MiB. <a href="#/docs/agents">Standalone agents →</a></p>
+      </div>
+      <div class="pane" data-pane="mcp">
+        <pre class="code"><code data-lang="json">{
+  "mcpServers": {
+    "agentbus": {
+      "command": "agentbus",
+      "args": ["mcp"],
+      "env": {
+        "AGENTBUS_AGENT": "claude-code"
+      }
+    }
+  }
+}</code></pre>
+        <p class="pane-note">Drop it in <code>.mcp.json</code> and Claude Code can list agents, send requests and take tasks. OpenCode and OpenChamber work the same way. <a href="#/docs/integrations">Coding agents and MCP →</a></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== LABS ============================== -->
+  <section class="section labs" id="labs">
+    <div class="section-head reveal">
+      <p class="kicker">05 · learn it hands-on</p>
+      <h2>Two hours, one weather agent</h2>
+      <p class="lede">A workshop with a teaching script: start a broker, build and deploy a weather agent, then ask Claude Code for the forecast in Seattle and watch the request cross the bus. <code>labs/check.sh</code> runs all of it unattended, in CI on every push.</p>
+    </div>
+    <div class="labs-grid">
+      <ol class="timeline reveal">
+        <li><a href="#/docs/lab-0"><b>0</b><span>Setup</span><em>build agentbus, pick a workspace</em></a></li>
+        <li><a href="#/docs/lab-1"><b>1</b><span>Start a broker</span><em>a config, an admin, the console</em></a></li>
+        <li><a href="#/docs/lab-2"><b>2</b><span>A first agent</span><em>shell and Python handlers</em></a></li>
+        <li><a href="#/docs/lab-3"><b>3</b><span>The weather agent</span><em>two public weather services</em></a></li>
+        <li><a href="#/docs/lab-4"><b>4</b><span>Build and deploy</span><em>one binary, one systemd unit</em></a></li>
+        <li><a href="#/docs/lab-5"><b>5</b><span>Claude Code</span><em>an LLM on the bus via MCP</em></a></li>
+        <li><a href="#/docs/lab-6"><b>6</b><span>Extend it</span><em>your own handlers</em></a></li>
+      </ol>
+      <div class="video-card reveal">
+        <video controls preload="none" poster="" src="https://github.com/user-attachments/assets/b4ccd343-cc8e-4803-a1c3-5d4623122314"></video>
+        <p>The six-and-a-half-minute narrated walkthrough. The terminal scenes are real recordings. <a href="https://github.com/user-attachments/assets/b4ccd343-cc8e-4803-a1c3-5d4623122314">Open it on GitHub</a></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== DOCS ============================== -->
+  <section class="section" id="docs-index">
+    <div class="section-head reveal">
+      <p class="kicker">06 · read the manual</p>
+      <h2>Documentation</h2>
+      <p class="lede">Every page here is the repository's own markdown, rebuilt on each push to main.</p>
+    </div>
+    <div class="doc-groups" id="doc-groups"></div>
+  </section>
+
+  <footer class="footer">
+    <div class="footer-mark">agentbus</div>
+    <p>An agent-to-agent message bus over MQTT. Broker on <a href="https://github.com/mochi-mqtt/server">mochi-mqtt</a>, client on <a href="https://github.com/eclipse/paho.mqtt.golang">paho</a>, console on <a href="https://github.com/charmbracelet/bubbletea">Bubble Tea</a>.</p>
+    <p><a href="https://github.com/jefflaplante/agentbus">GitHub</a> · <a href="#/docs/contract">Contract</a> · <a href="#/docs/security">Security</a> · <a href="#/docs/labs">Labs</a></p>
+  </footer>
+</main>
+
+<!-- ============================== DOCS VIEW ============================== -->
+<div id="docs" class="view docs" hidden>
+  <aside class="sidebar" id="sidebar" aria-label="Documentation"></aside>
+  <article class="doc" id="doc">
+    <div class="doc-meta" id="doc-meta"></div>
+    <div class="doc-body" id="doc-body"></div>
+    <nav class="doc-pager" id="doc-pager" aria-label="Previous and next page"></nav>
+  </article>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+
+<!-- ============================== SEARCH ============================== -->
+<div class="search" id="search" hidden>
+  <div class="search-box" role="dialog" aria-modal="true" aria-label="Search the docs">
+    <div class="search-input">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="search-q" type="search" placeholder="Search every page: token, send_to, console, systemd…" autocomplete="off" spellcheck="false">
+      <kbd>esc</kbd>
+    </div>
+    <ul class="search-results" id="search-results"></ul>
+  </div>
+</div>
+
+<script src="assets/highlight.js"></script>
+<script src="assets/hero.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>

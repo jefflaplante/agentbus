@@ -3,6 +3,8 @@
 #   test  gofmt, go vet, go test -race (unit, broker and end-to-end, with
 #         the Python examples run against a live broker), and the Python
 #         unit tests.
+#   site  builds the documentation site (site/), failing on a broken link
+#         between docs or a missing image.
 #   labs  labs/check.sh: builds agentbus and runs labs 1-4 as a student
 #         would. It calls api.weather.gov and open-meteo.com, so it can fail
 #         when they do; that failure shows here, apart from the tests.
@@ -63,6 +65,23 @@ jobs:
 
       - name: Python unit tests
         run: python -m unittest discover -s examples/python -p 'test_*.py' -v
+
+  site:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: site/go.mod
+          cache-dependency-path: site/go.sum
+
+      - name: Build the documentation site, failing on broken links
+        working-directory: site
+        run: |
+          go vet ./...
+          go run ./build -strict -repo .. -out ../_site
 
   labs:
     runs-on: ubuntu-latest
