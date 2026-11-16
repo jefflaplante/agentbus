@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "agentbus": {
+      "command": "agentbus",
+      "args": ["mcp"],
+      "env": {
+        "AGENTBUS_CONFIG": "${AGENTBUS_CONFIG}",
+        "AGENTBUS_AGENT": "claude-code"
+      }
+    }
+  }
+}

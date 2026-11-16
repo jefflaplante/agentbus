@@ -27,6 +27,13 @@ One Go binary runs the broker and also works as a CLI client.
   architecture, with everything but the token inside, to deploy on remote
   hosts. See [docs/AGENTS.md](docs/AGENTS.md).
 
+## Learn it hands-on
+
+[labs/](labs/README.md) is a two-hour workshop with a teaching script for
+instructors. You start a broker, build and deploy a weather agent, and
+have Claude Code ask it for the forecast in Seattle, WA.
+`labs/check.sh --claude` runs the whole thing unattended.
+
 ## Try it
 
 ```bash
@@ -223,6 +230,7 @@ demo/cmd/         their binaries
 test/e2e/         functional tests over real processes
 scripts/demo.sh   the demo
 examples/         sample broker config; service agents in Go and Python; skill and wrappers for coding agents
+labs/             workshop: labs, teaching script, the weather agent, check.sh
 CONTRACT.md       the spec; contract/envelope.schema.json
 docs/             CLI; how it works; writing services; standalone agents; security; retention; desktop clients; integrations
 ```
@@ -239,6 +247,7 @@ docs/             CLI; how it works; writing services; standalone agents; securi
 | [docs/RETENTION.md](docs/RETENTION.md) | `data_dir` persistence and the JSONL audit log |
 | [docs/DESKTOP-CLIENTS.md](docs/DESKTOP-CLIENTS.md) | MQTT Explorer, MQTTX and mosquitto against the bus |
 | [docs/SERVICES.md](docs/SERVICES.md) | Writing agents that serve inboxes, task queues and events, and how they should reply |
+| [labs/](labs/README.md) | Hands-on labs and a teaching script: broker, a weather agent, and Claude Code asking it for a forecast |
 | [docs/AGENTS.md](docs/AGENTS.md) | Generating standalone agents for remote hosts: manifest, shell/Python/Go handlers, build, deploy |
 | [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) | conduit, Claude Code, OpenCode and OpenChamber on the bus; `agentbus mcp` |
 

@@ -1,0 +1,36 @@
+# The weather agent: the finished solution for the agentbus labs.
+# `agentbus agent build` embeds this file and scripts/ in one binary.
+
+agent: weather
+description: Weather forecasts for any city, from public weather services
+
+max_concurrent: 4
+timeout: 30s
+drain: 15s
+
+handlers:
+  # Lab 3: a Python script.
+  - task: weather.forecast
+    script: scripts/forecast.py
+    description: >-
+      body {"location": "City, ST" or "City, Country", "days"?: 1-7 (default 3)};
+      replies {"location", "source", "periods": [{"name", "temperature", "unit", "summary", "detail", "wind"}]}
+
+  # The same script, for callers that ask the agent directly.
+  - inbox: true
+    op: forecast
+    script: scripts/forecast.py
+    description: '{"op": "forecast", "location": string, "days"?: 1-7}; same reply as task weather.forecast'
+
+  # Lab 6: a Go function, compiled in (handlers/current.go).
+  - inbox: true
+    op: current
+    go: current
+    timeout: 20s
+    description: '{"op": "current", "location": string}; replies current temperature, wind and conditions'
+
+  # Lab 2: a one-line shell command.
+  - inbox: true
+    op: ping
+    run: 'printf "{\"pong\": \"%s\"}" "$(hostname)"'
+    description: '{"op": "ping"}; replies {"pong": hostname}'

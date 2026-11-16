@@ -1,0 +1,117 @@
+# Lab 6: Extend it
+
+**Goal:** add a Go handler for current conditions, limit who may call
+it, and see the request metrics the broker keeps.
+
+## 1. A Go handler
+
+**Terminal 2:**
+
+```bash
+cp $REPO/labs/weather-agent/handlers/current.go $LAB/weather/handlers/
+```
+
+Read it. A Go handler is a function registered by name in `init`:
+
+```go
+func init() { agent.Register("current", current) }
+
+func current(ctx context.Context, e *a2a.Envelope) (any, error) { ... }
+```
+
+- **The return value** is the reply body.
+- **`client.Errorf("not_found", ...)`** chooses the error code, as exit 3
+  does for scripts.
+- **`ctx`** ends at the request's deadline, and every HTTP call uses it,
+  so a slow upstream can't outlive the request.
+- **To add another Go handler,** drop another file in `handlers/`.
+
+## 2. Add it to the manifest, with an allow-list
+
+```bash
+cat >> $LAB/weather/agent.yaml <<'EOF'
+  - inbox: true
+    op: current
+    go: current
+    timeout: 20s
+    allow_from: [me, claude-code]
+    description: '{"op": "current", "location": string}; replies current temperature, wind and conditions'
+EOF
+agentbus agent build $LAB/weather
+```
+
+`allow_from` lets only `me` and `claude-code` use this handler. `from` is
+checked by the broker, so the list can be trusted.
+
+## 3. Redeploy
+
+**Terminal 3:** stop the old binary (`ctrl+c`), then:
+
+```bash
+cp $LAB/weather/dist/weather-$(go env GOOS)-$(go env GOARCH) ./weather
+./weather -v
+```
+
+The running handlers drained before the old one stopped, so nothing in
+flight was lost.
+
+## 4. Try it
+
+**Terminal 2:**
+
+```bash
+agentbus request --to weather --body '{"op":"current","location":"Seattle, WA"}'
+AGENTBUS_AGENT=hello agentbus request --to weather --body '{"op":"current","location":"Seattle, WA"}'   # forbidden
+```
+
+Ask Claude too, in a new session so it reads the updated description:
+*"What's it like in Seattle right now?"*
+
+## 5. Request metrics
+
+Every request the broker routes is tracked: open, answered, errored,
+expired, and how long replies took.
+
+```bash
+agentbus status
+```
+
+The Decisions panel has a `requests` row. Per target:
+
+```bash
+agentbus status --plain | python3 -c 'import json,sys; [print(r) for r in json.load(sys.stdin).get("requests", [])]'
+```
+
+For Prometheus, add a metrics listener and restart the broker:
+
+```bash
+agentbus config set metrics_listen 127.0.0.1:9464
+# terminal 1: ctrl+c, then agentbus serve again
+curl -s 127.0.0.1:9464/metrics | grep agentbus_requests_total
+curl -s 127.0.0.1:9464/healthz
+```
+
+A capability whose `expired` count climbs has workers that are slow,
+stuck or offline. That's the alert you'd want on the weather agent.
+
+## More to try
+
+- Add an event handler to the manifest: `event: a2a/v1/events/+/alerts/#`
+  with `run: logger -t weather "alert from $AGENTBUS_FROM"`. Then send it
+  something with `agentbus emit --name alerts/storm --body '{"level":"high"}'`.
+- Run a second weather agent under another identity with the same
+  `weather.forecast` capability, and send several tasks. The broker
+  spreads them between the two.
+- Swap `forecast.py` for a version that calls your own internal service.
+  Nothing else changes.
+
+## Clean up
+
+Stop everything with `ctrl+c` in each terminal, then:
+
+```bash
+rm -rf $LAB
+```
+
+**Done when:** `current` answers you, refuses `hello`, and the broker
+shows request counts for `task:weather.forecast`.
