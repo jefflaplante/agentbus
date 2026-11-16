@@ -59,7 +59,7 @@ another; "agentbus config path" shows which one is in use.`,
 		},
 	}
 	c.AddCommand(newConfigInitCmd(a), newConfigPathCmd(a), newConfigShowCmd(a), newConfigSetCmd(a),
-		newConfigAgentCmd(a), newConfigEnvCmd(a))
+		newConfigAgentCmd(a), newConfigEnvCmd(a), newConfigMCPCmd(a))
 	return c
 }
 
