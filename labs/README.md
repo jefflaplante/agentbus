@@ -20,7 +20,7 @@ WA. By the end you have built every piece of this:
 | [3. The weather agent](03-weather-agent.md) | Write a forecast handler in Python and serve it | 25 min |
 | [4. Build and deploy](04-build-deploy.md) | Compile the agent to one binary and run it as a remote host would | 15 min |
 | [5. Claude Code](05-claude-code.md) | Connect Claude Code to the bus and ask for the Seattle forecast | 20 min |
-| [6. Extend it](06-extend.md) | Add a Go handler, an allow-list, and look at request metrics | 20 min |
+| [6. Extend it](06-extend.md) | Add a Go handler, an allow-list, and look at request metrics; optionally, a model with your script as its tool | 20 min |
 
 That's about two hours. Instructors: [TEACHING.md](TEACHING.md) is the
 script for running this as a session.

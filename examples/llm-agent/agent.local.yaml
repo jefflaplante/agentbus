@@ -1,0 +1,51 @@
+# hostdoc on a local model: the same agent, served by Ollama (or vLLM,
+# llama.cpp, LM Studio: any OpenAI-compatible server). No key needed.
+#
+#   agentbus agent run -f agent.local.yaml        # from source
+#   dist/hostdoc-linux-amd64 -manifest agent.local.yaml   # a built binary
+#
+# Pick a model that supports tool calls, for example qwen3:8b or llama3.1.
+
+agent: hostdoc
+description: Answers questions about this host's health in plain language
+
+llm:
+  provider: openai
+  base_url: http://localhost:11434/v1
+  model: qwen3:8b
+
+max_concurrent: 1 # a local model usually serves one request at a time
+max_hops: 2
+
+handlers:
+  - task: hostdoc.ask
+    timeout: 300s # local models are slower
+    description: >-
+      body {"question": string}; replies
+      {"answer": string, "evidence": [string], "action"?: string}
+    llm:
+      system: |
+        You look after this host. Answer the question in the message body.
+        Check with the tools before you answer; never guess a number.
+        Reply {"answer": "...", "evidence": ["..."], "action": "..."},
+        with "action" only when a person needs to act.
+      tools: [disk, load, top]
+      reply: json
+      max_turns: 6
+
+  - name: disk
+    run: df -Ph
+    description: Usage of every mounted filesystem (df -Ph)
+
+  - name: load
+    run: uptime
+    description: Uptime and the 1, 5 and 15 minute load averages
+
+  - name: top
+    script: scripts/top.py
+    description: The processes using the most CPU or memory
+    params:
+      type: object
+      properties:
+        sort: {type: string, enum: [cpu, mem]}
+        limit: {type: integer, minimum: 1, maximum: 20}

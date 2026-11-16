@@ -65,6 +65,7 @@ var pages = []page{
 	{"docs/RETENTION.md", "retention", "Reference", "Retention"},
 	{"examples/python/README.md", "python", "Examples", "Python"},
 	{"examples/systemd/README.md", "systemd", "Examples", "systemd units"},
+	{"examples/llm-agent/README.md", "llm-agent", "Examples", "A model-backed agent"},
 	{"examples/integrations/skills/agentbus/SKILL.md", "skill", "Examples", "Claude Code skill"},
 	{"labs/README.md", "labs", "Labs", "Workshop"},
 	{"labs/00-setup.md", "lab-0", "Labs", "0 · Setup"},

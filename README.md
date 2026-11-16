@@ -28,7 +28,9 @@ broadcast events, and a request the broker refuses (`✗ not_authorized`).
   and events to shell commands, Python or other scripts, or Go functions.
   `agentbus agent build` turns that into one static binary per OS and
   architecture, with everything but the token inside, to deploy on remote
-  hosts. See [docs/AGENTS.md](docs/AGENTS.md).
+  hosts. An `llm:` handler puts a model (Anthropic, or anything
+  OpenAI-compatible, local ones included) in charge, with the agent's
+  scripts as its tools. See [docs/AGENTS.md](docs/AGENTS.md).
 
 ## Learn it hands-on
 

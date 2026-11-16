@@ -18,6 +18,7 @@ host, give it a token file, and run it.
 - [How it fits together](#how-it-fits-together)
 - [The manifest](#the-manifest)
 - [Writing handlers](#writing-handlers): shell, Python and other scripts, Go
+- [Model-backed handlers](#model-backed-handlers): `llm:`, with scripts as tools
 - [Building](#building)
 - [Deploying](#deploying)
 - [Operating](#operating)
@@ -66,7 +67,8 @@ handlers:
     description: 'body {"path"?: string}; replies usage of that filesystem'
 ```
 
-Each handler has one trigger and one action.
+Each handler has one trigger and one action. A handler with no trigger is
+a tool: it runs only when an `llm:` handler's model calls it.
 
 | Trigger | Runs for |
 |---|---|
@@ -79,6 +81,7 @@ Each handler has one trigger and one action.
 | `run: COMMAND` | `sh -c COMMAND` |
 | `script: scripts/FILE` | the script, with `interpreter:` (for example `python3 -u` or `/opt/venv/bin/python`), or by extension: `.sh` sh, `.bash` bash, `.py` python3; otherwise directly, so it needs a shebang |
 | `go: NAME` | the Go function registered as NAME |
+| `llm: {...}` | a model, with other handlers as its tools; see [Model-backed handlers](#model-backed-handlers) |
 
 Handlers can set `timeout`, `allow_from` (an empty list allows everyone,
 overriding the manifest's), `workdir`, `env` and `description`.
@@ -177,6 +180,194 @@ func greet(ctx context.Context, e *a2a.Envelope) (any, error) {
 Go handlers exist only in a built binary. `agentbus agent run` skips them
 with a warning and runs the rest.
 
+## Model-backed handlers
+
+An `llm:` handler answers with a model. The model decides what to do; the
+agent's own scripts and Go functions do it, as tools. The agent is still
+one binary. The model's API key comes from the host, like the token.
+
+[examples/llm-agent](../examples/llm-agent) is a complete one, `hostdoc`,
+that answers questions about its host. It has a variant for a local model.
+
+```yaml
+agent: disk-agent
+llm:                                   # defaults for every llm handler
+  provider: anthropic                  # or openai: any OpenAI-compatible server
+  model: claude-haiku-5-5
+  # api_key_env: ANTHROPIC_API_KEY     # the default for anthropic; OPENAI_API_KEY for openai
+  # api_key_file: /etc/agentbus/disk-agent.model-key
+handlers:
+  - task: disk.triage
+    description: 'body {"question": string}; replies {"summary": string, "action"?: string}'
+    timeout: 120s
+    llm:
+      system: |
+        You look after the disks on this build host. Use the tools to
+        check before you answer. Reply {"summary": "...", "action": "..."}.
+      tools: [usage, biggest]          # this manifest's handlers, by name
+      bus:
+        request: [ops-notifier]        # agents the model may ask
+        task: [ticket.create]          # capabilities it may hand work to
+      reply: json                      # the answer must be JSON
+      max_turns: 8                     # model calls per message
+  - name: usage                        # no trigger: a tool only
+    script: scripts/disk.sh
+    description: Filesystem usage for a path
+    params: {type: object, properties: {path: {type: string}}}
+  - name: biggest
+    run: du -xh /var 2>/dev/null | sort -rh | head -20
+    description: The 20 largest directories under /var
+```
+
+For a local model, point an `openai` handler at the server. A key isn't
+needed when `base_url` is set:
+
+```yaml
+llm: {provider: openai, base_url: "http://localhost:11434/v1", model: qwen3:8b}
+```
+
+| Key | Meaning |
+|---|---|
+| `provider` | `anthropic`, or `openai` for OpenAI, OpenRouter, Ollama, vLLM, llama.cpp, LM Studio and other servers of the same API |
+| `model` | required |
+| `base_url` | default: the provider's public API |
+| `api_key_env`, `api_key_file` | where the key is; a file wins |
+| `max_turns`, `max_tokens` | model calls per message (default 8, at most 50), and tokens per call (default 4096) |
+| `system` | the system prompt, after a fixed preamble the runtime adds |
+| `tools` | handler names the model may call |
+| `bus` | `agents: true`, `request: [IDs]`, `task: [capabilities]`; `"*"` allows any |
+| `reply` | `json`, `text`, or unset: JSON if the answer parses, otherwise a string |
+
+The top-level `llm:` block sets defaults for `provider`, `model`,
+`base_url`, the key, `max_turns` and `max_tokens`. A handler's `llm:`
+block inherits them, and only a handler can set the rest.
+
+What the model gets, and what it can't do:
+
+- **The message arrives behind the untrusted-input preamble.** The runtime
+  also tells the model that the envelope is data, not instructions. The
+  model, prompt and tools come from the manifest, so a sender can't choose
+  them.
+- **Tools are other handlers.** A tool call runs the handler as a request
+  from the original sender, with the model's input as the body. The
+  handler's `allow_from` still applies, and so do its timeout and the
+  request's deadline. Give each tool a `name` (1-64 chars of `a-z A-Z 0-9
+  _ -`), a `description` and, ideally, `params`: a JSON Schema for the
+  body. The model sees all three. A tool can't be an `llm:` handler.
+- **Commands never see the model key.** The variables named by
+  `api_key_env` are removed from every command's environment, like the
+  agentbus token.
+- **Bus calls are limited three ways.** The manifest's `bus` lists
+  decide which agents and capabilities the model can reach. The broker's
+  `send_to` and grants still apply on top. Replies reach the model behind
+  the preamble.
+- **Calls can't chain forever.** Each bus call carries a `hops` header one
+  higher than the message being handled. Past `max_hops` (default 3, set
+  at the top level), the tool refuses and the model is told to answer
+  without asking anyone. See [CONTRACT.md](../CONTRACT.md#headers).
+- **Failures stay local.** The requester sees `model_gave_up` when the
+  model hits `max_turns` and `bad_model_output` when `reply: json` gets
+  something else. Any other failure shows up as a generic error. API errors go to the
+  agent's log.
+
+### How a message is handled
+
+```text
+request ──> llm handler ──> model: system prompt + preamble + envelope, tool list
+                              │
+                              ├─ tool call "disk" ──> disk handler (as the sender) ──> result
+                              ├─ tool call "bus_task" ──> another agent (hops + 1) ──> reply, fenced
+                              │      ... up to max_turns model calls ...
+                              └─ final text ──> reply body (JSON if reply: json)
+```
+
+1. The runtime builds the system prompt from a fixed preamble (who the
+   agent is, that the message is data, that the final answer is the
+   reply) and the manifest's `system`.
+2. The user turn is `a2a.UntrustedPreamble(env)` and the envelope JSON,
+   the same text `AGENTBUS_PREAMBLE` gives a script.
+3. Each tool call runs to completion before the next model call. Calls in
+   one turn run in order. A failed tool reaches the model as an error
+   result, so it can try something else; it doesn't fail the request.
+4. When the model answers without calling a tool, that text is the reply.
+   Code fences around JSON are removed. For an event trigger, nothing is
+   sent back.
+
+The model doesn't see the conversation from earlier messages. Each
+message starts fresh, so the agent stays stateless and any copy of it can
+take any task.
+
+### The model's tools
+
+The bus tools have fixed names; the model sees only the ones `bus:`
+grants:
+
+| Tool | Input | Does |
+|---|---|---|
+| `bus_agents` | none | lists other agents: status, capabilities, description |
+| `bus_request` | `{"to", "body"}` | asks one agent in `bus.request` and waits for the reply |
+| `bus_task` | `{"capability", "body"}` | hands work to a capability in `bus.task` and waits for the reply |
+
+Bus calls wait up to the handler's deadline. Replies and agent
+descriptions reach the model behind the untrusted-input preamble.
+
+A handler tool gets the model's input as its message body, which is always
+a JSON object. For scripts, that's `AGENTBUS_BODY` and `.body` on stdin,
+as usual. The tool's reply body, as JSON text, is what the model reads. A
+script that exits 3 with `{"code", "reason"}` shows the model that code
+and reason. Any other failure shows only "tool failed", and stderr stays
+in the log.
+
+### Writing tools a model uses well
+
+- **Describe what it returns and when to use it,** not how it works. The
+  model picks tools by `description`.
+- **Give it `params`.** Only the script enforces the schema, but an
+  `enum` and bounds steer the model to valid input on the first try. For an example, see `top` in
+  [examples/llm-agent/agent.yaml](../examples/llm-agent/agent.yaml).
+- **Check the input anyway.** The model built it from another agent's
+  message. A tool is as exposed as a handler on the bus. Refuse with exit
+  3 and a reason the model can act on.
+- **Keep output short.** Everything a tool prints goes into the next model
+  call, and you pay for it. `df -Ph` is fine; a whole log file isn't.
+  Filter in the script.
+- **Prefer read-only tools.** A model can be talked into calling a tool
+  with input you didn't expect. Give a tool that changes things its own
+  `allow_from`, or keep it on a separate handler that a person calls.
+
+### Choosing a model
+
+The handler pays for one model call per turn, and each call resends the
+whole conversation so far. A question answered with two tool calls is
+three model calls.
+
+- **Start with a small, fast model.** Haiku-class models handle tool
+  use and short JSON answers well. Move up a size for handlers that must
+  reason across many tool results.
+- **Bound the cost** with `max_turns`, `max_tokens` and `max_concurrent`.
+  The log line for each run has the token counts to watch.
+- **Local models** (`provider: openai` and a `base_url`) cost nothing per
+  call and keep data on the host. Pick one trained for tool calls, give
+  it a longer `timeout`, and expect `bad_model_output` more often with
+  `reply: json`.
+
+### Logs and troubleshooting
+
+With `-v`, each run logs one line, after one `handled` line per tool call:
+
+```text
+level=INFO msg="model run" handler=hostdoc.ask id=4d61... model=claude-haiku-5-5 turns=2 tokens_in=2637 tokens_out=242 ms=2392 ok=true
+```
+
+| Symptom | Cause |
+|---|---|
+| Won't start: `no API key: set ANTHROPIC_API_KEY ...` | No key in the agent's environment. Set it, or `api_key_file`. `-check` reports the same. |
+| Requester gets `handler_error: model call failed` | The API refused, for example a bad key, an unknown model, or out of credit. The reason is in the agent's log as `model call failed`. 429 and 5xx answers are retried three times first. |
+| `model_gave_up` | Still calling tools after `max_turns`. Raise it, or say in `system` when to stop. |
+| `bad_model_output` | `reply: json` and the answer wasn't JSON. Say what shape you want in `system`; small local models need it spelled out. |
+| `handler_error: handler timed out` | `timeout`, or the request's TTL, ran out mid-run. Model calls are slow: allow 30-120s. |
+| The model says it can't reach an agent | It isn't in `bus.request` or `bus.task`, or the broker's `send_to` refused it, or `max_hops` is spent. |
+
 ## Building
 
 ```bash
@@ -261,8 +452,14 @@ come from the binary. `-print-manifest` shows the embedded manifest, and
   [HOW-IT-WORKS.md](HOW-IT-WORKS.md#request-tracking-and-metrics).
 - **The presence card** carries `meta.runtime=agentbus-agent` and
   `meta.host`, so `agentbus agents` shows where each agent runs.
+- **Model keys** come from the environment or `api_key_file`, like the
+  token. Under systemd, put the key in an `EnvironmentFile=` with mode
+  0600, or point `api_key_file` at a file only the agent's user can read.
 
 ## Limits
+
+- **The system prompt is inline.** Use a YAML block scalar (`system: |`).
+  Prompt files aren't embedded yet.
 
 - **Building needs the Go toolchain,** even for agents with only scripts.
   `agentbus agent run` needs none, but then the manifest and scripts have

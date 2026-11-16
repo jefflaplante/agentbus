@@ -1,0 +1,64 @@
+# hostdoc: an agent that answers questions about its host with a model.
+# The model decides what to check; the handlers below do the checking.
+# `agentbus agent build` embeds this file and scripts/ in one binary.
+# The model's API key is never in here: it comes from each host.
+
+agent: hostdoc
+description: Answers questions about this host's health in plain language
+
+# Defaults for every llm handler. The key is read from ANTHROPIC_API_KEY
+# unless api_key_file is set. For a local model, see agent.local.yaml.
+llm:
+  provider: anthropic
+  model: claude-haiku-5-5
+  # api_key_file: /etc/agentbus/hostdoc.model-key
+
+max_concurrent: 2 # each run is several model calls; keep the bill bounded
+max_hops: 2       # bus calls the model may chain (see CONTRACT.md, headers)
+
+handlers:
+  # The front door: a task any agent can hand over.
+  - task: hostdoc.ask
+    timeout: 120s # several model and tool calls; the default 60s is tight
+    description: >-
+      body {"question": string}; replies
+      {"answer": string, "evidence": [string], "action"?: string}
+    llm:
+      system: |
+        You look after this host. Answer the question in the message body.
+
+        - Check with the tools before you answer. Never guess a number.
+        - Quote the tool output you relied on in "evidence", one short
+          line each.
+        - Suggest an "action" only when something needs a person's
+          attention; otherwise leave it out.
+        - For questions about the weather, hand the task to
+          weather.forecast with {"location": "City, ST"}. If nobody serves
+          it, say so.
+
+        Reply {"answer": "...", "evidence": ["..."], "action": "..."}.
+      tools: [disk, load, top]
+      bus:
+        agents: true               # may read presence cards
+        task: [weather.forecast]   # may hand work to this capability only
+      reply: json
+      max_turns: 6
+
+  # Tools: no trigger, so only the model can run them. Each tool call is a
+  # request from the original sender, so allow_from on a tool still holds.
+  - name: disk
+    run: df -Ph
+    description: Usage of every mounted filesystem (df -Ph)
+
+  - name: load
+    run: uptime
+    description: Uptime and the 1, 5 and 15 minute load averages
+
+  - name: top
+    script: scripts/top.py
+    description: The processes using the most CPU or memory
+    params:
+      type: object
+      properties:
+        sort: {type: string, enum: [cpu, mem], description: what to rank by (default cpu)}
+        limit: {type: integer, minimum: 1, maximum: 20, description: how many (default 5)}
