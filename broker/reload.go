@@ -72,6 +72,7 @@ func (b *Broker) reloadLocked(next *Config) (ReloadResult, error) {
 		{"connect_timeout", cur.ConnectTimeout, next.ConnectTimeout}, {"dedupe_window", cur.DedupeWindow, next.DedupeWindow},
 		{"status_interval", cur.StatusInterval, next.StatusInterval},
 		{"metrics_listen", cur.MetricsListen, next.MetricsListen},
+		{"mcp_listen", cur.MCPListen, next.MCPListen},
 	} {
 		if !reflect.DeepEqual(f.cur, f.nxt) {
 			res.RestartNeeded = append(res.RestartNeeded, f.name)

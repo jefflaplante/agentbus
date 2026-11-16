@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"slices"
 	"time"
@@ -43,6 +44,16 @@ type Config struct {
 	// and /readyz over plain HTTP on this address. Like listen, it must be
 	// loopback unless allow_insecure is set: the metrics name every agent.
 	MetricsListen string `json:"metrics_listen,omitempty"`
+	// MCPListen, if set, makes `agentbus serve` also serve MCP over HTTP
+	// (Streamable HTTP) on this address, at /mcp: remote MCP clients use
+	// the bus as an agent by presenting that agent's token. It uses
+	// tls_cert and tls_key when they're set, and like listen must be
+	// loopback without them unless allow_insecure is set.
+	MCPListen string `json:"mcp_listen,omitempty"`
+	// MCPURL is the URL clients use to reach the MCP endpoint, when a proxy
+	// or DNS name fronts it; `agentbus config mcp` prints it. Default: built
+	// from mcp_listen.
+	MCPURL string `json:"mcp_url,omitempty"`
 	// ConnectTimeout is how long a new connection may take to send CONNECT.
 	ConnectTimeout Duration `json:"connect_timeout"`
 	// MaxConnections and MaxConnectionsPerIP cap open sockets, including
@@ -225,6 +236,15 @@ func (c *Config) Validate() error {
 	if c.MetricsListen != "" && !c.AllowInsecure && !isLoopback(c.MetricsListen) {
 		return fmt.Errorf("metrics_listen %q is not loopback: the metrics endpoint has no authentication; "+
 			"bind it to 127.0.0.1 (and scrape locally or through a proxy), or set allow_insecure", c.MetricsListen)
+	}
+	if c.MCPListen != "" && c.TLSCert == "" && !c.AllowInsecure && !isLoopback(c.MCPListen) {
+		return fmt.Errorf("mcp_listen %q is not loopback and TLS is off: tokens would cross the network in clear; "+
+			"set tls_cert/tls_key, bind to 127.0.0.1, or set allow_insecure", c.MCPListen)
+	}
+	if c.MCPURL != "" {
+		if u, err := url.Parse(c.MCPURL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+			return fmt.Errorf("mcp_url %q: want an http:// or https:// URL", c.MCPURL)
+		}
 	}
 	if c.MaxConnections < 1 || c.MaxConnectionsPerIP < 1 || c.MaxQueued < 1 {
 		return errors.New("max_connections, max_connections_per_ip and max_queued must be positive")

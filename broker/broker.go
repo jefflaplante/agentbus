@@ -1,7 +1,9 @@
 package broker
 
 import (
+	"crypto/subtle"
 	"crypto/tls"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -160,6 +162,25 @@ func (b *Broker) maintain(done <-chan struct{}) {
 // Addr is the bound listener address ("host:port"), useful when Listen
 // used port 0.
 func (b *Broker) Addr() string { return b.ln.Address() }
+
+// AgentForToken returns the agent whose token this is, in the config as
+// it is now (reloads included). The MCP gateway uses it to authenticate
+// HTTP requests with the same tokens agents use for MQTT.
+func (b *Broker) AgentForToken(token string) (AgentConfig, bool) {
+	s := b.hook.state()
+	got, _ := hex.DecodeString(HashToken(token))
+	var found *AgentConfig
+	for id, want := range s.hashes {
+		// Compare against every agent, so the time taken doesn't say which matched.
+		if subtle.ConstantTimeCompare(got, want) == 1 {
+			found = s.agents[id]
+		}
+	}
+	if found == nil || token == "" {
+		return AgentConfig{}, false
+	}
+	return *found, true
+}
 
 // Close stops the broker and disconnects all clients.
 // Calling it more than once is safe.
