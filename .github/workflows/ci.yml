@@ -1,0 +1,78 @@
+# Tests every push to main and every pull request.
+#
+#   test  gofmt, go vet, go test -race (unit, broker and end-to-end, with
+#         the Python examples run against a live broker), and the Python
+#         unit tests.
+#   labs  labs/check.sh: builds agentbus and runs labs 1-4 as a student
+#         would. It calls api.weather.gov and open-meteo.com, so it can fail
+#         when they do; that failure shows here, apart from the tests.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GOWORK: "off"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: examples/python/requirements.txt
+
+      - name: Install paho-mqtt for the Python examples
+        run: pip install -r examples/python/requirements.txt
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "Not gofmt-formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        env:
+          AGENTBUS_PYTHON: python
+        run: go test -race -count=1 ./...
+
+      - name: Python unit tests
+        run: python -m unittest discover -s examples/python -p 'test_*.py' -v
+
+  labs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: labs/check.sh
+        run: bash labs/check.sh
