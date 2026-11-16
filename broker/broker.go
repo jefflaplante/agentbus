@@ -11,6 +11,7 @@ import (
 
 	mqtt "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/hooks/storage/bolt"
+	"github.com/mochi-mqtt/server/v2/packets"
 	"go.etcd.io/bbolt"
 )
 
@@ -22,6 +23,8 @@ type Broker struct {
 	log        *slog.Logger
 	dedupePath string // "" without data_dir
 
+	reload reloadInfo
+
 	closeOnce  sync.Once
 	closeErr   error
 	statusDone chan struct{}
@@ -29,7 +32,7 @@ type Broker struct {
 
 // New builds a broker from cfg. Call Start to begin listening.
 func New(cfg *Config, log *slog.Logger) (*Broker, error) {
-	cfg.applyDefaults()
+	cfg.ApplyDefaults()
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -92,6 +95,7 @@ func New(cfg *Config, log *slog.Logger) (*Broker, error) {
 			"listen", cfg.Listen, "fix", "set tls_cert and tls_key")
 	}
 	ln := newGuardedListener("tcp", cfg.Listen, tlsConfig, cfg)
+	ln.disconnectAll = func(id string) { closeListenerClients(server, id) }
 	if err := server.AddListener(ln); err != nil {
 		return nil, err
 	}
@@ -107,7 +111,7 @@ func (b *Broker) Start() error {
 	}
 	b.hook.restorePresence()
 	b.ln.open()
-	go b.publishStatus(time.Duration(b.hook.cfg.StatusInterval), b.statusDone)
+	go b.publishStatus(time.Duration(b.hook.state().cfg.StatusInterval), b.statusDone)
 	return nil
 }
 
@@ -133,4 +137,16 @@ func (b *Broker) close() error {
 	}
 	b.hook.audit.close()
 	return err
+}
+
+// closeListenerClients replaces mochi's version, whose Clients.GetByListener
+// takes the clients read lock twice (it calls Len inside RLock). A client
+// disconnecting in between queues a write lock that blocks the second read,
+// and shutdown hangs. GetAll takes the lock once.
+func closeListenerClients(server *mqtt.Server, id string) {
+	for _, cl := range server.Clients.GetAll() {
+		if cl.Net.Listener == id && !cl.Closed() {
+			_ = server.DisconnectClient(cl, packets.ErrServerShuttingDown)
+		}
+	}
 }

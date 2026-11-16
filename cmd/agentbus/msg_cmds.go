@@ -219,8 +219,10 @@ func newHandleCmd(a *app) *cobra.Command {
 envelope JSON on stdin. Its stdout (JSON, or text wrapped as a string)
 is the response body. A non-zero exit sends a generic error; stderr is
 logged locally, not returned. CMD runs without AGENTBUS_TOKEN in its
-environment and is killed, with its children, when the request's TTL
-(or --timeout) runs out. Output over 1 MiB is an error.
+environment. It gets AGENTBUS_FROM (the sender, checked by the broker),
+AGENTBUS_TYPE, AGENTBUS_ID, and AGENTBUS_PREAMBLE: text to put in front
+of the envelope if an LLM will read it. CMD is killed, with its children,
+when the request's TTL (or --timeout) runs out. Output over 1 MiB is an error.
 
 With --capability, consume that capability's task queue; otherwise
 answer this agent's inbox. The session is persistent, so work queued

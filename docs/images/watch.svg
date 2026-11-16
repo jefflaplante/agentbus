@@ -6,86 +6,86 @@
 <circle cx="40" cy="15" r="6" fill="#FEBC2E"/>
 <circle cx="60" cy="15" r="6" fill="#28C840"/>
 <text x="489" y="20" fill="#9A9AAA" text-anchor="middle">agentbus watch --filter &#39;a2a/v1/#&#39;</text>
-<clipPath id="term-8801e16f"><rect x="16.0" y="44" width="946.0" height="284"/></clipPath><g clip-path="url(#term-8801e16f)">
+<clipPath id="term-8919c4d5"><rect x="16.0" y="44" width="946.0" height="284"/></clipPath><g clip-path="url(#term-8919c4d5)">
 <rect x="16.0" y="44.0" width="8.6" height="18" fill="#9F86FF"/>
 <rect x="24.6" y="44.0" width="215.0" height="18" fill="#9F86FF"/>
 <text x="24.6" y="57.0" fill="#FFFFFF" font-weight="bold" textLength="215.0" lengthAdjust="spacingAndGlyphs">agentbus · watch a2a/v1/#</text>
 <rect x="239.6" y="44.0" width="8.6" height="18" fill="#9F86FF"/>
 <text x="256.8" y="57.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">12 messages</text>
-<text x="16.0" y="93.0" fill="#6C6C6C" textLength="68.8" lengthAdjust="spacingAndGlyphs">14:42:51</text>
-<text x="93.4" y="93.0" fill="#F07AC2" font-weight="bold" textLength="43.0" lengthAdjust="spacingAndGlyphs">event</text>
-<text x="170.8" y="93.0" fill="#9F86FF" font-weight="bold" textLength="51.6" lengthAdjust="spacingAndGlyphs">worker</text>
-<text x="222.4" y="93.0" fill="#6C6C6C" textLength="25.8" lengthAdjust="spacingAndGlyphs"> → </text>
-<text x="248.2" y="93.0" fill="#E4E4E4" textLength="197.8" lengthAdjust="spacingAndGlyphs">events/worker/jobs/done</text>
-<text x="463.2" y="93.0" fill="#6C6C6C" textLength="498.8" lengthAdjust="spacingAndGlyphs">{&#34;request_id&#34;:&#34;44649a413f03032a0967e528450d643d&#34;,&#34;from&#34;:&#34;…</text>
-<text x="16.0" y="111.0" fill="#6C6C6C" textLength="68.8" lengthAdjust="spacingAndGlyphs">14:42:51</text>
-<text x="93.4" y="111.0" fill="#F07AC2" font-weight="bold" textLength="43.0" lengthAdjust="spacingAndGlyphs">event</text>
-<text x="170.8" y="111.0" fill="#9F86FF" font-weight="bold" textLength="68.8" lengthAdjust="spacingAndGlyphs">worker-2</text>
+<text x="33.2" y="93.0" fill="#6C6C6C" textLength="68.8" lengthAdjust="spacingAndGlyphs">15:16:26</text>
+<text x="110.6" y="93.0" fill="#F07AC2" font-weight="bold" textLength="43.0" lengthAdjust="spacingAndGlyphs">event</text>
+<text x="188.0" y="93.0" fill="#9F86FF" font-weight="bold" textLength="68.8" lengthAdjust="spacingAndGlyphs">worker-2</text>
+<text x="256.8" y="93.0" fill="#6C6C6C" textLength="25.8" lengthAdjust="spacingAndGlyphs"> → </text>
+<text x="282.6" y="93.0" fill="#E4E4E4" textLength="215.0" lengthAdjust="spacingAndGlyphs">events/worker-2/jobs/done</text>
+<text x="514.8" y="93.0" fill="#6C6C6C" textLength="447.2" lengthAdjust="spacingAndGlyphs">{&#34;request_id&#34;:&#34;bd43a3460f9d5dc2832a7768e8684376&#34;,&#34;f…</text>
+<text x="33.2" y="111.0" fill="#6C6C6C" textLength="68.8" lengthAdjust="spacingAndGlyphs">15:16:26</text>
+<text x="110.6" y="111.0" fill="#F07AC2" font-weight="bold" textLength="43.0" lengthAdjust="spacingAndGlyphs">event</text>
+<text x="188.0" y="111.0" fill="#9F86FF" font-weight="bold" textLength="51.6" lengthAdjust="spacingAndGlyphs">worker</text>
 <text x="239.6" y="111.0" fill="#6C6C6C" textLength="25.8" lengthAdjust="spacingAndGlyphs"> → </text>
-<text x="265.4" y="111.0" fill="#E4E4E4" textLength="215.0" lengthAdjust="spacingAndGlyphs">events/worker-2/jobs/done</text>
-<text x="497.6" y="111.0" fill="#6C6C6C" textLength="464.4" lengthAdjust="spacingAndGlyphs">{&#34;request_id&#34;:&#34;a8205feb8b031abe057de6b25dcf8e16&#34;,&#34;fro…</text>
-<text x="16.0" y="129.0" fill="#6C6C6C" textLength="68.8" lengthAdjust="spacingAndGlyphs">14:42:52</text>
-<text x="93.4" y="129.0" fill="#F07AC2" font-weight="bold" textLength="43.0" lengthAdjust="spacingAndGlyphs">event</text>
-<text x="170.8" y="129.0" fill="#9F86FF" font-weight="bold" textLength="94.6" lengthAdjust="spacingAndGlyphs">coordinator</text>
-<text x="265.4" y="129.0" fill="#6C6C6C" textLength="25.8" lengthAdjust="spacingAndGlyphs"> → </text>
-<text x="291.2" y="129.0" fill="#E4E4E4" textLength="51.6" lengthAdjust="spacingAndGlyphs">worker</text>
-<text x="360.0" y="129.0" fill="#6C6C6C" textLength="412.8" lengthAdjust="spacingAndGlyphs">{&#34;kind&#34;:&#34;hello&#34;,&#34;text&#34;:&#34;hello from coordinator&#34;}</text>
-<text x="16.0" y="147.0" fill="#6C6C6C" textLength="68.8" lengthAdjust="spacingAndGlyphs">14:42:52</text>
-<text x="93.4" y="147.0" fill="#F07AC2" font-weight="bold" textLength="43.0" lengthAdjust="spacingAndGlyphs">event</text>
-<text x="170.8" y="147.0" fill="#9F86FF" font-weight="bold" textLength="51.6" lengthAdjust="spacingAndGlyphs">worker</text>
-<text x="222.4" y="147.0" fill="#6C6C6C" textLength="25.8" lengthAdjust="spacingAndGlyphs"> → </text>
-<text x="248.2" y="147.0" fill="#E4E4E4" textLength="94.6" lengthAdjust="spacingAndGlyphs">coordinator</text>
-<text x="360.0" y="147.0" fill="#6C6C6C" textLength="498.8" lengthAdjust="spacingAndGlyphs">{&#34;kind&#34;:&#34;hello-back&#34;,&#34;text&#34;:&#34;hi coordinator, worker here&#34;}</text>
-<text x="16.0" y="165.0" fill="#6C6C6C" textLength="68.8" lengthAdjust="spacingAndGlyphs">14:42:52</text>
-<text x="93.4" y="165.0" fill="#F07AC2" font-weight="bold" textLength="43.0" lengthAdjust="spacingAndGlyphs">event</text>
-<text x="170.8" y="165.0" fill="#9F86FF" font-weight="bold" textLength="68.8" lengthAdjust="spacingAndGlyphs">worker-2</text>
+<text x="265.4" y="111.0" fill="#E4E4E4" textLength="197.8" lengthAdjust="spacingAndGlyphs">events/worker/jobs/done</text>
+<text x="480.4" y="111.0" fill="#6C6C6C" textLength="481.6" lengthAdjust="spacingAndGlyphs">{&#34;request_id&#34;:&#34;589524d286a52cc005f95e83c687365f&#34;,&#34;from&#34;…</text>
+<text x="33.2" y="129.0" fill="#6C6C6C" textLength="68.8" lengthAdjust="spacingAndGlyphs">15:16:27</text>
+<text x="110.6" y="129.0" fill="#F07AC2" font-weight="bold" textLength="43.0" lengthAdjust="spacingAndGlyphs">event</text>
+<text x="188.0" y="129.0" fill="#9F86FF" font-weight="bold" textLength="94.6" lengthAdjust="spacingAndGlyphs">coordinator</text>
+<text x="282.6" y="129.0" fill="#6C6C6C" textLength="25.8" lengthAdjust="spacingAndGlyphs"> → </text>
+<text x="308.4" y="129.0" fill="#E4E4E4" textLength="51.6" lengthAdjust="spacingAndGlyphs">worker</text>
+<text x="377.2" y="129.0" fill="#6C6C6C" textLength="412.8" lengthAdjust="spacingAndGlyphs">{&#34;kind&#34;:&#34;hello&#34;,&#34;text&#34;:&#34;hello from coordinator&#34;}</text>
+<text x="33.2" y="147.0" fill="#6C6C6C" textLength="68.8" lengthAdjust="spacingAndGlyphs">15:16:27</text>
+<text x="110.6" y="147.0" fill="#F07AC2" font-weight="bold" textLength="43.0" lengthAdjust="spacingAndGlyphs">event</text>
+<text x="188.0" y="147.0" fill="#9F86FF" font-weight="bold" textLength="51.6" lengthAdjust="spacingAndGlyphs">worker</text>
+<text x="239.6" y="147.0" fill="#6C6C6C" textLength="25.8" lengthAdjust="spacingAndGlyphs"> → </text>
+<text x="265.4" y="147.0" fill="#E4E4E4" textLength="94.6" lengthAdjust="spacingAndGlyphs">coordinator</text>
+<text x="377.2" y="147.0" fill="#6C6C6C" textLength="498.8" lengthAdjust="spacingAndGlyphs">{&#34;kind&#34;:&#34;hello-back&#34;,&#34;text&#34;:&#34;hi coordinator, worker here&#34;}</text>
+<text x="33.2" y="165.0" fill="#6C6C6C" textLength="68.8" lengthAdjust="spacingAndGlyphs">15:16:27</text>
+<text x="110.6" y="165.0" fill="#F07AC2" font-weight="bold" textLength="43.0" lengthAdjust="spacingAndGlyphs">event</text>
+<text x="188.0" y="165.0" fill="#9F86FF" font-weight="bold" textLength="51.6" lengthAdjust="spacingAndGlyphs">worker</text>
 <text x="239.6" y="165.0" fill="#6C6C6C" textLength="25.8" lengthAdjust="spacingAndGlyphs"> → </text>
-<text x="265.4" y="165.0" fill="#E4E4E4" textLength="215.0" lengthAdjust="spacingAndGlyphs">events/worker-2/jobs/done</text>
-<text x="497.6" y="165.0" fill="#6C6C6C" textLength="464.4" lengthAdjust="spacingAndGlyphs">{&#34;request_id&#34;:&#34;29fe1092e5542dd4c4bbe6c2789d6b00&#34;,&#34;fro…</text>
-<text x="16.0" y="183.0" fill="#6C6C6C" textLength="68.8" lengthAdjust="spacingAndGlyphs">14:42:52</text>
-<text x="93.4" y="183.0" fill="#F07AC2" font-weight="bold" textLength="43.0" lengthAdjust="spacingAndGlyphs">event</text>
-<text x="170.8" y="183.0" fill="#9F86FF" font-weight="bold" textLength="51.6" lengthAdjust="spacingAndGlyphs">worker</text>
-<text x="222.4" y="183.0" fill="#6C6C6C" textLength="25.8" lengthAdjust="spacingAndGlyphs"> → </text>
-<text x="248.2" y="183.0" fill="#E4E4E4" textLength="197.8" lengthAdjust="spacingAndGlyphs">events/worker/jobs/done</text>
-<text x="463.2" y="183.0" fill="#6C6C6C" textLength="498.8" lengthAdjust="spacingAndGlyphs">{&#34;request_id&#34;:&#34;14edc0975d56cb6d37d331c010458089&#34;,&#34;from&#34;:&#34;…</text>
-<text x="16.0" y="201.0" fill="#6C6C6C" textLength="68.8" lengthAdjust="spacingAndGlyphs">14:42:52</text>
-<text x="93.4" y="201.0" fill="#F07AC2" font-weight="bold" textLength="43.0" lengthAdjust="spacingAndGlyphs">event</text>
-<text x="170.8" y="201.0" fill="#9F86FF" font-weight="bold" textLength="51.6" lengthAdjust="spacingAndGlyphs">worker</text>
-<text x="222.4" y="201.0" fill="#6C6C6C" textLength="25.8" lengthAdjust="spacingAndGlyphs"> → </text>
-<text x="248.2" y="201.0" fill="#E4E4E4" textLength="197.8" lengthAdjust="spacingAndGlyphs">events/worker/jobs/done</text>
-<text x="463.2" y="201.0" fill="#6C6C6C" textLength="498.8" lengthAdjust="spacingAndGlyphs">{&#34;request_id&#34;:&#34;d1f05c1b8fe4b67f466196998e0f3518&#34;,&#34;from&#34;:&#34;…</text>
-<text x="16.0" y="219.0" fill="#6C6C6C" textLength="68.8" lengthAdjust="spacingAndGlyphs">14:42:52</text>
-<text x="93.4" y="219.0" fill="#F07AC2" font-weight="bold" textLength="43.0" lengthAdjust="spacingAndGlyphs">event</text>
-<text x="170.8" y="219.0" fill="#9F86FF" font-weight="bold" textLength="68.8" lengthAdjust="spacingAndGlyphs">worker-2</text>
-<text x="239.6" y="219.0" fill="#6C6C6C" textLength="25.8" lengthAdjust="spacingAndGlyphs"> → </text>
-<text x="265.4" y="219.0" fill="#E4E4E4" textLength="215.0" lengthAdjust="spacingAndGlyphs">events/worker-2/jobs/done</text>
-<text x="497.6" y="219.0" fill="#6C6C6C" textLength="464.4" lengthAdjust="spacingAndGlyphs">{&#34;request_id&#34;:&#34;d6490110d453eed30cb52a80c662b449&#34;,&#34;fro…</text>
-<text x="16.0" y="237.0" fill="#6C6C6C" textLength="68.8" lengthAdjust="spacingAndGlyphs">14:42:53</text>
-<text x="93.4" y="237.0" fill="#F07AC2" font-weight="bold" textLength="43.0" lengthAdjust="spacingAndGlyphs">event</text>
-<text x="170.8" y="237.0" fill="#9F86FF" font-weight="bold" textLength="51.6" lengthAdjust="spacingAndGlyphs">worker</text>
-<text x="222.4" y="237.0" fill="#6C6C6C" textLength="25.8" lengthAdjust="spacingAndGlyphs"> → </text>
-<text x="248.2" y="237.0" fill="#E4E4E4" textLength="197.8" lengthAdjust="spacingAndGlyphs">events/worker/jobs/done</text>
-<text x="463.2" y="237.0" fill="#6C6C6C" textLength="498.8" lengthAdjust="spacingAndGlyphs">{&#34;request_id&#34;:&#34;1cf9b167fa17399548eb6fb792d26381&#34;,&#34;from&#34;:&#34;…</text>
-<text x="16.0" y="255.0" fill="#6C6C6C" textLength="68.8" lengthAdjust="spacingAndGlyphs">14:42:53</text>
-<text x="93.4" y="255.0" fill="#F07AC2" font-weight="bold" textLength="43.0" lengthAdjust="spacingAndGlyphs">event</text>
-<text x="170.8" y="255.0" fill="#9F86FF" font-weight="bold" textLength="25.8" lengthAdjust="spacingAndGlyphs">you</text>
-<text x="196.6" y="255.0" fill="#6C6C6C" textLength="25.8" lengthAdjust="spacingAndGlyphs"> → </text>
-<text x="222.4" y="255.0" fill="#E4E4E4" textLength="51.6" lengthAdjust="spacingAndGlyphs">worker</text>
-<text x="282.6" y="255.0" fill="#FF6B6B" font-weight="bold" textLength="34.4" lengthAdjust="spacingAndGlyphs">high</text>
-<text x="325.6" y="255.0" fill="#F5D547" textLength="111.8" lengthAdjust="spacingAndGlyphs">doorbell_ring</text>
-<text x="454.6" y="255.0" fill="#6C6C6C" textLength="301.0" lengthAdjust="spacingAndGlyphs">{&#34;kind&#34;:&#34;hello&#34;,&#34;text&#34;:&#34;ding dong&#34;}</text>
-<text x="16.0" y="273.0" fill="#6C6C6C" textLength="68.8" lengthAdjust="spacingAndGlyphs">14:42:53</text>
-<text x="93.4" y="273.0" fill="#F07AC2" font-weight="bold" textLength="43.0" lengthAdjust="spacingAndGlyphs">event</text>
-<text x="170.8" y="273.0" fill="#9F86FF" font-weight="bold" textLength="51.6" lengthAdjust="spacingAndGlyphs">worker</text>
-<text x="222.4" y="273.0" fill="#6C6C6C" textLength="25.8" lengthAdjust="spacingAndGlyphs"> → </text>
-<text x="248.2" y="273.0" fill="#E4E4E4" textLength="25.8" lengthAdjust="spacingAndGlyphs">you</text>
-<text x="291.2" y="273.0" fill="#6C6C6C" textLength="430.0" lengthAdjust="spacingAndGlyphs">{&#34;kind&#34;:&#34;hello-back&#34;,&#34;text&#34;:&#34;hi you, worker here&#34;}</text>
-<text x="16.0" y="291.0" fill="#6C6C6C" textLength="68.8" lengthAdjust="spacingAndGlyphs">14:42:53</text>
-<text x="93.4" y="291.0" fill="#F07AC2" font-weight="bold" textLength="43.0" lengthAdjust="spacingAndGlyphs">event</text>
-<text x="170.8" y="291.0" fill="#9F86FF" font-weight="bold" textLength="68.8" lengthAdjust="spacingAndGlyphs">worker-2</text>
+<text x="265.4" y="165.0" fill="#E4E4E4" textLength="197.8" lengthAdjust="spacingAndGlyphs">events/worker/jobs/done</text>
+<text x="480.4" y="165.0" fill="#6C6C6C" textLength="481.6" lengthAdjust="spacingAndGlyphs">{&#34;request_id&#34;:&#34;6ce348e5ffa0484d3681b126446ad11b&#34;,&#34;from&#34;…</text>
+<text x="33.2" y="183.0" fill="#6C6C6C" textLength="68.8" lengthAdjust="spacingAndGlyphs">15:16:27</text>
+<text x="110.6" y="183.0" fill="#F07AC2" font-weight="bold" textLength="43.0" lengthAdjust="spacingAndGlyphs">event</text>
+<text x="188.0" y="183.0" fill="#9F86FF" font-weight="bold" textLength="68.8" lengthAdjust="spacingAndGlyphs">worker-2</text>
+<text x="256.8" y="183.0" fill="#6C6C6C" textLength="25.8" lengthAdjust="spacingAndGlyphs"> → </text>
+<text x="282.6" y="183.0" fill="#E4E4E4" textLength="215.0" lengthAdjust="spacingAndGlyphs">events/worker-2/jobs/done</text>
+<text x="514.8" y="183.0" fill="#6C6C6C" textLength="447.2" lengthAdjust="spacingAndGlyphs">{&#34;request_id&#34;:&#34;6cc25dac031517b26ca8b81c6d669e49&#34;,&#34;f…</text>
+<text x="33.2" y="201.0" fill="#6C6C6C" textLength="68.8" lengthAdjust="spacingAndGlyphs">15:16:27</text>
+<text x="110.6" y="201.0" fill="#F07AC2" font-weight="bold" textLength="43.0" lengthAdjust="spacingAndGlyphs">event</text>
+<text x="188.0" y="201.0" fill="#9F86FF" font-weight="bold" textLength="68.8" lengthAdjust="spacingAndGlyphs">worker-2</text>
+<text x="256.8" y="201.0" fill="#6C6C6C" textLength="25.8" lengthAdjust="spacingAndGlyphs"> → </text>
+<text x="282.6" y="201.0" fill="#E4E4E4" textLength="215.0" lengthAdjust="spacingAndGlyphs">events/worker-2/jobs/done</text>
+<text x="514.8" y="201.0" fill="#6C6C6C" textLength="447.2" lengthAdjust="spacingAndGlyphs">{&#34;request_id&#34;:&#34;3cefea15553edf21e4bae52016f7caac&#34;,&#34;f…</text>
+<text x="33.2" y="219.0" fill="#6C6C6C" textLength="68.8" lengthAdjust="spacingAndGlyphs">15:16:27</text>
+<text x="110.6" y="219.0" fill="#F07AC2" font-weight="bold" textLength="43.0" lengthAdjust="spacingAndGlyphs">event</text>
+<text x="188.0" y="219.0" fill="#9F86FF" font-weight="bold" textLength="68.8" lengthAdjust="spacingAndGlyphs">worker-2</text>
+<text x="256.8" y="219.0" fill="#6C6C6C" textLength="25.8" lengthAdjust="spacingAndGlyphs"> → </text>
+<text x="282.6" y="219.0" fill="#E4E4E4" textLength="215.0" lengthAdjust="spacingAndGlyphs">events/worker-2/jobs/done</text>
+<text x="514.8" y="219.0" fill="#6C6C6C" textLength="447.2" lengthAdjust="spacingAndGlyphs">{&#34;request_id&#34;:&#34;68b453147f65424d1e308f2755d39456&#34;,&#34;f…</text>
+<text x="33.2" y="237.0" fill="#6C6C6C" textLength="68.8" lengthAdjust="spacingAndGlyphs">15:16:27</text>
+<text x="110.6" y="237.0" fill="#F07AC2" font-weight="bold" textLength="43.0" lengthAdjust="spacingAndGlyphs">event</text>
+<text x="188.0" y="237.0" fill="#9F86FF" font-weight="bold" textLength="68.8" lengthAdjust="spacingAndGlyphs">worker-2</text>
+<text x="256.8" y="237.0" fill="#6C6C6C" textLength="25.8" lengthAdjust="spacingAndGlyphs"> → </text>
+<text x="282.6" y="237.0" fill="#E4E4E4" textLength="215.0" lengthAdjust="spacingAndGlyphs">events/worker-2/jobs/done</text>
+<text x="514.8" y="237.0" fill="#6C6C6C" textLength="447.2" lengthAdjust="spacingAndGlyphs">{&#34;request_id&#34;:&#34;dbad3ef8c3a65cdb407479366976d205&#34;,&#34;f…</text>
+<text x="33.2" y="255.0" fill="#6C6C6C" textLength="68.8" lengthAdjust="spacingAndGlyphs">15:16:28</text>
+<text x="110.6" y="255.0" fill="#F07AC2" font-weight="bold" textLength="43.0" lengthAdjust="spacingAndGlyphs">event</text>
+<text x="188.0" y="255.0" fill="#9F86FF" font-weight="bold" textLength="25.8" lengthAdjust="spacingAndGlyphs">you</text>
+<text x="213.8" y="255.0" fill="#6C6C6C" textLength="25.8" lengthAdjust="spacingAndGlyphs"> → </text>
+<text x="239.6" y="255.0" fill="#E4E4E4" textLength="51.6" lengthAdjust="spacingAndGlyphs">worker</text>
+<text x="299.8" y="255.0" fill="#FF6B6B" font-weight="bold" textLength="34.4" lengthAdjust="spacingAndGlyphs">high</text>
+<text x="342.8" y="255.0" fill="#F5D547" textLength="111.8" lengthAdjust="spacingAndGlyphs">doorbell_ring</text>
+<text x="471.8" y="255.0" fill="#6C6C6C" textLength="301.0" lengthAdjust="spacingAndGlyphs">{&#34;kind&#34;:&#34;hello&#34;,&#34;text&#34;:&#34;ding dong&#34;}</text>
+<text x="33.2" y="273.0" fill="#6C6C6C" textLength="68.8" lengthAdjust="spacingAndGlyphs">15:16:28</text>
+<text x="110.6" y="273.0" fill="#F07AC2" font-weight="bold" textLength="43.0" lengthAdjust="spacingAndGlyphs">event</text>
+<text x="188.0" y="273.0" fill="#9F86FF" font-weight="bold" textLength="51.6" lengthAdjust="spacingAndGlyphs">worker</text>
+<text x="239.6" y="273.0" fill="#6C6C6C" textLength="25.8" lengthAdjust="spacingAndGlyphs"> → </text>
+<text x="265.4" y="273.0" fill="#E4E4E4" textLength="25.8" lengthAdjust="spacingAndGlyphs">you</text>
+<text x="308.4" y="273.0" fill="#6C6C6C" textLength="430.0" lengthAdjust="spacingAndGlyphs">{&#34;kind&#34;:&#34;hello-back&#34;,&#34;text&#34;:&#34;hi you, worker here&#34;}</text>
+<text x="33.2" y="291.0" fill="#6C6C6C" textLength="68.8" lengthAdjust="spacingAndGlyphs">15:16:28</text>
+<text x="110.6" y="291.0" fill="#F07AC2" font-weight="bold" textLength="43.0" lengthAdjust="spacingAndGlyphs">event</text>
+<text x="188.0" y="291.0" fill="#9F86FF" font-weight="bold" textLength="51.6" lengthAdjust="spacingAndGlyphs">worker</text>
 <text x="239.6" y="291.0" fill="#6C6C6C" textLength="25.8" lengthAdjust="spacingAndGlyphs"> → </text>
-<text x="265.4" y="291.0" fill="#E4E4E4" textLength="215.0" lengthAdjust="spacingAndGlyphs">events/worker-2/jobs/done</text>
-<text x="497.6" y="291.0" fill="#6C6C6C" textLength="464.4" lengthAdjust="spacingAndGlyphs">{&#34;request_id&#34;:&#34;fc34e3b9176c8117ec75e98fc8258b1f&#34;,&#34;fro…</text>
-<text x="24.6" y="309.0" fill="#6C6C6C" textLength="223.6" lengthAdjust="spacingAndGlyphs">q quit · p pause · c clear</text>
+<text x="265.4" y="291.0" fill="#E4E4E4" textLength="197.8" lengthAdjust="spacingAndGlyphs">events/worker/jobs/done</text>
+<text x="480.4" y="291.0" fill="#6C6C6C" textLength="481.6" lengthAdjust="spacingAndGlyphs">{&#34;request_id&#34;:&#34;38174c520422d96fa2f57c87090285c8&#34;,&#34;from&#34;…</text>
+<text x="24.6" y="309.0" fill="#6C6C6C" textLength="473.0" lengthAdjust="spacingAndGlyphs">↑/↓ select · enter inspect · p pause · c clear · q quit</text>
 </g>
 </svg>

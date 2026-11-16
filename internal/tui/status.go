@@ -11,6 +11,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/jefflaplante/mqtt/a2a"
 	"github.com/jefflaplante/mqtt/broker"
 )
 
@@ -45,8 +46,25 @@ func RatesBetween(prev, cur broker.Status) Rates {
 }
 
 // StatusModel is a live, top-like view of a running broker.
+//
+// ↑/↓ select an agent and enter opens its detail: what the broker knows
+// about it, its presence card and its recent traffic, where ↑/↓ and enter
+// inspect a message, i inspects the card and e opens the agent in the
+// config editor.
 type StatusModel struct {
 	Source <-chan broker.Status
+	// Agents, Traffic and EditAgent are optional: presence cards and live
+	// traffic for the agent detail view, and the config editor (only when
+	// the broker config file is on this machine).
+	Agents    func() []a2a.Presence
+	Traffic   <-chan Item
+	EditAgent func(id string) tea.Model
+
+	feed    feedState // all traffic seen, for agent details
+	detail  string    // agent shown in the detail view; "" for the overview
+	inspect *Inspector
+	sub     tea.Model
+
 	st     broker.Status
 	prev   broker.Status
 	have   bool
@@ -114,11 +132,15 @@ func AgentStatusRows(agents []broker.AgentStatus) []table.Row {
 }
 
 func (m StatusModel) Init() tea.Cmd {
-	return tea.Batch(waitForStatus(m.Source), tea.RequestBackgroundColor)
+	cmds := []tea.Cmd{waitForStatus(m.Source), tea.RequestBackgroundColor}
+	if m.Traffic != nil {
+		cmds = append(cmds, waitForItem(m.Traffic))
+	}
+	return tea.Batch(cmds...)
 }
 
 func (m StatusModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if handleBackground(msg) {
+	if handleBackground(msg) && m.sub == nil {
 		restyleTable(&m.table)
 		return m, nil
 	}
@@ -130,15 +152,63 @@ func (m StatusModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case statusClosedMsg:
 		m.closed = true
 		return m, nil
+	case ItemMsg:
+		m.feed.add(Item(msg))
+		return m, waitForItem(m.Traffic)
+	case sourceClosedMsg:
+		return m, nil
+	case CloseMsg:
+		m.sub = nil
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.table.SetColumns(statusColumns(msg.Width))
 		m.table.SetWidth(msg.Width)
 		m.table.SetHeight(max(3, msg.Height-18))
-	case tea.KeyPressMsg:
-		switch msg.String() {
+		if m.inspect != nil {
+			m.inspect.Resize(m.width, m.height-2)
+		}
+		if m.sub != nil {
+			var cmd tea.Cmd
+			m.sub, cmd = m.sub.Update(msg)
+			return m, cmd
+		}
+		return m, nil
+	}
+	if m.sub != nil {
+		var cmd tea.Cmd
+		m.sub, cmd = m.sub.Update(msg)
+		return m, cmd
+	}
+	if m.inspect != nil {
+		if k, ok := msg.(tea.KeyPressMsg); ok && k.String() == "ctrl+c" {
+			return m, tea.Quit
+		}
+		done, cmd := m.inspect.Update(msg)
+		if done {
+			m.inspect = nil
+		}
+		return m, cmd
+	}
+	k, isKey := msg.(tea.KeyPressMsg)
+	if m.detail != "" && isKey {
+		return m.detailKey(k)
+	}
+	if isKey {
+		switch k.String() {
 		case "q", "esc", "ctrl+c":
 			return m, tea.Quit
+		case "enter":
+			if a, ok := m.selectedAgent(); ok {
+				m.detail = a.ID
+				id := a.ID
+				m.feed.setFilter(id, func(it Item) bool { return involves(it, id) })
+			}
+			return m, nil
+		case "e":
+			if a, ok := m.selectedAgent(); ok {
+				return m, m.openEditor(a.ID)
+			}
 		}
 	}
 	var cmd tea.Cmd
@@ -146,9 +216,153 @@ func (m StatusModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m StatusModel) View() tea.View { return fullScreen(m.render()) }
+func (m *StatusModel) openEditor(id string) tea.Cmd {
+	if m.EditAgent == nil {
+		return nil
+	}
+	m.sub = m.EditAgent(id)
+	if m.sub == nil {
+		return nil
+	}
+	w, h := m.width, m.height
+	return tea.Batch(m.sub.Init(), func() tea.Msg { return tea.WindowSizeMsg{Width: w, Height: h} })
+}
+
+func (m StatusModel) selectedAgent() (broker.AgentStatus, bool) {
+	i := m.table.Cursor()
+	if i < 0 || i >= len(m.st.Agents) {
+		return broker.AgentStatus{}, false
+	}
+	return m.st.Agents[i], true
+}
+
+func (m StatusModel) card(id string) (a2a.Presence, bool) {
+	if m.Agents == nil {
+		return a2a.Presence{}, false
+	}
+	for _, p := range m.Agents() {
+		if p.Agent == id {
+			return p, true
+		}
+	}
+	return a2a.Presence{}, false
+}
+
+func (m StatusModel) detailKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch k.String() {
+	case "ctrl+c":
+		return m, tea.Quit
+	case "q", "esc", "backspace", "left":
+		if !m.feed.following() && k.String() == "esc" {
+			m.feed.selSeq = 0
+			return m, nil
+		}
+		m.detail = ""
+		m.feed.setFilter("", nil)
+	case "enter":
+		if it, ok := m.feed.selected(); ok {
+			m.inspect = NewInspector(it, m.width, m.height-2)
+		}
+	case "i":
+		if p, ok := m.card(m.detail); ok {
+			m.inspect = NewInspector(Item{Topic: a2a.PresenceTopic(p.Agent), Presence: &p}, m.width, m.height-2)
+		}
+	case "e":
+		return m, m.openEditor(m.detail)
+	default:
+		m.feed.feedKeys(k.String())
+	}
+	return m, nil
+}
+
+func (m StatusModel) View() tea.View {
+	if m.sub != nil {
+		return m.sub.View()
+	}
+	return fullScreen(m.render())
+}
+
+// renderDetail is the agent detail view.
+func (m StatusModel) renderDetail(width int) string {
+	var as broker.AgentStatus
+	for _, a := range m.st.Agents {
+		if a.ID == m.detail {
+			as = a
+		}
+	}
+	header := TitleStyle.Render("agentbus · agent "+m.detail) + " " + StatusStyle(a2a.Status(as.State)).Render(as.State)
+	if as.Remote != "" {
+		header += SubtleStyle.Render("  " + as.Remote)
+	}
+	if m.inspect != nil {
+		return header + "\n\n" + m.inspect.View()
+	}
+	kv := func(k, v string) string { return SubtleStyle.Render(fmt.Sprintf("%-13s", k)) + TextStyle.Render(v) }
+	role := strings.Join(as.Capabilities, ",")
+	if role == "" {
+		role = "none"
+	}
+	send := "anyone"
+	if len(as.SendTo) > 0 && !slices.Contains(as.SendTo, "*") {
+		send = strings.Join(as.SendTo, ", ")
+	}
+	seen := "never"
+	if !as.LastSeen.IsZero() {
+		seen = as.LastSeen.Local().Format("15:04:05") + " (" + since(as.LastSeen) + " ago)"
+	}
+	broker := []string{AccentStyle.Render("Broker"),
+		kv("state", as.State), kv("queued", fmt.Sprint(as.Queued)),
+		kv("accepted", OKStyle.Render(fmt.Sprint(as.Accepted))), kv("rejected", fmt.Sprint(as.Rejected)),
+		kv("last seen", seen), kv("serves", role), kv("may send to", send), kv("observer", fmt.Sprint(as.Observer)),
+	}
+	card := []string{AccentStyle.Render("Presence card")}
+	if p, ok := m.card(m.detail); ok {
+		keys := "none"
+		if p.Keys != nil {
+			keys = "claimed"
+			if p.KeysPinned {
+				keys = "pinned"
+			}
+		}
+		card = append(card, kv("status", StatusStyle(p.Status).Render(string(p.Status))+SubtleStyle.Render(" since "+p.TS.Local().Format("15:04:05"))),
+			kv("description", p.Description), kv("capabilities", strings.Join(p.Capabilities, ",")), kv("keys", keys),
+			kv("meta", fmt.Sprintf("%d entries", len(p.Meta))))
+	} else {
+		card = append(card, SubtleStyle.Render("no card: the agent hasn't announced itself"))
+	}
+	col := width / 2
+	panel := func(rows []string) string {
+		for i, r := range rows {
+			rows[i] = ansi.Truncate(r, col-panelPadX, "…")
+		}
+		return PanelStyle.Width(col).Render(strings.Join(rows, "\n"))
+	}
+	top := lipgloss.JoinHorizontal(lipgloss.Top, panel(broker), panel(card))
+
+	traffic := AccentStyle.Render("Recent traffic") + SubtleStyle.Render(fmt.Sprintf("  %d messages involving %s", len(m.feed.visible()), m.detail))
+	lines := m.feed.lines(width, max(3, m.height-lipgloss.Height(top)-6))
+	if len(lines) == 0 {
+		lines = []string{SubtleStyle.Render("  none seen since this view opened")}
+		if m.Traffic == nil {
+			lines = []string{SubtleStyle.Render("  traffic needs an observer connection")}
+		}
+	}
+	help := "↑/↓ select · enter inspect · i inspect card"
+	if m.EditAgent != nil {
+		help += " · e edit in config"
+	}
+	help += " · esc back"
+	return header + "\n" + top + "\n" + traffic + "\n" + strings.Join(lines, "\n") + "\n" + HelpStyle.Render(ansi.Truncate(help, width-1, "…"))
+}
 
 func (m StatusModel) render() string {
+	if m.detail != "" && m.have {
+		width := m.width
+		if width <= 0 {
+			width = 120
+		}
+		return m.renderDetail(width)
+	}
 	if !m.have {
 		msg := "waiting for broker status… (needs an observer identity)"
 		if m.closed {
@@ -234,7 +448,11 @@ func (m StatusModel) render() string {
 	}
 	top := lipgloss.JoinHorizontal(lipgloss.Top, panel(server), panel(traffic), panel(decisions))
 	limits = ansi.Truncate(limits, width, "…")
-	help := HelpStyle.Render("↑/↓ select · q quit · updated " + st.Time.Local().Format("15:04:05"))
+	helpText := "↑/↓ select · enter details"
+	if m.EditAgent != nil {
+		helpText += " · e edit in config"
+	}
+	help := HelpStyle.Render(helpText + " · q quit · updated " + st.Time.Local().Format("15:04:05"))
 	return header + "\n" + top + "\n" + limits + "\n\n" + m.table.View() + "\n" + help
 }
 

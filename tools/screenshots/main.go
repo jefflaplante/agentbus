@@ -29,6 +29,7 @@ import (
 	"github.com/jefflaplante/mqtt/broker"
 	"github.com/jefflaplante/mqtt/client"
 	"github.com/jefflaplante/mqtt/demo/agents"
+	"github.com/jefflaplante/mqtt/internal/confstore"
 	"github.com/jefflaplante/mqtt/internal/tui"
 )
 
@@ -58,6 +59,10 @@ func run(outDir string) error {
 		return err
 	}
 	if err := os.Chdir(tmp); err != nil {
+		return err
+	}
+	// Paths under HOME display as ~/… in the config editor, as for a real user.
+	if err := os.Setenv("HOME", tmp); err != nil {
 		return err
 	}
 
@@ -227,11 +232,87 @@ func run(outDir string) error {
 		return err
 	}
 
+	// agentbus status → enter on worker: the agent detail view.
+	sm := tui.NewStatus(statusCh)
+	sm.Agents = explorer.Agents
+	sm.EditAgent = func(string) tea.Model { return nil } // shows the "e edit in config" hint
+	m = size(sm, 120, 34)
+	for _, st := range snaps[len(snaps)-2:] {
+		m, _ = m.Update(tui.StatusMsg(st))
+	}
+	for _, it := range withoutRepeats(seen) {
+		m, _ = m.Update(tui.ItemMsg(it))
+	}
+	m = keys(m, "down") // coordinator → worker
+	m = keys(m, "enter")
+	if err := write("status-detail.svg", "agentbus status  →  enter", trimView(m.View().Content), 120); err != nil {
+		return err
+	}
+	// …then up and enter: inspect one of the worker's messages.
+	m = keys(m, "up", "up", "enter")
+	if err := write("inspect.svg", "agentbus status  →  enter  →  enter", trimView(m.View().Content), 120); err != nil {
+		return err
+	}
+
+	// agentbus config: the editor, and the client setup for an agent.
+	loc := confstore.Location{Path: filepath.Join(tmp, ".config", "agentbus", "broker.json"), Source: confstore.FromDefault}
+	for id, idn := range ids {
+		if err := confstore.WriteToken(loc.TokenFile(id), idn.token); err != nil {
+			return err
+		}
+	}
+	saved := *cfg
+	saved.Listen = confstore.DefaultListen // the generator's random port isn't what a reader would see
+	saved.DataDir, saved.AuditFile = "/var/lib/agentbus/data", "/var/lib/agentbus/audit.jsonl"
+	if err := confstore.Save(loc.Path, &saved); err != nil {
+		return err
+	}
+	ed, err := tui.NewConfigEditor(loc, "worker")
+	if err != nil {
+		return err
+	}
+	m = size(ed, 120, 18)
+	if err := write("config.svg", "agentbus config", trimView(m.View().Content), 120); err != nil {
+		return err
+	}
+	m = keys(m, "c")
+	if err := write("config-client.svg", "agentbus config  →  c", trimView(m.View().Content), 120); err != nil {
+		return err
+	}
+	m = keys(m, "esc", "tab")
+	m = size(m, 120, 30)
+	if err := write("config-settings.svg", "agentbus config  →  tab", trimView(m.View().Content), 120); err != nil {
+		return err
+	}
+
 	// A shell session: request, a refused request, a task, plain agents.
 	if err := write("cli.svg", "zsh", transcript(pong, pongAfter, rejected, rejectAfter, task, explorer.Agents()), 120); err != nil {
 		return err
 	}
 	return nil
+}
+
+// keys sends key presses to a model.
+func keys(m tea.Model, names ...string) tea.Model {
+	for _, n := range names {
+		var k tea.KeyPressMsg
+		switch n {
+		case "enter":
+			k = tea.KeyPressMsg{Code: tea.KeyEnter}
+		case "esc":
+			k = tea.KeyPressMsg{Code: tea.KeyEscape}
+		case "up":
+			k = tea.KeyPressMsg{Code: tea.KeyUp}
+		case "down":
+			k = tea.KeyPressMsg{Code: tea.KeyDown}
+		case "tab":
+			k = tea.KeyPressMsg{Code: tea.KeyTab}
+		default:
+			k = tea.KeyPressMsg{Code: rune(n[0]), Text: n}
+		}
+		m, _ = m.Update(k)
+	}
+	return m
 }
 
 // size sends a window size to a model.

@@ -50,7 +50,7 @@ type Options struct {
 	// Long-running workers should register here rather than with
 	// ServeTasks: with a persistent session the broker redelivers queued
 	// tasks the moment the agent connects, before any ServeTasks call
-	// could run, and a task with no handler is answered "no_handler".
+	// could run, and a task with no handler is dropped without a reply.
 	Tasks map[string]Handler
 
 	// Description and Meta are published on this agent's presence card.

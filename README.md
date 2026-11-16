@@ -16,8 +16,10 @@ One Go binary runs the broker and also works as a CLI client.
   [mochi-mqtt](https://github.com/mochi-mqtt/server). It can run standalone
   or be embedded.
 - **`cmd/agentbus`** is the binary: `serve`, client commands for scripts
-  and for agents that aren't written in Go, and terminal UIs (Cobra and
-  Bubble Tea) for watching a running broker. See [docs/CLI.md](docs/CLI.md).
+  and for agents that aren't written in Go, an MCP server (`agentbus mcp`)
+  for Claude Code, OpenCode and OpenChamber, and terminal UIs (Cobra and
+  Bubble Tea) for watching a running broker. See [docs/CLI.md](docs/CLI.md)
+  and [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
 
 ## Try it
 
@@ -49,13 +51,21 @@ recipes.
 
 ```bash
 go build -o bin/agentbus ./cmd/agentbus
-bin/agentbus token            # once per agent; put token_sha256 in the config
-cp examples/broker.json broker.json   # then edit agents and hashes
-bin/agentbus serve --config broker.json
+bin/agentbus serve                    # no config yet: creates one with an admin identity, then starts
 ```
 
+In another terminal:
+
 ```bash
-export AGENTBUS_URL=tcp://localhost:1883 AGENTBUS_AGENT=researcher AGENTBUS_TOKEN_FILE=~/.agentbus/researcher.token
+bin/agentbus status                   # finds the local broker and admin token by itself
+bin/agentbus config                   # add agents, get their client setup, edit settings (applied live)
+bin/agentbus config agent add researcher --capability summarize > researcher.env
+```
+
+Then, as that agent:
+
+```bash
+source researcher.env
 bin/agentbus handle --capability summarize --exec './summarize.sh'   # stdin: envelope, stdout: reply body
 ```
 
@@ -86,6 +96,14 @@ reply, err = c.RequestTask(ctx, "summarize", doc)   // any worker with the capab
 // to Connect (or call c.ServeTasks for a capability added later)
 err = c.Emit(ctx, "jobs/finished", result)          // broadcast
 ```
+
+From Python, see [examples/python](examples/python): an `Agent` class on
+paho-mqtt, a worker and a command-line client.
+
+Before writing an agent that serves requests or tasks, read
+[docs/SERVICES.md](docs/SERVICES.md). It covers which topic to serve, the
+grants it needs, and how to reply: errors, deadlines, long jobs,
+duplicates and concurrency.
 
 ## What the broker enforces
 
@@ -137,6 +155,12 @@ behavior instead.
 
 ## Conduit integration notes
 
+The integration design (a conduit tool for sending, and an inbox handler
+that feeds conduit's spawner and heartbeat queue) is in
+[docs/INTEGRATIONS.md](docs/INTEGRATIONS.md#conduit), along with Claude
+Code, OpenCode and OpenChamber, which connect through `agentbus mcp`. The notes below are the field-level
+mapping.
+
 From conduit at `5626e55`:
 
 - **Agents today are sessions inside one gateway process.** On the bus, one
@@ -186,8 +210,9 @@ demo/agents/      worker and coordinator agents (library)
 demo/cmd/         their binaries
 test/e2e/         functional tests over real processes
 scripts/demo.sh   the demo
+examples/         sample broker config; service agents in Go and Python; skill and wrappers for coding agents
 CONTRACT.md       the spec; contract/envelope.schema.json
-docs/             CLI; how it works; security; retention and audit; desktop clients
+docs/             CLI; how it works; writing services; security; retention; desktop clients; integrations
 ```
 
 ## Docs
@@ -201,6 +226,8 @@ docs/             CLI; how it works; security; retention and audit; desktop clie
 | [docs/SECURITY.md](docs/SECURITY.md) | Threat model, guarantees, limits, operator checklist, review history |
 | [docs/RETENTION.md](docs/RETENTION.md) | `data_dir` persistence and the JSONL audit log |
 | [docs/DESKTOP-CLIENTS.md](docs/DESKTOP-CLIENTS.md) | MQTT Explorer, MQTTX and mosquitto against the bus |
+| [docs/SERVICES.md](docs/SERVICES.md) | Writing agents that serve inboxes, task queues and events, and how they should reply |
+| [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) | conduit, Claude Code, OpenCode and OpenChamber on the bus; `agentbus mcp` |
 
 ## Testing
 
@@ -225,7 +252,6 @@ directly.
   distributed and pinned, but nothing signs or encrypts yet.
 - Searchable message history with bodies (an opt-in SQLite store). The
   audit log records decisions, not contents.
-- No token rotation or config reload without a restart.
 - No mTLS client auth yet, only tokens over TLS.
 - Late replies to a Request that already timed out go to the Inbox handler.
 - No metrics endpoint yet.

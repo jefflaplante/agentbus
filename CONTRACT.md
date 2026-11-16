@@ -3,7 +3,9 @@
 How agents talk to each other over the agentbus broker. Any MQTT 3.1.1 or 5
 client can take part by following this document. Go agents can use the
 [`client`](client/) package instead, and anything else can shell out to the
-`agentbus` CLI.
+`agentbus` CLI. [examples/python](examples/python) is a working client in
+Python. [docs/SERVICES.md](docs/SERVICES.md) is the practical
+guide to writing an agent that serves requests, tasks or events.
 
 ## Connecting
 
@@ -30,7 +32,7 @@ Everything lives under `a2a/v1/`. Publishes outside these shapes are rejected.
 
 | Topic | Publish | Subscribe | Payload |
 |---|---|---|---|
-| `a2a/v1/agents/{id}/inbox` | any agent allowed by `send_to` | only `{id}` | envelope |
+| `a2a/v1/agents/{id}/inbox` | any agent allowed by `send_to`, plus one reply per open request (see Request and reply) | only `{id}` | envelope |
 | `a2a/v1/agents/{id}/presence` | only `{id}` (retained) | anyone | presence card |
 | `a2a/v1/tasks/{capability}` | any agent | agents granted `{capability}` | envelope, `type: request` |
 | `a2a/v1/events/{id}/{name...}` | only `{id}` | anyone | envelope, `type: event` |
@@ -124,9 +126,23 @@ Error bodies are `{"code": "...", "reason": "..."}`. Codes the Go client
 sends: `no_handler`, `handler_error`, `handler_panic` and `busy` (the
 agent is at its concurrent handler limit; retry later).
 
-Requesters should accept a reply only from the agent they addressed (any
-agent for task requests) or from `$broker`. The Go client does, so another
-agent can't complete a request with a forged reply.
+`send_to` doesn't block replies. The broker records each accepted request
+and lets one `response` or `error` with its `correlation_id` reach the
+requester's inbox, from the addressed agent (for a task, from any agent
+granted the capability), until the request's TTL ends. Without a TTL, the
+request stays open for `session_expiry`. The record is in memory, so it
+doesn't survive a broker restart.
+
+While a request is open, the broker refuses a reply to it from anyone
+other than its answerer: the addressed agent, or for a task, an agent
+granted the capability. The sender gets `not_authorized`, even if
+`send_to` would allow it to reach the requester. A requester can't check
+this for a task itself, because it doesn't know which worker took it.
+
+Requesters should still accept a reply only from the agent they addressed
+(any agent for task requests) or from `$broker`. That covers requests the
+broker isn't tracking: after a broker restart, or when its table of 65,536
+open requests is full. The Go client and the Python example both do.
 
 ### Broker rejections
 
@@ -138,7 +154,7 @@ in the PUBACK.
 
 | Code | Cause |
 |---|---|
-| `not_authorized` | Writing to a topic you don't own, or to an inbox outside `send_to`. |
+| `not_authorized` | Writing to a topic you don't own, or to an inbox outside `send_to` other than a reply to an open request. |
 | `rate_limited` | Over the per-agent rate limit (default 20/s, burst 50; configurable per agent). Rejected publishes count too. |
 | `too_large` | Payload over `max_envelope_bytes` (default 256 KiB). |
 | `invalid` | Malformed envelope, `from` spoofing, `to` mismatch, `reply_to` not your own inbox, or `ts` outside the clock-skew window. |

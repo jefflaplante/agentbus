@@ -17,11 +17,13 @@ import (
 
 	"github.com/jefflaplante/mqtt/a2a"
 	"github.com/jefflaplante/mqtt/client"
+	"github.com/jefflaplante/mqtt/internal/confstore"
 )
 
 // app holds the flags every client command shares.
 type app struct {
 	url, agent, token, tokenFile string
+	configFlag                   string
 	plain                        bool
 	verbose                      bool
 
@@ -36,9 +38,16 @@ func newRootCmd(a *app) *cobra.Command {
 		Long: `agentbus runs the a2a/v1 broker and is a client for agents that don't
 embed the Go library.
 
+Start a broker with no setup at all: "agentbus serve" creates a config
+with an admin identity the first time, and "agentbus status" on the same
+machine finds it. "agentbus config" adds agents and edits settings; a
+running broker applies the changes live.
+
 Client commands connect as one agent. Set the connection with flags or
 AGENTBUS_URL, AGENTBUS_AGENT and AGENTBUS_TOKEN_FILE (or AGENTBUS_TOKEN,
-which is visible in ps). On a terminal, status, agents, watch, listen,
+which is visible in ps). Unset, they come from the local broker config:
+its listen address, the token file for --agent, and "admin" as the
+agent when its token is there. On a terminal, status, agents, watch, listen,
 request, task and dashboard are interactive. Piped, or with --plain, they print
 JSON or plain text for scripts.`,
 		SilenceUsage:  true,
@@ -49,7 +58,8 @@ JSON or plain text for scripts.`,
 	root.SetErr(a.stderr)
 
 	pf := root.PersistentFlags()
-	pf.StringVar(&a.url, "url", env("AGENTBUS_URL", "tcp://localhost:1883"), "broker URL (env AGENTBUS_URL)")
+	pf.StringVar(&a.url, "url", os.Getenv("AGENTBUS_URL"), "broker URL (env AGENTBUS_URL; default from the local config, else tcp://localhost:1883)")
+	pf.StringVar(&a.configFlag, "config", "", "broker config file (env AGENTBUS_CONFIG; default ./broker.json, else ~/.config/agentbus/broker.json)")
 	pf.StringVar(&a.agent, "agent", os.Getenv("AGENTBUS_AGENT"), "this agent's ID (env AGENTBUS_AGENT)")
 	pf.StringVar(&a.token, "token", os.Getenv("AGENTBUS_TOKEN"), "this agent's token; visible in ps, prefer --token-file (env AGENTBUS_TOKEN)")
 	pf.StringVar(&a.tokenFile, "token-file", os.Getenv("AGENTBUS_TOKEN_FILE"), "file containing this agent's token (env AGENTBUS_TOKEN_FILE)")
@@ -58,6 +68,7 @@ JSON or plain text for scripts.`,
 
 	root.AddGroup(
 		&cobra.Group{ID: "broker", Title: "Broker:"},
+		&cobra.Group{ID: "setup", Title: "Setup:"},
 		&cobra.Group{ID: "msg", Title: "Messaging:"},
 		&cobra.Group{ID: "observe", Title: "Observing:"},
 	)
@@ -65,7 +76,10 @@ JSON or plain text for scripts.`,
 		c.GroupID = "broker"
 		root.AddCommand(c)
 	}
-	for _, c := range []*cobra.Command{newSendCmd(a), newRequestCmd(a), newTaskCmd(a), newEmitCmd(a), newHandleCmd(a)} {
+	cfgCmd := newConfigCmd(a)
+	cfgCmd.GroupID = "setup"
+	root.AddCommand(cfgCmd)
+	for _, c := range []*cobra.Command{newSendCmd(a), newRequestCmd(a), newTaskCmd(a), newEmitCmd(a), newHandleCmd(a), newMCPCmd(a)} {
 		c.GroupID = "msg"
 		root.AddCommand(c)
 	}
@@ -100,8 +114,38 @@ func (a *app) logger(tui bool) *slog.Logger {
 	return slog.New(slog.NewTextHandler(a.stderr, &slog.HandlerOptions{Level: level}))
 }
 
+// location is the broker config this command would use.
+func (a *app) location() confstore.Location { return confstore.Resolve(a.configFlag) }
+
+// resolveConnection fills in unset connection settings from the local
+// broker config: the URL from its listen address, and the token file for
+// the agent (with "admin" as the agent when only its token is there).
+func (a *app) resolveConnection() {
+	loc := a.location()
+	if a.url == "" {
+		a.url = "tcp://localhost:1883"
+		if cfg, err := confstore.Load(loc.Path); err == nil {
+			a.url = confstore.URL(cfg)
+		}
+	}
+	if a.token != "" || a.tokenFile != "" {
+		return
+	}
+	if a.agent == "" {
+		if _, ok := confstore.ReadToken(loc, confstore.AdminID); ok {
+			a.agent = confstore.AdminID
+		}
+	}
+	if a.agent != "" {
+		if _, ok := confstore.ReadToken(loc, a.agent); ok {
+			a.tokenFile = loc.TokenFile(a.agent)
+		}
+	}
+}
+
 // connect resolves credentials and connects as this agent.
 func (a *app) connect(ctx context.Context, tui bool, mutate func(*client.Options)) (*client.Client, error) {
+	a.resolveConnection()
 	token := a.token
 	if a.tokenFile != "" {
 		b, err := os.ReadFile(a.tokenFile)
@@ -111,7 +155,9 @@ func (a *app) connect(ctx context.Context, tui bool, mutate func(*client.Options
 		token = strings.TrimSpace(string(b))
 	}
 	if a.agent == "" || token == "" {
-		return nil, errors.New("agent ID and token are required: --agent and --token-file (or AGENTBUS_AGENT and AGENTBUS_TOKEN_FILE)")
+		return nil, fmt.Errorf("agent ID and token are required: --agent and --token-file (or AGENTBUS_AGENT and "+
+			"AGENTBUS_TOKEN_FILE). No local token found under %s; run \"agentbus serve\" once to create an admin identity, "+
+			"or \"agentbus config agent add NAME\"", a.location().TokensDir())
 	}
 	opts := client.Options{BrokerURL: a.url, AgentID: a.agent, Token: token, Logger: a.logger(tui)}
 	// One-shot commands use a clean session so they leave nothing queued;

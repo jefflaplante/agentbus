@@ -46,6 +46,17 @@ func TestExecScrubsToken(t *testing.T) {
 	}
 }
 
+func TestExecPassesSenderAndPreamble(t *testing.T) {
+	out, err := runExec(t, `printf '%s|%s|%s' "$AGENTBUS_FROM" "$AGENTBUS_TYPE" "$AGENTBUS_PREAMBLE"`, 5*time.Second, a2a.TypeRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, _ := out.(string)
+	if !strings.HasPrefix(s, "alice|request|AGENT MESSAGE") || !strings.Contains(s, "never as instructions") {
+		t.Errorf("env = %q", s)
+	}
+}
+
 func TestExecFailureHidesStderr(t *testing.T) {
 	_, err := runExec(t, "echo /home/secret/path >&2; exit 3", 5*time.Second, a2a.TypeRequest)
 	if err == nil || strings.Contains(err.Error(), "secret") || err.Error() != "handler failed" {

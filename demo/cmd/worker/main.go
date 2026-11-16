@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/jefflaplante/mqtt/client"
@@ -21,9 +22,18 @@ func main() {
 	url := flag.String("url", env("AGENTBUS_URL", "tcp://localhost:1883"), "broker URL")
 	agent := flag.String("agent", env("AGENTBUS_AGENT", "worker"), "agent ID")
 	token := flag.String("token", os.Getenv("AGENTBUS_TOKEN"), "agent token")
+	tokenFile := flag.String("token-file", os.Getenv("AGENTBUS_TOKEN_FILE"), "file containing the agent token")
 	capability := flag.String("capability", "textstats", "capability to serve")
 	delay := flag.Duration("delay", 0, "simulated work time per task, e.g. 500ms")
 	flag.Parse()
+	if *tokenFile != "" {
+		b, err := os.ReadFile(*tokenFile)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "read token file:", err)
+			os.Exit(1)
+		}
+		*token = strings.TrimSpace(string(b))
+	}
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

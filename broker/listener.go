@@ -28,6 +28,9 @@ type guardedListener struct {
 
 	listen net.Listener
 	end    atomic.Bool
+	// disconnectAll, when set, closes this listener's clients in place of
+	// mochi's closeListenerClients (see closeListenerClients in broker.go).
+	disconnectAll func(id string)
 	// gate holds Accept until the broker has finished restoring state.
 	// Connections wait in the kernel backlog meanwhile.
 	gate     chan struct{}
@@ -167,6 +170,10 @@ func (l *guardedListener) Close(closeClients listeners.CloseFn) {
 	l.end.Store(true)
 	if l.listen != nil {
 		_ = l.listen.Close()
+	}
+	if l.disconnectAll != nil {
+		l.disconnectAll(l.id)
+		return
 	}
 	closeClients(l.id)
 }

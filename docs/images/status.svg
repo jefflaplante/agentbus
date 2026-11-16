@@ -6,12 +6,12 @@
 <circle cx="40" cy="15" r="6" fill="#FEBC2E"/>
 <circle cx="60" cy="15" r="6" fill="#28C840"/>
 <text x="532" y="20" fill="#9A9AAA" text-anchor="middle">agentbus status</text>
-<clipPath id="term-dc726125"><rect x="16.0" y="44" width="1032.0" height="374"/></clipPath><g clip-path="url(#term-dc726125)">
+<clipPath id="term-276865ea"><rect x="16.0" y="44" width="1032.0" height="374"/></clipPath><g clip-path="url(#term-276865ea)">
 <rect x="16.0" y="44.0" width="8.6" height="18" fill="#9F86FF"/>
 <rect x="24.6" y="44.0" width="146.2" height="18" fill="#9F86FF"/>
 <text x="24.6" y="57.0" fill="#FFFFFF" font-weight="bold" textLength="146.2" lengthAdjust="spacingAndGlyphs">agentbus · broker</text>
 <rect x="170.8" y="44.0" width="8.6" height="18" fill="#9F86FF"/>
-<text x="188.0" y="57.0" fill="#9F86FF" font-weight="bold" textLength="129.0" lengthAdjust="spacingAndGlyphs">127.0.0.1:53890</text>
+<text x="188.0" y="57.0" fill="#9F86FF" font-weight="bold" textLength="129.0" lengthAdjust="spacingAndGlyphs">127.0.0.1:55220</text>
 <text x="317.0" y="57.0" fill="#6C6C6C" textLength="266.6" lengthAdjust="spacingAndGlyphs">  up 4s · (devel) · mochi 2.7.9</text>
 <text x="16.0" y="75.0" fill="#6C6C6C" textLength="344.0" lengthAdjust="spacingAndGlyphs">╭──────────────────────────────────────╮</text>
 <text x="360.0" y="75.0" fill="#6C6C6C" textLength="344.0" lengthAdjust="spacingAndGlyphs">╭──────────────────────────────────────╮</text>
@@ -35,7 +35,7 @@
 <text x="695.4" y="111.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
 <text x="704.0" y="111.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
 <text x="721.2" y="111.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">accepted   </text>
-<text x="815.8" y="111.0" fill="#3DD68C" font-weight="bold" textLength="17.2" lengthAdjust="spacingAndGlyphs">69</text>
+<text x="815.8" y="111.0" fill="#3DD68C" font-weight="bold" textLength="17.2" lengthAdjust="spacingAndGlyphs">68</text>
 <text x="1039.4" y="111.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
 <text x="16.0" y="129.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
 <text x="33.2" y="129.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">data_dir   </text>
@@ -43,7 +43,7 @@
 <text x="351.4" y="129.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
 <text x="360.0" y="129.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
 <text x="377.2" y="129.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">messages   </text>
-<text x="471.8" y="129.0" fill="#E4E4E4" textLength="129.0" lengthAdjust="spacingAndGlyphs">95 in · 199 out</text>
+<text x="471.8" y="129.0" fill="#E4E4E4" textLength="129.0" lengthAdjust="spacingAndGlyphs">93 in · 195 out</text>
 <text x="695.4" y="129.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
 <text x="704.0" y="129.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
 <text x="721.2" y="129.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">duplicates </text>
@@ -55,7 +55,7 @@
 <text x="351.4" y="147.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
 <text x="360.0" y="147.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
 <text x="377.2" y="147.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">rate       </text>
-<text x="471.8" y="147.0" fill="#E4E4E4" textLength="189.2" lengthAdjust="spacingAndGlyphs">20.0/s in · 43.9/s out</text>
+<text x="471.8" y="147.0" fill="#E4E4E4" textLength="189.2" lengthAdjust="spacingAndGlyphs">24.0/s in · 40.0/s out</text>
 <text x="695.4" y="147.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
 <text x="704.0" y="147.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
 <text x="721.2" y="147.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">rejected   </text>
@@ -64,11 +64,11 @@
 <text x="1039.4" y="147.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
 <text x="16.0" y="165.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
 <text x="33.2" y="165.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">started    </text>
-<text x="127.8" y="165.0" fill="#E4E4E4" textLength="129.0" lengthAdjust="spacingAndGlyphs">Nov 15 14:42:50</text>
+<text x="127.8" y="165.0" fill="#E4E4E4" textLength="129.0" lengthAdjust="spacingAndGlyphs">Nov 15 15:16:25</text>
 <text x="351.4" y="165.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
 <text x="360.0" y="165.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
 <text x="377.2" y="165.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">bytes      </text>
-<text x="471.8" y="165.0" fill="#E4E4E4" textLength="215.0" lengthAdjust="spacingAndGlyphs">20.9 KiB in · 67.7 KiB o…</text>
+<text x="471.8" y="165.0" fill="#E4E4E4" textLength="215.0" lengthAdjust="spacingAndGlyphs">20.6 KiB in · 64.9 KiB o…</text>
 <text x="695.4" y="165.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
 <text x="704.0" y="165.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
 <text x="721.2" y="165.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">auth fails </text>
@@ -76,11 +76,11 @@
 <text x="1039.4" y="165.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
 <text x="16.0" y="183.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
 <text x="33.2" y="183.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">memory     </text>
-<text x="127.8" y="183.0" fill="#E4E4E4" textLength="197.8" lengthAdjust="spacingAndGlyphs">4.3 MiB · 55 goroutines</text>
+<text x="127.8" y="183.0" fill="#E4E4E4" textLength="197.8" lengthAdjust="spacingAndGlyphs">3.3 MiB · 55 goroutines</text>
 <text x="351.4" y="183.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
 <text x="360.0" y="183.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
 <text x="377.2" y="183.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">queued     </text>
-<text x="471.8" y="183.0" fill="#E4E4E4" textLength="197.8" lengthAdjust="spacingAndGlyphs">0 in flight · 0 dropped</text>
+<text x="471.8" y="183.0" fill="#E4E4E4" textLength="197.8" lengthAdjust="spacingAndGlyphs">1 in flight · 0 dropped</text>
 <text x="695.4" y="183.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
 <text x="704.0" y="183.0" fill="#6C6C6C" textLength="8.6" lengthAdjust="spacingAndGlyphs">│</text>
 <text x="721.2" y="183.0" fill="#6C6C6C" textLength="94.6" lengthAdjust="spacingAndGlyphs">wills      </text>
@@ -111,11 +111,11 @@
 <text x="729.8" y="291.0" fill="#6C6C6C" textLength="137.6" lengthAdjust="spacingAndGlyphs">────────────────</text>
 <text x="867.4" y="291.0" fill="#6C6C6C" textLength="180.6" lengthAdjust="spacingAndGlyphs">─────────────────────</text>
 <rect x="16.0" y="296.0" width="1032.0" height="18" fill="#9F86FF"/>
-<text x="16.0" y="309.0" fill="#FFFFFF" textLength="1032.0" lengthAdjust="spacingAndGlyphs"> coordinator       none                              0        16         0          14:42:53                            </text>
-<text x="16.0" y="327.0" fill="#D6D6E0" textLength="1032.0" lengthAdjust="spacingAndGlyphs"> worker            online    127.0.0.1:53891         0        28         0          14:42:54        textstats           </text>
-<text x="16.0" y="345.0" fill="#D6D6E0" textLength="1032.0" lengthAdjust="spacingAndGlyphs"> worker-2          online    127.0.0.1:53892         0        12         0          14:42:53        textstats           </text>
-<text x="16.0" y="363.0" fill="#D6D6E0" textLength="1032.0" lengthAdjust="spacingAndGlyphs"> you               online    127.0.0.1:53897         0        13         1          14:42:54         → worker,worker-2  </text>
-<text x="16.0" y="381.0" fill="#D6D6E0" textLength="1032.0" lengthAdjust="spacingAndGlyphs"> explorer          online    127.0.0.1:53893         0        0          0          14:42:50        observer            </text>
-<text x="24.6" y="399.0" fill="#6C6C6C" textLength="326.8" lengthAdjust="spacingAndGlyphs">↑/↓ select · q quit · updated 14:42:54</text>
+<text x="16.0" y="309.0" fill="#FFFFFF" textLength="1032.0" lengthAdjust="spacingAndGlyphs"> coordinator       none                              0        16         0          15:16:27                            </text>
+<text x="16.0" y="327.0" fill="#D6D6E0" textLength="1032.0" lengthAdjust="spacingAndGlyphs"> worker            online    127.0.0.1:55223         1        27         0          15:16:29        textstats           </text>
+<text x="16.0" y="345.0" fill="#D6D6E0" textLength="1032.0" lengthAdjust="spacingAndGlyphs"> worker-2          online    127.0.0.1:55222         0        12         0          15:16:27        textstats           </text>
+<text x="16.0" y="363.0" fill="#D6D6E0" textLength="1032.0" lengthAdjust="spacingAndGlyphs"> you               online    127.0.0.1:55228         0        13         1          15:16:29         → worker,worker-2  </text>
+<text x="16.0" y="381.0" fill="#D6D6E0" textLength="1032.0" lengthAdjust="spacingAndGlyphs"> explorer          online    127.0.0.1:55221         0        0          0          15:16:25        observer            </text>
+<text x="24.6" y="399.0" fill="#6C6C6C" textLength="464.4" lengthAdjust="spacingAndGlyphs">↑/↓ select · enter details · q quit · updated 15:16:29</text>
 </g>
 </svg>

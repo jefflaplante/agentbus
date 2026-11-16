@@ -43,19 +43,25 @@ wait_for_log() { # file pattern what
 
 step "Building bin/agentbus, bin/worker, bin/coordinator"
 mkdir -p "$BIN" "$RUN"
-rm -rf "$RUN/data" "$RUN"/audit.jsonl*   # each run starts with fresh identities and state
+rm -rf "$RUN/data" "$RUN/tokens" "$RUN"/audit.jsonl*   # each run starts with fresh identities and state
 (cd "$ROOT" && go build -o "$BIN/agentbus" ./cmd/agentbus \
             && go build -o "$BIN/worker" ./demo/cmd/worker \
             && go build -o "$BIN/coordinator" ./demo/cmd/coordinator)
 
 step "Minting a token per agent and writing demo/.run/broker.json"
-mint() { # id -> writes demo/.run/<id>.env, prints the token hash
+mint() { # id -> writes demo/.run/tokens/<id>.token and demo/.run/<id>.env, prints the token hash
   local out
   out=$("$BIN/agentbus" token)
+  mkdir -p "$RUN/tokens" && chmod 700 "$RUN/tokens"
+  awk '/^token:/ {print $2}' <<<"$out" >"$RUN/tokens/$1.token"
+  chmod 600 "$RUN/tokens/$1.token"
+  # The env file names the token file rather than holding the token, so a
+  # token rotated with "agentbus config" keeps working.
   cat >"$RUN/$1.env" <<EOF
 export AGENTBUS_URL=tcp://127.0.0.1:$PORT
+export AGENTBUS_CONFIG=$RUN/broker.json
 export AGENTBUS_AGENT=$1
-export AGENTBUS_TOKEN=$(awk '/^token:/ {print $2}' <<<"$out")
+export AGENTBUS_TOKEN_FILE=$RUN/tokens/$1.token
 EOF
   chmod 600 "$RUN/$1.env"
   awk '/^token_sha256:/ {print $2}' <<<"$out"
@@ -123,9 +129,13 @@ cat <<'EOF'
   bin/agentbus task --capability textstats --body '{"text":"queued"}' --timeout 60s &
   (source demo/.run/worker.env && bin/worker -delay 300ms)
 
-  # Look inside the running broker (explorer is an observer)
+  # Look inside the running broker (explorer is an observer).
+  # enter drills into an agent or message; e edits the agent's config.
   (source demo/.run/explorer.env && bin/agentbus status)
   (source demo/.run/explorer.env && bin/agentbus dashboard)
+
+  # Manage agents and settings; the running broker applies saves live
+  (source demo/.run/explorer.env && bin/agentbus config)
 
   # Desktop MQTT client (MQTT Explorer, MQTTX): see docs/DESKTOP-CLIENTS.md
   cat demo/.run/explorer.env                # host 127.0.0.1, port below, client ID = username = explorer

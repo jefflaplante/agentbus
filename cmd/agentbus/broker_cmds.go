@@ -4,23 +4,43 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
 
 	"charm.land/lipgloss/v2"
 	"github.com/spf13/cobra"
 
 	"github.com/jefflaplante/mqtt/broker"
+	"github.com/jefflaplante/mqtt/internal/confstore"
 	"github.com/jefflaplante/mqtt/internal/tui"
 )
 
 func newServeCmd(a *app) *cobra.Command {
-	var config, format, level string
+	var format, level string
+	var watch time.Duration
 	c := &cobra.Command{
 		Use:   "serve",
 		Short: "Run the broker",
-		Long: `Run the a2a/v1 broker with the given config file. See CONTRACT.md for
-what it enforces and docs/RETENTION.md for data_dir and audit_file.`,
-		Example: "  agentbus serve --config broker.json\n  agentbus serve --config broker.json --log-format json",
-		Args:    cobra.NoArgs,
+		Long: `Run the a2a/v1 broker.
+
+The config file is --config, else $AGENTBUS_CONFIG, else ./broker.json,
+else ~/.config/agentbus/broker.json. If none of those exists (and you
+didn't name one), serve creates the default: a loopback listener on
+127.0.0.1:1883, storage under ~/.local/state/agentbus, and an "admin"
+observer identity whose token goes in ~/.config/agentbus/tokens/. The
+broker starts right away; "agentbus status" on this machine connects as
+admin automatically.
+
+The running broker reloads the config when the file changes (checked
+every --watch) or on SIGHUP. Agents, tokens, permissions and rate limits
+apply at once; listener, TLS, storage and limit changes need a restart.`,
+		Example: `  agentbus serve                      # first run: creates a config and starts
+  agentbus serve --config broker.json
+  agentbus serve --log-format json`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var lvl slog.Level
 			if err := lvl.UnmarshalText([]byte(level)); err != nil {
@@ -36,7 +56,21 @@ what it enforces and docs/RETENTION.md for data_dir and audit_file.`,
 			default:
 				return fmt.Errorf("--log-format must be text or json")
 			}
-			cfg, err := broker.LoadConfig(config)
+
+			loc := a.location()
+			created := false
+			if !loc.Exists() {
+				if loc.Explicit() {
+					return fmt.Errorf("config file %s (from %s) does not exist; create it with "+
+						"\"agentbus config init --config %s\", or run \"agentbus serve\" with no --config to use the default",
+						loc.Path, loc.Source, loc.Path)
+				}
+				if _, err := confstore.Bootstrap(loc); err != nil {
+					return fmt.Errorf("create default config: %w", err)
+				}
+				created = true
+			}
+			cfg, err := broker.LoadConfig(loc.Path)
 			if err != nil {
 				return err
 			}
@@ -48,15 +82,72 @@ what it enforces and docs/RETENTION.md for data_dir and audit_file.`,
 				return err
 			}
 			log.Info("agentbus broker listening", "addr", b.Addr(), "agents", len(cfg.Agents), "tls", cfg.TLSCert != "",
-				"data_dir", cfg.DataDir, "audit_file", cfg.AuditFile)
-			<-cmd.Context().Done()
-			return b.Close()
+				"config", loc.Path, "data_dir", cfg.DataDir, "audit_file", cfg.AuditFile)
+			printServeHelp(a, loc, cfg, created)
+
+			ctx := cmd.Context()
+			go b.WatchConfig(ctx, loc.Path, watch)
+			hup := make(chan os.Signal, 1)
+			signal.Notify(hup, syscall.SIGHUP)
+			defer signal.Stop(hup)
+			for {
+				select {
+				case <-hup:
+					_, _ = b.ReloadFrom(loc.Path)
+				case <-ctx.Done():
+					return b.Close()
+				}
+			}
 		},
 	}
-	c.Flags().StringVarP(&config, "config", "c", "broker.json", "broker config file")
 	c.Flags().StringVar(&format, "log-format", "text", "log format: text or json")
 	c.Flags().StringVar(&level, "log-level", "info", "log level: debug, info, warn or error")
+	c.Flags().DurationVar(&watch, "watch", time.Second, "how often to check the config file for changes")
 	return c
+}
+
+// printServeHelp tells the operator what's running and what to do next.
+func printServeHelp(a *app, loc confstore.Location, cfg *broker.Config, created bool) {
+	out := a.stderr
+	if !isTerminal(out) && !created {
+		return // keep logs clean when not watched by a person
+	}
+	head := tui.AccentStyle.Render
+	dim := tui.SubtleStyle.Render
+	if created {
+		lipgloss.Fprintln(out, "\n"+tui.OKStyle.Render("●")+" No config found, so agentbus created one and started with it:")
+	} else {
+		lipgloss.Fprintln(out, "\n"+tui.OKStyle.Render("●")+" agentbus is running")
+	}
+	rows := [][2]string{
+		{"config", loc.Path + dim("  ("+string(loc.Source)+"; edits apply live)")},
+		{"tokens", loc.TokensDir() + "/"},
+		{"listen", cfg.Listen + dim("  ("+confstore.URL(cfg)+")")},
+	}
+	if cfg.DataDir != "" {
+		rows = append(rows, [2]string{"data", cfg.DataDir})
+	}
+	if cfg.AuditFile != "" {
+		rows = append(rows, [2]string{"audit", cfg.AuditFile})
+	}
+	for _, r := range rows {
+		lipgloss.Fprintf(out, "  %s %s\n", head(fmt.Sprintf("%-7s", r[0])), r[1])
+	}
+	var ids []string
+	for _, ag := range cfg.Agents {
+		ids = append(ids, ag.ID)
+	}
+	lipgloss.Fprintf(out, "  %s %s\n\n", head(fmt.Sprintf("%-7s", "agents")), strings.Join(ids, ", "))
+	lipgloss.Fprintln(out, head("Next, in another terminal:"))
+	if _, ok := confstore.ReadToken(loc, confstore.AdminID); ok {
+		lipgloss.Fprintln(out, "  agentbus status                  "+dim("# watch this broker (connects as admin automatically)"))
+	}
+	lipgloss.Fprintln(out, "  agentbus config                  "+dim("# add agents, client setup, edit settings"))
+	lipgloss.Fprintln(out, "  agentbus config agent add NAME   "+dim("# the same, from a script"))
+	if !strings.HasPrefix(cfg.Listen, "127.") && !strings.HasPrefix(cfg.Listen, "localhost") && cfg.TLSCert == "" {
+		lipgloss.Fprintln(out, tui.WarnStyle.Render("  ! listening beyond loopback without TLS: set tls_cert and tls_key"))
+	}
+	lipgloss.Fprintln(out)
 }
 
 func newTokenCmd(a *app) *cobra.Command {

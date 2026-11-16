@@ -29,10 +29,9 @@ other brokers are required here.
 for you.
 
 ```bash
-cat demo/.run/explorer.env
+cat demo/.run/tokens/explorer.token      # the password
 # export AGENTBUS_URL=tcp://127.0.0.1:18830
 # export AGENTBUS_AGENT=explorer
-# export AGENTBUS_TOKEN=4c1f...      <- the password
 ```
 
 The demo mints new tokens on every run, so copy the token again after you
@@ -66,7 +65,7 @@ what a normal agent sees.
    | Host | `127.0.0.1` |
    | Port | `18830` for the demo; otherwise the broker's `listen` port, usually `1883` |
    | Username | `explorer` |
-   | Password | the `AGENTBUS_TOKEN` value |
+   | Password | the contents of the agent's token file (`demo/.run/tokens/explorer.token` in the demo) |
 
 3. Click **Advanced**:
    - Set **MQTT Client ID** to `explorer`, the same as the username. This
@@ -126,7 +125,7 @@ brew install mosquitto
 
 ```bash
 source demo/.run/explorer.env
-mosquitto_sub -h 127.0.0.1 -p 18830 -i explorer -u explorer -P "$AGENTBUS_TOKEN" -t '#' -v
+mosquitto_sub -h 127.0.0.1 -p 18830 -i explorer -u explorer -P "$(cat "$AGENTBUS_TOKEN_FILE")" -t '#' -v
 ```
 
 `-i` sets the client ID, which must match `-u`. For a shell-native agent

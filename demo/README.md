@@ -69,7 +69,29 @@ bin/agentbus dashboard    # agents and traffic side by side
 ![agentbus dashboard during the demo](../docs/images/dashboard.svg)
 
 Run the coordinator again in another terminal and watch the traffic and
-counters move. [docs/CLI.md](../docs/CLI.md) covers every command.
+counters move.
+
+Every view drills down. In `status`, select an agent and press Enter for
+its detail and recent traffic, then Enter on a message to inspect it. In
+`dashboard`, Enter on an agent filters the traffic to it. Press `e` to edit
+the selected agent in the config editor:
+
+![agent detail](../docs/images/status-detail.svg)
+
+Manage the demo's agents and settings. The demo's env files point the CLI
+at the demo's config, so changes apply to the running bus:
+
+```bash
+bin/agentbus config        # a add · enter edit · c client setup · r rotate token · d remove
+```
+
+Try this:
+1. Remove the `textstats` capability from `worker-2`. Within a second it
+   stops getting tasks.
+2. Rotate `you`'s token. Its connection drops, and `demo/.run/you.env` keeps
+   working because the env file points at the token file.
+
+[docs/CLI.md](../docs/CLI.md) covers every command.
 
 In a second terminal, from the repo root, while `make demo` is running:
 
@@ -142,7 +164,7 @@ bin/agentbus handle --capability textstats \
 ```
 
 Watch the bus in a desktop app. The demo creates a read-only observer
-called `explorer`, and `cat demo/.run/explorer.env` prints its token. In
+called `explorer`; its token (the password) is in `demo/.run/tokens/explorer.token`. In
 MQTT Explorer, connect to `127.0.0.1:18830` with username **and client ID**
 `explorer` and the token as the password. The full guide, including MQTTX
 and `mosquitto_sub`, is [docs/DESKTOP-CLIENTS.md](../docs/DESKTOP-CLIENTS.md).
@@ -185,7 +207,8 @@ tail -f demo/.run/broker.log
 ```text
 demo/.run/            gitignored; recreated on every run
 ├── broker.json       broker config with token hashes
-├── <agent>.env       AGENTBUS_URL / AGENTBUS_AGENT / AGENTBUS_TOKEN per agent
+├── tokens/<agent>.token  each agent's token (0600)
+├── <agent>.env       AGENTBUS_URL / AGENTBUS_CONFIG / AGENTBUS_AGENT / AGENTBUS_TOKEN_FILE per agent
 │                     (coordinator, worker, worker-2, you, explorer)
 ├── broker.log        broker log
 ├── audit.jsonl       audit trail: one JSON line per decision, no bodies

@@ -15,6 +15,7 @@ import (
 
 // Item is one message shown in a feed.
 type Item struct {
+	seq      int // order within a feed; set when added
 	Time     time.Time
 	Topic    string
 	Env      *a2a.Envelope // set for envelopes
@@ -126,12 +127,19 @@ func waitForItem(ch <-chan Item) tea.Cmd {
 
 const maxFeedItems = 1000
 
-// feedState is the scrollback shared by the feed and dashboard views.
+// feedState is the scrollback shared by the feed, dashboard and status
+// views: newest items at the bottom, an optional filter, and a selection.
+// The selection is by sequence number, so it stays on the same message as
+// new ones arrive and old ones scroll out; selSeq < 0 follows the newest.
 type feedState struct {
-	items   []Item
-	total   int
-	paused  bool
-	dropped int // items not shown while paused
+	items      []Item
+	total      int
+	paused     bool
+	dropped    int // items not shown while paused
+	seq        int
+	selSeq     int
+	filter     func(Item) bool
+	filterName string
 }
 
 func (f *feedState) add(it Item) {
@@ -140,37 +148,148 @@ func (f *feedState) add(it Item) {
 		f.dropped++
 		return
 	}
+	f.seq++
+	it.seq = f.seq
 	f.items = append(f.items, it)
 	if len(f.items) > maxFeedItems {
 		f.items = f.items[len(f.items)-maxFeedItems:]
 	}
 }
 
-// lines renders the newest items that fit in height rows.
-func (f *feedState) lines(width, height int) []string {
-	if height <= 0 {
-		return nil
+func (f *feedState) clear() { f.items, f.dropped, f.selSeq = nil, 0, 0 }
+
+// following reports whether the view tracks the newest item.
+func (f *feedState) following() bool { return f.selSeq <= 0 }
+
+// setFilter shows only items matching keep (nil for all).
+func (f *feedState) setFilter(name string, keep func(Item) bool) {
+	f.filter, f.filterName, f.selSeq = keep, name, 0
+}
+
+func (f *feedState) visible() []Item {
+	if f.filter == nil {
+		return f.items
 	}
-	start := max(0, len(f.items)-height)
-	out := make([]string, 0, height)
-	for _, it := range f.items[start:] {
-		out = append(out, FormatItem(it, width))
+	var out []Item
+	for _, it := range f.items {
+		if f.filter(it) {
+			out = append(out, it)
+		}
 	}
 	return out
 }
 
+// selectedIndex is the index of the selection in vis, or -1.
+func (f *feedState) selectedIndex(vis []Item) int {
+	if f.following() {
+		return len(vis) - 1
+	}
+	for i, it := range vis {
+		if it.seq == f.selSeq {
+			return i
+		}
+	}
+	return len(vis) - 1 // selection scrolled out: snap to newest
+}
+
+// move moves the selection by delta; moving past the newest resumes
+// following.
+func (f *feedState) move(delta int) {
+	vis := f.visible()
+	if len(vis) == 0 {
+		return
+	}
+	i := f.selectedIndex(vis) + delta
+	switch {
+	case i >= len(vis)-1 && delta > 0:
+		f.selSeq = 0
+	case i < 0:
+		f.selSeq = vis[0].seq
+	default:
+		f.selSeq = vis[min(i, len(vis)-1)].seq
+	}
+}
+
+// home selects the oldest item.
+func (f *feedState) home() {
+	if vis := f.visible(); len(vis) > 0 {
+		f.selSeq = vis[0].seq
+	}
+}
+
+// selected is the selected item, or the newest when following.
+func (f *feedState) selected() (Item, bool) {
+	vis := f.visible()
+	if len(vis) == 0 {
+		return Item{}, false
+	}
+	return vis[f.selectedIndex(vis)], true
+}
+
+// lines renders what fits in height rows: the newest items when
+// following, otherwise a window around the selection, which is marked.
+func (f *feedState) lines(width, height int) []string {
+	if height <= 0 {
+		return nil
+	}
+	vis := f.visible()
+	sel := f.selectedIndex(vis)
+	start := max(0, len(vis)-height)
+	if !f.following() {
+		start = min(max(0, sel-height/2), max(0, len(vis)-height))
+	}
+	end := min(len(vis), start+height)
+	out := make([]string, 0, height)
+	for i := start; i < end; i++ {
+		mark := "  "
+		if i == sel && !f.following() {
+			mark = AccentStyle.Render("▌ ")
+		}
+		out = append(out, mark+FormatItem(vis[i], max(1, width-2)))
+	}
+	return out
+}
+
+// feedKeys handles the selection keys shared by every feed-like view. It
+// reports whether it handled the key.
+func (f *feedState) feedKeys(key string) bool {
+	switch key {
+	case "up", "k":
+		f.move(-1)
+	case "down", "j":
+		f.move(1)
+	case "pgup":
+		f.move(-10)
+	case "pgdown":
+		f.move(10)
+	case "home", "g":
+		f.home()
+	case "end", "G":
+		f.selSeq = 0
+	case "p", "space":
+		f.paused = !f.paused
+	case "c":
+		f.clear()
+	default:
+		return false
+	}
+	return true
+}
+
 // FeedModel is a full-screen, scrolling message feed (watch, listen).
+// ↑/↓ select a message and enter opens it in the inspector.
 type FeedModel struct {
 	Title  string
 	Source <-chan Item
 	feedState
+	inspect       *Inspector
 	width, height int
 	closed        bool
 }
 
 // NewFeed returns a feed that reads from src until it closes.
 func NewFeed(title string, src <-chan Item) FeedModel {
-	return FeedModel{Title: title, Source: src}
+	return FeedModel{Title: title, Source: src, width: 100, height: 24}
 }
 
 func (m FeedModel) Init() tea.Cmd {
@@ -190,15 +309,39 @@ func (m FeedModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-	case tea.KeyPressMsg:
-		switch msg.String() {
-		case "q", "esc", "ctrl+c":
-			return m, tea.Quit
-		case "p", "space":
-			m.paused = !m.paused
-		case "c":
-			m.items, m.dropped = nil, 0
+		if m.inspect != nil {
+			m.inspect.Resize(m.width, m.height-2)
 		}
+		return m, nil
+	}
+	if m.inspect != nil {
+		if k, ok := msg.(tea.KeyPressMsg); ok && k.String() == "ctrl+c" {
+			return m, tea.Quit
+		}
+		done, cmd := m.inspect.Update(msg)
+		if done {
+			m.inspect = nil
+		}
+		return m, cmd
+	}
+	k, ok := msg.(tea.KeyPressMsg)
+	if !ok {
+		return m, nil
+	}
+	switch k.String() {
+	case "q", "ctrl+c":
+		return m, tea.Quit
+	case "esc":
+		if m.following() {
+			return m, tea.Quit
+		}
+		m.selSeq = 0
+	case "enter":
+		if it, ok := m.selected(); ok {
+			m.inspect = NewInspector(it, m.width, m.height-2)
+		}
+	default:
+		m.feedKeys(k.String())
 	}
 	return m, nil
 }
@@ -214,10 +357,16 @@ func (m FeedModel) render() string {
 		status += ErrStyle.Render("  disconnected")
 	}
 	header := TitleStyle.Render(m.Title) + " " + SubtleStyle.Render(status)
+	if m.inspect != nil {
+		return header + "\n\n" + m.inspect.View()
+	}
 	body := m.lines(m.width, max(1, m.height-3))
 	if len(body) == 0 {
 		body = []string{SubtleStyle.Render("waiting for messages…")}
 	}
-	help := HelpStyle.Render("q quit · p pause · c clear")
-	return header + "\n\n" + strings.Join(body, "\n") + "\n" + help
+	help := "↑/↓ select · enter inspect · p pause · c clear · q quit"
+	if !m.following() {
+		help = "↑/↓ select · enter inspect · G/esc back to live · q quit"
+	}
+	return header + "\n\n" + strings.Join(body, "\n") + "\n" + HelpStyle.Render(help)
 }

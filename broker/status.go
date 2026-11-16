@@ -28,7 +28,17 @@ type Status struct {
 	Limits    StatusLimits  `json:"limits"`
 	Traffic   StatusTraffic `json:"traffic"`
 	Decisions Decisions     `json:"decisions"`
+	Config    StatusConfig  `json:"config"`
 	Agents    []AgentStatus `json:"agents"`
+}
+
+// StatusConfig describes the config file and its reloads.
+type StatusConfig struct {
+	Path          string    `json:"path,omitempty"`
+	LoadedAt      time.Time `json:"loaded_at,omitzero"`
+	Reloads       int       `json:"reloads"`
+	LastError     string    `json:"last_error,omitempty"`
+	RestartNeeded []string  `json:"restart_needed,omitempty"`
 }
 
 // StatusLimits are the broker's configured limits.
@@ -142,7 +152,7 @@ func (c *counters) inc(field *int64) {
 
 // Status returns a snapshot of the broker.
 func (b *Broker) Status() Status {
-	cfg := b.hook.cfg
+	cfg := b.hook.state().cfg
 	info := b.server.Info.Clone()
 	now := time.Now().UTC()
 	st := Status{
@@ -163,6 +173,11 @@ func (b *Broker) Status() Status {
 			MemoryAlloc: info.MemoryAlloc, Goroutines: info.Threads,
 		},
 	}
+
+	b.reload.mu.Lock()
+	st.Config = StatusConfig{Path: b.reload.path, LoadedAt: b.reload.loadedAt, Reloads: b.reload.reloads,
+		LastError: b.reload.lastErr, RestartNeeded: slices.Clone(b.reload.restartNeeded)}
+	b.reload.mu.Unlock()
 
 	c := b.hook.counters
 	c.mu.Lock()

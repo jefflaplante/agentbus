@@ -28,9 +28,7 @@ type cliBus struct {
 
 func startCLIBus(t *testing.T) *cliBus {
 	t.Helper()
-	for _, k := range []string{"AGENTBUS_URL", "AGENTBUS_AGENT", "AGENTBUS_TOKEN", "AGENTBUS_TOKEN_FILE"} {
-		t.Setenv(k, "")
-	}
+	isolate(t)
 	b := &cliBus{tokens: map[string]string{}, files: map[string]string{}}
 	cfg := &broker.Config{Listen: "127.0.0.1:0"}
 	dir := t.TempDir()
@@ -266,4 +264,14 @@ func TestStatusPlain(t *testing.T) {
 	if len(st.Agents) != 3 || st.Listen == "" || st.Traffic.ClientsConnected < 2 {
 		t.Errorf("status = %+v", st)
 	}
+}
+
+// isolate keeps tests away from the real ~/.config/agentbus and env.
+func isolate(t *testing.T) {
+	t.Helper()
+	for _, k := range []string{"AGENTBUS_URL", "AGENTBUS_AGENT", "AGENTBUS_TOKEN", "AGENTBUS_TOKEN_FILE", "AGENTBUS_CONFIG"} {
+		t.Setenv(k, "")
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
 }

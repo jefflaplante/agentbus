@@ -42,7 +42,8 @@ OnConnectAuthenticate                  # client ID == username == agent; token h
 OnPublish(client, packet)
   ref = peek(payload)                  # id + type, for a correlated error
   rate.allow(agent)                    # first, so rejected publishes cost tokens too
-  authorizeWrite(agent, topic)         # own presence/events; inbox allowed by send_to
+  authorizeWrite(agent, topic)         # own presence/events; inbox allowed by send_to,
+                                       #   or (after parsing) one reply to an open request
   strip MQTT 5 properties
   if presence topic
     validate card, agent == client
@@ -141,6 +142,24 @@ Close
 ```
 
 See [RETENTION.md](RETENTION.md) for what is kept and the audit log format.
+
+## Config reload
+
+```text
+serve
+  watch the config file (every --watch, default 1s) and SIGHUP
+    LoadConfig + Validate          # bad file: keep running config, report the error
+    Reload
+      agents, rates, clock skew    -> new hookState, swapped in atomically
+      listen, TLS, storage, limits -> restart_needed (kept as they are)
+      removed agents, rotated tokens -> DisconnectClient
+```
+
+Every check reads one immutable snapshot (`hookState`). A reload never
+leaves a check half on the old config and half on the new. Revoked
+capabilities take effect at the next task: shared-subscription members
+without the grant are pruned before a worker is picked, so a stale stored
+subscription can't receive tasks.
 
 ## Broker status
 

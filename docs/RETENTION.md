@@ -41,8 +41,8 @@ one broker can use a `data_dir` at a time; a second fails at startup
 **Workers must register task handlers at connect time.** When a worker
 with a persistent session reconnects, the broker immediately redelivers the
 tasks queued for it. In Go, pass handlers in `client.Options.Tasks`, not
-`ServeTasks` after connecting: the late call would miss those tasks, and
-they'd be answered `no_handler`. `agentbus handle --capability` and the
+`ServeTasks` after connecting: the late call would miss those tasks. They'd
+be dropped with no reply, and their requesters would time out. `agentbus handle --capability` and the
 demo worker already do this.
 
 **Tasks go to connected workers.** A worker that disconnects keeps its

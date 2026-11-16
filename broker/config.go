@@ -143,14 +143,15 @@ func LoadConfig(path string) (*Config, error) {
 	if err := json.Unmarshal(data, &c); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
-	c.applyDefaults()
+	c.ApplyDefaults()
 	if err := c.Validate(); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return &c, nil
 }
 
-func (c *Config) applyDefaults() {
+// ApplyDefaults fills unset fields with their defaults.
+func (c *Config) ApplyDefaults() {
 	if c.Listen == "" {
 		c.Listen = DefaultListen
 	}

@@ -16,6 +16,7 @@ import (
 	"github.com/jefflaplante/mqtt/a2a"
 	"github.com/jefflaplante/mqtt/broker"
 	"github.com/jefflaplante/mqtt/client"
+	"github.com/jefflaplante/mqtt/internal/confstore"
 	"github.com/jefflaplante/mqtt/internal/tui"
 )
 
@@ -27,6 +28,25 @@ func (a *app) runTUI(ctx context.Context, m tea.Model) error {
 		return nil // interrupted
 	}
 	return err
+}
+
+// editAgentFunc opens the config editor on an agent, embedded in a view.
+// It's only offered when the local config file is the one for the broker
+// we're connected to (same URL), so e never edits some other broker.
+func (a *app) editAgentFunc() func(string) tea.Model {
+	loc := a.location()
+	cfg, err := confstore.Load(loc.Path)
+	if err != nil || confstore.URL(cfg) != a.url {
+		return nil
+	}
+	return func(id string) tea.Model {
+		m, err := tui.NewConfigEditor(loc, id)
+		if err != nil {
+			return nil
+		}
+		m.Embedded = true
+		return m
+	}
 }
 
 // feed is a bounded channel of items for a TUI; it drops rather than
@@ -57,7 +77,9 @@ when piped, print the table once.`,
 			}
 			defer c.Close()
 			if live {
-				return a.runTUI(cmd.Context(), tui.NewAgents(c.Agents))
+				m := tui.NewAgents(c.Agents)
+				m.EditAgent = a.editAgentFunc()
+				return a.runTUI(cmd.Context(), m)
 			}
 			time.Sleep(500 * time.Millisecond) // let retained presence cards arrive
 			tw := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
@@ -233,6 +255,7 @@ Needs a terminal.`,
 				}
 			}
 			d := tui.NewDashboard(a.agent, scope, c.Agents, items)
+			d.EditAgent = a.editAgentFunc()
 			if observing.Load() {
 				statuses := make(chan broker.Status, 4)
 				if err := observeStatus(ctx, c, statuses); err == nil {
@@ -291,7 +314,15 @@ print one status snapshot as JSON and exit.`,
 				return fmt.Errorf("broker status needs an observer identity (\"observer\": true in the broker config): %w", err)
 			}
 			if tuiMode {
-				return a.runTUI(ctx, tui.NewStatus(statuses))
+				m := tui.NewStatus(statuses)
+				m.Agents, m.EditAgent = c.Agents, a.editAgentFunc()
+				traffic := make(feed, 4096)
+				if c.Observe(ctx, a2a.Root+"/#", func(topic string, payload []byte) {
+					traffic.push(tui.ItemFromMessage(topic, payload))
+				}) == nil {
+					m.Traffic = traffic
+				}
+				return a.runTUI(ctx, m)
 			}
 			// The retained snapshot can be up to status_interval old. Wait
 			// for one that shows this agent online: it was taken after we

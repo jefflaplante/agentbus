@@ -39,12 +39,19 @@ func AgentRows(cards []a2a.Presence) []table.Row {
 }
 
 // AgentsModel is a live table of every agent's presence card.
+//
+// enter inspects the selected agent's card; e opens it in the config
+// editor when the broker config is on this machine.
 type AgentsModel struct {
-	Source func() []a2a.Presence
-	table  table.Model
-	cards  []a2a.Presence
-	width  int
-	at     time.Time
+	Source    func() []a2a.Presence
+	EditAgent func(id string) tea.Model
+	inspect   *Inspector
+	sub       tea.Model
+	height    int
+	table     table.Model
+	cards     []a2a.Presence
+	width     int
+	at        time.Time
 }
 
 // NewAgents returns a live agents table reading from src.
@@ -89,7 +96,7 @@ func (m *AgentsModel) refresh(now time.Time) {
 func (m AgentsModel) Init() tea.Cmd { return tea.Batch(tick(), tea.RequestBackgroundColor) }
 
 func (m AgentsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if handleBackground(msg) {
+	if handleBackground(msg) && m.sub == nil {
 		restyleTable(&m.table)
 		return m, nil
 	}
@@ -97,15 +104,58 @@ func (m AgentsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		m.refresh(time.Time(msg))
 		return m, tick()
+	case CloseMsg:
+		m.sub = nil
+		return m, nil
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
+		m.width, m.height = msg.Width, msg.Height
 		m.table.SetColumns(agentColumns(msg.Width))
 		m.table.SetWidth(msg.Width)
 		m.table.SetHeight(max(3, msg.Height-6))
-	case tea.KeyPressMsg:
-		switch msg.String() {
+		if m.inspect != nil {
+			m.inspect.Resize(m.width, m.height-2)
+		}
+		if m.sub != nil {
+			var cmd tea.Cmd
+			m.sub, cmd = m.sub.Update(msg)
+			return m, cmd
+		}
+		return m, nil
+	}
+	if m.sub != nil {
+		var cmd tea.Cmd
+		m.sub, cmd = m.sub.Update(msg)
+		return m, cmd
+	}
+	if m.inspect != nil {
+		if k, ok := msg.(tea.KeyPressMsg); ok && k.String() == "ctrl+c" {
+			return m, tea.Quit
+		}
+		done, cmd := m.inspect.Update(msg)
+		if done {
+			m.inspect = nil
+		}
+		return m, cmd
+	}
+	if k, ok := msg.(tea.KeyPressMsg); ok {
+		i := m.table.Cursor()
+		switch k.String() {
 		case "q", "esc", "ctrl+c":
 			return m, tea.Quit
+		case "enter", "i":
+			if i >= 0 && i < len(m.cards) {
+				p := m.cards[i]
+				m.inspect = NewInspector(Item{Topic: a2a.PresenceTopic(p.Agent), Presence: &p}, m.width, max(10, m.height-2))
+			}
+			return m, nil
+		case "e":
+			if i >= 0 && i < len(m.cards) && m.EditAgent != nil {
+				if m.sub = m.EditAgent(m.cards[i].Agent); m.sub != nil {
+					w, h := m.width, m.height
+					return m, tea.Batch(m.sub.Init(), func() tea.Msg { return tea.WindowSizeMsg{Width: w, Height: h} })
+				}
+			}
+			return m, nil
 		}
 	}
 	var cmd tea.Cmd
@@ -125,7 +175,12 @@ func Counts(cards []a2a.Presence) (online, offline int) {
 	return
 }
 
-func (m AgentsModel) View() tea.View { return fullScreen(m.render()) }
+func (m AgentsModel) View() tea.View {
+	if m.sub != nil {
+		return m.sub.View()
+	}
+	return fullScreen(m.render())
+}
 
 func (m AgentsModel) render() string {
 	on, off := Counts(m.cards)
@@ -136,6 +191,13 @@ func (m AgentsModel) render() string {
 	if len(m.cards) == 0 {
 		body = SubtleStyle.Render("no presence cards yet…")
 	}
-	help := HelpStyle.Render("↑/↓ select · q quit · updated " + m.at.Format("15:04:05"))
+	if m.inspect != nil {
+		return header + "\n\n" + m.inspect.View()
+	}
+	helpText := "↑/↓ select · enter inspect card"
+	if m.EditAgent != nil {
+		helpText += " · e edit in config"
+	}
+	help := HelpStyle.Render(helpText + " · q quit · updated " + m.at.Format("15:04:05"))
 	return header + "\n\n" + body + "\n" + help
 }

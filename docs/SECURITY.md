@@ -24,7 +24,8 @@ are what remove trust in the broker.
 | `from` is the authenticated agent | Checked on every publish. The broker forwards its own re-encoding, so every receiver parses the same fields it checked. |
 | No side doors around those checks | Will messages are refused at connect. MQTT 5 publish properties are stripped. Retain is honored only on presence. |
 | Inboxes are private | Only the owner can subscribe. Observers are the explicit exception (see below). |
-| `send_to` is enforced | Checked on every inbox publish. `reply_to` can't redirect a reply elsewhere. |
+| `send_to` is enforced | Checked on every inbox publish except one reply per open request, from the agent the request went to (or a worker granted the task's capability), within the request's TTL. `reply_to` can't redirect a reply elsewhere. |
+| Replies come from the answerer | While a request is open, a reply to it is refused unless it comes from the addressed agent, or for a task from an agent granted the capability. Open requests are tracked in memory, up to 65,536. |
 | Each task goes to one granted worker | The only allowed task subscription is `$share/{cap}/a2a/v1/tasks/{cap}`, and only for agents granted `{cap}`. |
 | Presence can't be forged | Only the owner publishes its card. The broker stamps status and time, drops ungranted capabilities, and checks keys against pinned ones. |
 | Stale or future-dated messages are refused | `ts` must be within `max_clock_skew`, and `ttl_ms` is capped at 24h. |
@@ -55,7 +56,8 @@ are what remove trust in the broker.
   A shared ID makes connections knock each other off (the log shows
   `agent session taken over`).
 - **Narrow `send_to`.** It defaults to everyone. Name the agents each agent
-  should reach.
+  should reach on its own. Replies to requests it receives don't need to be
+  listed.
 - **Treat `observer` tokens as admin credentials.** An observer reads every
   inbox and the broker status (`$SYS/agentbus/status`), which lists every
   agent, its address and its traffic.
@@ -65,6 +67,14 @@ are what remove trust in the broker.
   ones.
 - **Pin keys** (`agents[].keys`) for agents that will exchange encrypted or
   signed messages.
+- **Rotate tokens and remove agents with `agentbus config`.** The running
+  broker reloads the file within a second and disconnects the affected
+  agent. Nothing needs a restart, and a config that doesn't validate is
+  rejected while the old one stays in force.
+- **The bootstrapped `admin` identity is an observer.** `agentbus serve`
+  creates it on first run. Keep `~/.config/agentbus/tokens/` (mode 0700,
+  files 0600) private, or remove `admin` once you've set up your own
+  observer.
 - **Protect `data_dir` and `audit_file`.** `broker.db` holds queued message
   bodies for offline agents. The audit log holds metadata: who talked to
   whom, when, and with what priority. Both are created with mode 0600; keep
@@ -111,6 +121,7 @@ regression tests in `broker/security_test.go`, `client/client_test.go` and
 | Medium | The rejection path wasn't rate-limited | Rate-limit first; throttle error envelopes and logs |
 | Medium | Plain task subscriptions copied every task | Only the exact `$share/{cap}/...` filter is allowed |
 | Medium | Unbounded `ts` defeated TTL | Clock-skew window; `ttl_ms` ≤ 24h |
+| Medium | Any agent that could reach a requester could answer its task first with a forged reply; the requester can't know which worker is genuine (found 2026-11-15, after the review) | The broker tracks open requests and refuses replies from anyone but the answerer (`broker/replies_test.go`) |
 | Low | Silent drops to missing agents or workers; MQTT 5 properties forwarded; self-asserted capabilities; presence expiring after 24h; QoS 2 rejection quirk | `no_route`/`no_consumer`; properties stripped; capabilities filtered by grants; presence refreshed; max QoS 1 |
 
 ## Not done yet
@@ -119,6 +130,5 @@ regression tests in `broker/security_test.go`, `client/client_test.go` and
   a body hash). Until then, authenticity rests on the broker.
 - **Sealed bodies** (X25519 + HKDF + AES-256-GCM with header fields as
   associated data), using pinned `kex` keys. `enc` is only a label today.
-- **Token rotation and config reload** without a restart.
 - **mTLS client authentication.**
 - **A metrics endpoint.**

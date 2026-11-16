@@ -36,7 +36,12 @@ func execHandler(command string, timeout time.Duration, types map[a2a.Type]bool,
 		defer cancel()
 		cmd := exec.CommandContext(ctx, "sh", "-c", command)
 		cmd.Stdin = bytes.NewReader(in)
-		cmd.Env = scrubEnv(os.Environ())
+		// The sender and type are broker-checked, so they're safe to pass on.
+		// AGENTBUS_PREAMBLE is the standard "untrusted input" text for
+		// wrappers that put the envelope in front of an LLM.
+		cmd.Env = append(scrubEnv(os.Environ()),
+			"AGENTBUS_FROM="+e.From, "AGENTBUS_TYPE="+string(e.Type), "AGENTBUS_ID="+e.ID,
+			"AGENTBUS_PREAMBLE="+a2a.UntrustedPreamble(e))
 		// Own process group, so a timeout kills the command's children too.
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 		cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }

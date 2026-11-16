@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -23,10 +24,19 @@ func main() {
 	url := flag.String("url", env("AGENTBUS_URL", "tcp://localhost:1883"), "broker URL")
 	agent := flag.String("agent", env("AGENTBUS_AGENT", "coordinator"), "agent ID")
 	token := flag.String("token", os.Getenv("AGENTBUS_TOKEN"), "agent token")
+	tokenFile := flag.String("token-file", os.Getenv("AGENTBUS_TOKEN_FILE"), "file containing the agent token")
 	worker := flag.String("worker", "worker", "worker agent ID")
 	capability := flag.String("capability", "textstats", "capability to send tasks to")
 	timeout := flag.Duration("timeout", 60*time.Second, "overall timeout")
 	flag.Parse()
+	if *tokenFile != "" {
+		b, err := os.ReadFile(*tokenFile)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "read token file:", err)
+			os.Exit(1)
+		}
+		*token = strings.TrimSpace(string(b))
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
