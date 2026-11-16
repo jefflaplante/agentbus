@@ -3,7 +3,10 @@
 An agent-to-agent message bus over MQTT for conduit and other AI agents.
 One Go binary runs the broker and also works as a CLI client.
 
-![agentbus console: broker status, throughput and request outcomes](docs/images/console-overview.svg)
+[![agentbus console, Map tab: live traffic drawn moving through the broker](https://code.jefflaplante.com/agentbus/media/agentbus-console-map.gif)](https://code.jefflaplante.com/agentbus/#/home/console)
+
+The console's Map tab watching live traffic: tasks to a shared queue, requests and replies,
+broadcast events, and a request the broker refuses (`✗ not_authorized`).
 
 - **[CONTRACT.md](CONTRACT.md)** is the language-neutral spec: topics, the
   envelope, request/reply, presence and rejection rules. Any MQTT client
@@ -55,12 +58,13 @@ the bus in MQTT Explorer, MQTTX or `mosquitto_sub`.
 To run the bus from the same binary, open the console:
 
 ```bash
-(source demo/.run/explorer.env && bin/agentbus console)   # status, agents, traffic, compose, inbox, config
+(source demo/.run/explorer.env && bin/agentbus console)   # status, agents, traffic, compose, inbox, config, map
 ```
 
 It has a tab each for the broker's status, every agent, live traffic,
 sending messages and reading their replies, answering requests sent to you,
-and editing the config.
+editing the config, and a live map that draws each message moving through
+the broker.
 
 ![agentbus console: live traffic](docs/images/console-traffic.svg)
 

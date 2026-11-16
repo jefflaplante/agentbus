@@ -36,10 +36,11 @@ const (
 	TabCompose
 	TabInbox
 	TabConfig
+	TabMap
 	numTabs
 )
 
-var tabNames = [numTabs]string{"Overview", "Agents", "Traffic", "Compose", "Inbox", "Config"}
+var tabNames = [numTabs]string{"Overview", "Agents", "Traffic", "Compose", "Inbox", "Config", "Map"}
 
 // ConsoleOptions configures a console.
 type ConsoleOptions struct {
@@ -65,9 +66,10 @@ type ConsoleOptions struct {
 }
 
 // Console is the full-screen management console: broker overview,
-// agents, live traffic, compose, inbox and config, one tab each.
+// agents, live traffic, compose, inbox, config and a live map of the bus,
+// one tab each.
 //
-// 1-6 or [ and ] switch tabs, ? shows every key, q quits. While a text
+// 1-7 or [ and ] switch tabs, ? shows every key, q quits. While a text
 // field has focus, keys go to it; esc leaves the field.
 type Console struct {
 	opt  ConsoleOptions
@@ -88,6 +90,7 @@ type Console struct {
 	traffic  trafficTab
 	compose  composeTab
 	inbox    inboxTab
+	bus      mapTab
 	config   *ConfigModel
 	cfgErr   error
 
@@ -132,7 +135,7 @@ func waitForInbox(a *Answerer) tea.Cmd {
 }
 
 func (m *Console) Init() tea.Cmd {
-	cmds := []tea.Cmd{consoleTick(), tea.RequestBackgroundColor, waitForInbox(m.opt.Inbox)}
+	cmds := []tea.Cmd{consoleTick(), tea.RequestBackgroundColor, waitForInbox(m.opt.Inbox), m.startMap()}
 	if m.opt.Traffic != nil {
 		cmds = append(cmds, waitForItem(m.opt.Traffic))
 	}
@@ -201,6 +204,9 @@ func (m *Console) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case composeDoneMsg:
 		m.compose.done(msg)
 		return m, nil
+	case mapTickMsg:
+		m.bus.ticking = false
+		return m, m.startMap()
 	case CloseMsg: // the embedded config editor wants to leave
 		m.tab = TabOverview
 		return m, nil
@@ -256,7 +262,7 @@ func (m *Console) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.switchTab((m.tab + 1) % numTabs)
 	case "[", "ctrl+left":
 		return m, m.switchTab((m.tab + numTabs - 1) % numTabs)
-	case "1", "2", "3", "4", "5", "6":
+	case "1", "2", "3", "4", "5", "6", "7":
 		return m, m.switchTab(Tab(s[0] - '1'))
 	}
 	return m, m.forward(msg)
@@ -287,6 +293,8 @@ func (m *Console) switchTab(t Tab) tea.Cmd {
 		}
 	case TabInbox:
 		m.inbox.seen = len(m.inbox.entries)
+	case TabMap:
+		return m.startMap()
 	}
 	return nil
 }
@@ -334,6 +342,8 @@ func (m *Console) forward(msg tea.Msg) tea.Cmd {
 		}
 		_, cmd := m.config.Update(msg)
 		return cmd
+	case TabMap:
+		return m.mapUpdate(msg)
 	}
 	return nil
 }
@@ -370,6 +380,8 @@ func (m *Console) render() string {
 			body = m.renderInbox(w, h)
 		case TabConfig:
 			body = m.renderConfig(w, h)
+		case TabMap:
+			body = m.renderMap(w, h)
 		}
 	}
 	body = fitBlock(body, w, h)
@@ -453,7 +465,7 @@ func (m *Console) renderConnection(w int) string {
 }
 
 func (m *Console) helpLine() string {
-	global := "1-6 tabs · ? keys · q quit"
+	global := "1-7 tabs · ? keys · q quit"
 	switch m.tab {
 	case TabOverview:
 		return global
@@ -482,6 +494,8 @@ func (m *Console) helpLine() string {
 			return "" // the editor shows its own help
 		}
 		return global
+	case TabMap:
+		return m.mapHelp() + " · " + global
 	}
 	return global
 }
@@ -492,12 +506,13 @@ func (m *Console) renderHelp(w, h int) string {
 		keys []string
 	}
 	sections := []section{
-		{"Everywhere", []string{"1-6 or [ ]  switch tab", "?  this help", "q  quit (ctrl+c works anywhere)", "esc  step back: leave a field, close the inspector, clear a filter"}},
+		{"Everywhere", []string{"1-7 or [ ]  switch tab", "?  this help", "q  quit (ctrl+c works anywhere)", "esc  step back: leave a field, close the inspector, clear a filter"}},
 		{"Agents", []string{"↑/↓  select", "enter  detail", "i  inspect presence card", "r / t / s  request, task or send to the agent", "f  show its traffic", "e  edit in config"}},
 		{"Traffic", []string{"↑/↓  select", "enter  inspect", "/  filter by text", "t  filter by type", "R  copy a message into Compose", "p  pause · c clear"}},
 		{"Compose", []string{"tab  next field", "←/→  change kind or priority", "ctrl+s  send", "esc  leave the form; then ↑/↓ and enter on results"}},
 		{"Inbox", []string{"a  answer a request", "x  refuse it", "h  hold requests for you, or refuse them at once", "enter  inspect"}},
 		{"Config", []string{"the config editor: agents, tokens, client setup, broker settings"}},
+		{"Map", []string{"each message drawn moving through the broker", "p  pause · c clear"}},
 	}
 	render := func(ss []section) string {
 		var b strings.Builder

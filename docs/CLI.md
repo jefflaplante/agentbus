@@ -209,7 +209,7 @@ agentbus console --tab compose --agent you
 ```
 
 One full-screen program for running the bus. It connects as one agent and
-has six tabs:
+has seven tabs:
 
 | Tab | What it is for |
 |---|---|
@@ -219,6 +219,7 @@ has six tabs:
 | 4 Compose | send a request, task, one-way event or broadcast, and see each reply |
 | 5 Inbox | messages sent to the console's agent; answer or refuse requests |
 | 6 Config | the [config editor](#setup-agentbus-config), when the broker's config file is on this machine |
+| 7 Map | a live drawing of the bus: each message moving from its sender through the broker to its recipient |
 
 What it can see depends on the identity. **Observers** (`admin` is one)
 see all agent traffic and the broker's status snapshots. Any other agent
@@ -228,7 +229,7 @@ agent, within its `send_to` grants.
 
 ### Keys
 
-`1`-`6` or `[` and `]` switch tabs from anywhere. `?` lists every key.
+`1`-`7` or `[` and `]` switch tabs from anywhere. `?` lists every key.
 While a text field has focus (Compose, a filter, an answer), keys go to the
 field and `esc` leaves it.
 
@@ -354,6 +355,36 @@ The [config editor](#setup-agentbus-config), as a tab. It's there when the
 broker config file on this machine is the one for the broker the console
 is connected to (the same listen address), so the console never edits some
 other broker's config.
+
+### Map
+
+```bash
+agentbus console --tab map
+```
+
+![the console's Map tab](images/console-map.svg)
+
+The bus as it runs, drawn in braille dots: the broker in the middle with
+its rings turning, and every agent around it, green when online. Each
+message the connection sees travels from its sender to the broker and on
+to its recipient, colored by type: requests blue, replies green, events
+magenta, errors red. An agent's marker lights up as a message reaches it.
+
+What the broker does with a message shows at the broker:
+- **A task** stops there, tagged `⇢ capability`. The broker hands it to
+  one worker on the shared queue, and an observer can't see which; the
+  reply then comes from that worker.
+- **An event** ripples out from the broker to whoever subscribes.
+- **A refusal** flashes the broker's rings red, stamps `✗` and the code
+  above it (`✗ not_authorized`), and the error travels back to the
+  sender.
+
+The header counts each type over the last 10 seconds. `p` pauses the
+drawing and `c` clears it. The map redraws 15 times a second, and only
+while the tab is showing.
+
+As with Traffic, an observer sees everything; any other agent sees only
+broadcast events and its own inbox.
 
 ## Watching traffic from the shell
 

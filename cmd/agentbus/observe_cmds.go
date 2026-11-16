@@ -247,17 +247,17 @@ the console for every key. Needs a terminal.`,
 			return a.runConsole(cmd.Context(), start)
 		},
 	}
-	c.Flags().StringVar(&tab, "tab", "overview", "tab to start on: overview, agents, traffic, compose, inbox or config")
+	c.Flags().StringVar(&tab, "tab", "overview", "tab to start on: overview, agents, traffic, compose, inbox, config or map")
 	return c
 }
 
 func parseTab(s string) (tui.Tab, error) {
-	for i, name := range []string{"overview", "agents", "traffic", "compose", "inbox", "config"} {
+	for i, name := range []string{"overview", "agents", "traffic", "compose", "inbox", "config", "map"} {
 		if strings.EqualFold(s, name) || s == fmt.Sprint(i+1) {
 			return tui.Tab(i), nil
 		}
 	}
-	return 0, fmt.Errorf("--tab %q: use overview, agents, traffic, compose, inbox or config", s)
+	return 0, fmt.Errorf("--tab %q: use overview, agents, traffic, compose, inbox, config or map", s)
 }
 
 // runConsole connects and runs the console, starting on tab start.

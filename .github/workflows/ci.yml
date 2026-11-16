@@ -77,6 +77,11 @@ jobs:
           go-version-file: site/go.mod
           cache-dependency-path: site/go.sum
 
+      - name: Fetch the lab video from its release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download lab-video --repo "$GITHUB_REPOSITORY" --dir site/static/media
+
       - name: Build the documentation site, failing on broken links
         working-directory: site
         run: |

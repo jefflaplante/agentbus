@@ -199,11 +199,12 @@
     <div class="section-head reveal">
       <p class="kicker">03 · see the bus</p>
       <h2>A console for the whole bus</h2>
-      <p class="lede"><code>agentbus console</code> is one full-screen view: broker status, every agent, live traffic, a form for sending, an inbox for answering, and the config editor. These are real screens, rendered from a live bus.</p>
+      <p class="lede"><code>agentbus console</code> is one full-screen view: broker status, every agent, live traffic, a form for sending, an inbox for answering, the config editor, and a live map of the bus like the one at the top of this page, drawn in braille. These are real screens, rendered from a live bus.</p>
     </div>
     <div class="showcase reveal">
       <div class="tabs" role="tablist" aria-label="Console tabs">
-        <button role="tab" aria-selected="true" data-shot="console-overview">1 Overview</button>
+        <button role="tab" aria-selected="true" data-shot="console-map" data-video="media/agentbus-console-map.mp4" data-poster="media/agentbus-console-map.png">● Live map</button>
+        <button role="tab" aria-selected="false" data-shot="console-overview">1 Overview</button>
         <button role="tab" aria-selected="false" data-shot="console-agents">2 Agents</button>
         <button role="tab" aria-selected="false" data-shot="console-traffic">3 Traffic</button>
         <button role="tab" aria-selected="false" data-shot="console-compose">4 Compose</button>
@@ -211,9 +212,10 @@
         <button role="tab" aria-selected="false" data-shot="config-client">6 Config</button>
       </div>
       <div class="screen" id="screen">
-        <img id="shot" src="r/docs/images/console-overview.svg" alt="agentbus console, Overview tab" loading="lazy">
+        <video id="live" autoplay muted loop playsinline preload="metadata" poster="media/agentbus-console-map.png" src="media/agentbus-console-map.mp4" aria-label="Recording: the console's Map tab watching live traffic"></video>
+        <img id="shot" src="r/docs/images/console-map.svg" alt="agentbus console, Map tab" loading="lazy" hidden>
       </div>
-      <p class="caption" id="shot-caption">Broker status, throughput over time, and request outcomes by target.</p>
+      <p class="caption" id="shot-caption">Recorded live: every message drawn moving through the broker, in braille. Tasks are tagged at the broker, events ripple out, refusals are stamped.</p>
     </div>
   </section>
 
@@ -328,8 +330,8 @@ handlers:
         <li><a href="#/docs/lab-6"><b>6</b><span>Extend it</span><em>your own handlers</em></a></li>
       </ol>
       <div class="video-card reveal">
-        <video controls preload="none" poster="" src="https://github.com/user-attachments/assets/b4ccd343-cc8e-4803-a1c3-5d4623122314"></video>
-        <p>The six-and-a-half-minute narrated walkthrough. The terminal scenes are real recordings. <a href="https://github.com/user-attachments/assets/b4ccd343-cc8e-4803-a1c3-5d4623122314">Open it on GitHub</a></p>
+        <video controls playsinline preload="metadata" poster="media/agentbus-lab-poster.png" src="media/agentbus-lab.mp4"></video>
+        <p>The six-and-a-half-minute narrated walkthrough. The terminal scenes are real recordings. <a href="#/docs/video">How it's made →</a></p>
       </div>
     </div>
   </section>

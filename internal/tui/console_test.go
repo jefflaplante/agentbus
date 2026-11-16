@@ -145,7 +145,7 @@ func TestConsoleTabsAndOverview(t *testing.T) {
 		t.Error("] did not move to the next tab")
 	}
 	m, _ = press(m, "[", "[")
-	if m.(*Console).tab != TabConfig {
+	if m.(*Console).tab != TabMap {
 		t.Error("[ did not wrap to the last tab")
 	}
 	m, _ = press(m, "?")
@@ -413,7 +413,7 @@ func TestConsoleConfigTab(t *testing.T) {
 		t.Errorf("config selected %q", sel.ID)
 	}
 	v := view(m)
-	wantAll(t, "config tab", v, "Config", "worker", "serves textstats", "1-6 other tabs")
+	wantAll(t, "config tab", v, "Config", "worker", "serves textstats", "1-7 other tabs")
 	if strings.Contains(v, "agentbus · config") {
 		t.Error("the tab repeats the editor's title bar")
 	}
@@ -459,7 +459,7 @@ func TestConsoleFitsWindow(t *testing.T) {
 		for range 100 {
 			m, _ = m.Update(ItemMsg(ItemFromEnvelope("t", long)))
 		}
-		for _, tab := range []string{"1", "2", "3", "4", "5", "6"} {
+		for _, tab := range []string{"1", "2", "3", "4", "5", "6", "7"} {
 			m, _ = press(m, "esc")
 			m, _ = press(m, tab)
 			checkFits(t, "tab "+tab, m.View().Content, w, h)
@@ -476,4 +476,77 @@ func TestConsoleFitsWindow(t *testing.T) {
 		m, _ = press(m, "?")
 		checkFits(t, "help", m.View().Content, w, h)
 	}
+}
+
+// The Map tab draws each message on its way through the broker: requests
+// and replies between agents, a task tagged at the broker, an event's
+// ripple, and a refusal stamped with its code.
+func TestConsoleMap(t *testing.T) {
+	var m tea.Model = sizeTo(newTestConsole(t, &fakeBus{}), 120, 32)
+	m, _ = press(m, "7")
+	c := m.(*Console)
+	if c.tab != TabMap {
+		t.Fatal("7 did not open the Map tab")
+	}
+	v := view(m)
+	wantAll(t, "empty map", v, "7 Map", "broker", "coordinator", "worker", "last 10s: 0 req")
+
+	m, _ = m.Update(ItemMsg(ItemFromEnvelope("t", env(t, "coordinator", "weather", "forecast"))))
+	task, _ := a2a.New(a2a.TypeRequest, "coordinator", map[string]string{"text": "a b"})
+	task.Capability = "textstats"
+	m, _ = m.Update(ItemMsg(ItemFromEnvelope(a2a.TaskTopic("textstats"), task)))
+	ev, _ := a2a.New(a2a.TypeEvent, "worker", map[string]string{"job": "done"})
+	m, _ = m.Update(ItemMsg(ItemFromEnvelope(a2a.EventTopic("worker", "jobs"), ev)))
+	refused, _ := a2a.New(a2a.TypeError, a2a.BrokerID, map[string]string{"code": "not_authorized", "reason": "not allowed to send to x"})
+	refused.To = "coordinator"
+	m, _ = m.Update(ItemMsg(ItemFromEnvelope(a2a.InboxTopic("coordinator"), refused)))
+	if n := len(c.bus.packets); n != 4 {
+		t.Fatalf("%d packets in flight, want 4", n)
+	}
+
+	// Halfway along the first leg the packets are between agents and the
+	// broker; drawn in braille.
+	for i := range c.bus.packets {
+		c.bus.packets[i].born = c.bus.packets[i].born.Add(-mapLeg / 2)
+	}
+	v = view(m)
+	wantAll(t, "in flight", v, "last 10s: 2 req", "weather", "1 event", "1 refused", "✗ not_authorized")
+	if !strings.ContainsFunc(v, func(r rune) bool { return r > 0x2800 && r <= 0x28FF }) {
+		t.Error("no braille in the map")
+	}
+
+	// Past the broker: the task is tagged and stops; the event ripples.
+	for i := range c.bus.packets {
+		c.bus.packets[i].born = c.bus.packets[i].born.Add(-mapLeg)
+	}
+	v = view(m)
+	wantAll(t, "past the broker", v, "⇢ textstats")
+	if len(c.bus.ripples) != 1 {
+		t.Errorf("%d ripples, want 1 for the event", len(c.bus.ripples))
+	}
+	// The refusal started at the broker, so it has already reached the
+	// sender; the request is on its way to weather.
+	if n := len(c.bus.packets); n != 1 || c.bus.packets[0].to != "weather" {
+		t.Errorf("packets left: %+v, want only the request on its second leg", c.bus.packets)
+	}
+
+	// p freezes the map; new messages aren't added while paused, and the
+	// frame ticks stop.
+	m, _ = press(m, "p")
+	wantAll(t, "paused", view(m), "paused", "p resume")
+	m, _ = m.Update(ItemMsg(ItemFromEnvelope("t", env(t, "coordinator", "weather", "again"))))
+	if n := len(c.bus.packets); n != 1 {
+		t.Errorf("a message was added while paused: %d packets", n)
+	}
+	if _, cmd := m.Update(mapTickMsg(time.Now())); cmd != nil {
+		t.Error("frames kept ticking while paused")
+	}
+	if _, cmd := press(m, "p"); cmd == nil {
+		t.Error("resuming did not restart the frame ticks")
+	}
+	m, _ = press(m, "1")
+	if _, cmd := m.Update(mapTickMsg(time.Now())); cmd != nil {
+		t.Error("frames kept ticking on another tab")
+	}
+	checkFits(t, "map", view(m), 120, 32)
 }

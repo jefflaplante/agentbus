@@ -59,7 +59,7 @@ Look inside the running broker. The demo's `explorer` identity is an
 observer, which the broker status needs:
 
 ```bash
-(source demo/.run/explorer.env && bin/agentbus console)   # 1-6 switch tabs, ? for keys, q to quit
+(source demo/.run/explorer.env && bin/agentbus console)   # 1-7 switch tabs, ? for keys, q to quit
 ```
 
 The parentheses run it in a subshell, so the demo's settings don't stay in

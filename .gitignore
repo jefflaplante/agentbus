@@ -25,3 +25,5 @@ coverage.*
 
 # Built documentation site (site/)
 /_site/
+# Media from the lab-video release; the Pages build downloads it here
+/site/static/media/

@@ -35,6 +35,17 @@ import (
 
 const repoURL = "https://github.com/jefflaplante/agentbus"
 
+// videos maps a GitHub video attachment, as the markdown links it, to the
+// copy the site serves. An attachment URL only plays on github.com, which
+// swaps in a signed URL while rendering; anywhere else it is a 404. The
+// copies aren't in git: they're on the lab-video release, and the Pages
+// build downloads them into static/media before building.
+var videos = map[string]struct{ src, poster string }{
+	"https://github.com/user-attachments/assets/b4ccd343-cc8e-4803-a1c3-5d4623122314": {
+		"media/agentbus-lab.mp4", "media/agentbus-lab-poster.png",
+	},
+}
+
 // page is one markdown file on the site, in sidebar order.
 type page struct {
 	Path, Slug, Group, Title string
@@ -180,11 +191,22 @@ func (b *builder) render(p page) (Doc, error) {
 		case *ast.Image:
 			n.Destination = []byte(b.image(p.Path, string(n.Destination)))
 		case *ast.AutoLink:
-			// A bare GitHub video attachment is a player on github.com.
+			// A bare GitHub video attachment is a player on github.com. Here
+			// it plays the site's own copy, or links to GitHub without one.
 			u := string(n.URL(src))
 			if strings.HasPrefix(u, "https://github.com/user-attachments/assets/") {
-				player := fmt.Sprintf(`<video class="doc-video" controls preload="metadata" src="%s"></video>`+
-					`<a class="video-link" href="%s">Open the video on GitHub</a>`, u, u)
+				player := fmt.Sprintf(`<a class="video-link" href="%s">Watch the video on GitHub</a>`, u)
+				v, ok := videos[u]
+				if ok && !exists(filepath.Join(b.repo, "site", "static", filepath.FromSlash(v.src))) {
+					b.warnings = append(b.warnings, fmt.Sprintf("%s: %s is missing; it links to GitHub instead "+
+						"(gh release download lab-video --dir site/static/media)", p.Path, v.src))
+					ok = false
+				}
+				if ok {
+					player = fmt.Sprintf(`<video class="doc-video" controls playsinline preload="metadata" poster="%s" src="%s"></video>`, v.poster, v.src)
+				} else if _, known := videos[u]; !known {
+					b.warnings = append(b.warnings, fmt.Sprintf("%s: video %s has no copy in site/static/media; it links to GitHub", p.Path, u))
+				}
 				video := ast.NewString([]byte(player))
 				video.SetCode(true) // written as is, not escaped
 				n.Parent().ReplaceChild(n.Parent(), n, video)
@@ -328,6 +350,11 @@ func (g *githubIDs) Generate(value []byte, kind ast.NodeKind) []byte {
 }
 
 func (g *githubIDs) Put(value []byte) { g.seen[string(value)]++ }
+
+func exists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
 
 func copyTree(src, dst string) error {
 	return filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {

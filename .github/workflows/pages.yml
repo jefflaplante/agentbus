@@ -36,6 +36,19 @@ jobs:
           go-version-file: site/go.mod
           cache-dependency-path: site/go.sum
 
+      - name: Fetch the lab video from its release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download lab-video --repo "$GITHUB_REPOSITORY" --dir site/static/media
+
+      # The README shows this GIF from the site, which serves it as an image;
+      # a release download URL is served as octet-stream, which GitHub's
+      # image proxy refuses.
+      - name: Fetch the console recording from its release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download console-map --repo "$GITHUB_REPOSITORY" --dir site/static/media
+
       - name: Build the site
         working-directory: site
         run: go run ./build -strict -repo .. -out ../_site

@@ -732,7 +732,7 @@ func (m *ConfigModel) render() string {
 			leave = "q back"
 		}
 		if m.Tabbed {
-			leave = "1-6 other tabs"
+			leave = "1-7 other tabs"
 		}
 		if m.tab == 0 {
 			body = m.agents.View()

@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -38,6 +39,9 @@ func (m *Console) addItem(it Item) {
 	if d := m.agents.detail; d != "" && involves(it, d) {
 		m.agents.feed.add(it)
 	}
+	now := time.Now()
+	m.bus.see(it, now)
+	m.bus.refusal(it.Env, now)
 }
 
 func (t *trafficTab) setAgent(id string) {

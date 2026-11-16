@@ -227,6 +227,21 @@ func run(outDir string) error {
 	if err := write("console-traffic.svg", "agentbus console  →  3 Traffic", m.View().Content, 120); err != nil {
 		return err
 	}
+	// Map: the last messages fed in at intervals, so the frame catches
+	// them at different points between agents and the broker.
+	m = size(console(tui.TabMap), 120, 34)
+	for _, st := range snaps {
+		m, _ = m.Update(tui.StatusMsg(st))
+	}
+	recent := withoutRepeats(seen)
+	recent = recent[max(0, len(recent)-16):]
+	for _, it := range recent {
+		m, _ = m.Update(tui.ItemMsg(it))
+		time.Sleep(70 * time.Millisecond)
+	}
+	if err := write("console-map.svg", "agentbus console  →  7 Map", m.View().Content, 120); err != nil {
+		return err
+	}
 	// Compose: a task to textstats, sent for real.
 	m = size(console(tui.TabAgents), 120, 30)
 	m = keys(m, "down", "down", "t") // worker → compose a textstats task

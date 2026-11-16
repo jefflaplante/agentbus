@@ -18,6 +18,7 @@ import (
 	"github.com/jefflaplante/agentbus/a2a"
 	"github.com/jefflaplante/agentbus/broker"
 	"github.com/jefflaplante/agentbus/client"
+	"github.com/jefflaplante/agentbus/internal/tui"
 )
 
 type cliBus struct {
@@ -383,5 +384,16 @@ func TestFromEnv(t *testing.T) {
 	got := strings.Join(a.fromEnv(), " ")
 	if got != "AGENTBUS_CONFIG=/x/broker.json AGENTBUS_TOKEN=(set)" {
 		t.Errorf("fromEnv = %q", got)
+	}
+}
+
+func TestParseTab(t *testing.T) {
+	for in, want := range map[string]tui.Tab{"overview": tui.TabOverview, "Map": tui.TabMap, "7": tui.TabMap, "config": tui.TabConfig, "6": tui.TabConfig} {
+		if got, err := parseTab(in); err != nil || got != want {
+			t.Errorf("parseTab(%q) = %v, %v; want %v", in, got, err, want)
+		}
+	}
+	if _, err := parseTab("8"); err == nil {
+		t.Error("parseTab accepted 8")
 	}
 }

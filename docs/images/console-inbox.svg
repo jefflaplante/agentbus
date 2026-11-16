@@ -6,7 +6,7 @@
 <circle cx="40" cy="15" r="6" fill="#FEBC2E"/>
 <circle cx="60" cy="15" r="6" fill="#28C840"/>
 <text x="532" y="20" fill="#9A9AAA" text-anchor="middle">agentbus console  →  5 Inbox</text>
-<clipPath id="term-127b71b2"><rect x="16.0" y="44" width="1032.0" height="410"/></clipPath><g clip-path="url(#term-127b71b2)">
+<clipPath id="term-dd7ba200"><rect x="16.0" y="44" width="1032.0" height="410"/></clipPath><g clip-path="url(#term-dd7ba200)">
 <rect x="16.0" y="44.0" width="8.6" height="18" fill="#9F86FF"/>
 <rect x="24.6" y="44.0" width="68.8" height="18" fill="#9F86FF"/>
 <text x="24.6" y="57.0" fill="#FFFFFF" font-weight="bold" textLength="68.8" lengthAdjust="spacingAndGlyphs">agentbus</text>
@@ -25,6 +25,7 @@
 <text x="575.0" y="57.0" fill="#9F86FF" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">1</text>
 <text x="583.6" y="57.0" fill="#9F86FF" font-weight="bold" textLength="8.6" lengthAdjust="spacingAndGlyphs">)</text>
 <text x="609.4" y="57.0" fill="#6C6C6C" textLength="68.8" lengthAdjust="spacingAndGlyphs">6 Config</text>
+<text x="695.4" y="57.0" fill="#6C6C6C" textLength="43.0" lengthAdjust="spacingAndGlyphs">7 Map</text>
 <text x="16.0" y="75.0" fill="#6C6C6C" textLength="34.4" lengthAdjust="spacingAndGlyphs"> as </text>
 <text x="50.4" y="75.0" fill="#9F86FF" font-weight="bold" textLength="68.8" lengthAdjust="spacingAndGlyphs">explorer</text>
 <text x="119.2" y="75.0" fill="#6C6C6C" textLength="464.4" lengthAdjust="spacingAndGlyphs"> · tcp://127.0.0.1:1883 · all agent traffic (observer)</text>
@@ -34,12 +35,12 @@
 <text x="532.0" y="93.0" fill="#6C6C6C" textLength="387.0" lengthAdjust="spacingAndGlyphs"> for you to answer · h to refuse them at once</text>
 <text x="16.0" y="129.0" fill="#6C6C6C" font-weight="bold" textLength="1032.0" lengthAdjust="spacingAndGlyphs">  AT       TYPE     FROM           STATE                    BODY                                                        </text>
 <text x="16.0" y="147.0" fill="#9F86FF" font-weight="bold" textLength="17.2" lengthAdjust="spacingAndGlyphs">▌ </text>
-<text x="33.2" y="147.0" fill="#D6D6E0" textLength="77.4" lengthAdjust="spacingAndGlyphs">09:40:29 </text>
+<text x="33.2" y="147.0" fill="#D6D6E0" textLength="77.4" lengthAdjust="spacingAndGlyphs">11:08:23 </text>
 <text x="110.6" y="147.0" fill="#5EB1FF" font-weight="bold" textLength="60.2" lengthAdjust="spacingAndGlyphs">request</text>
 <text x="188.0" y="147.0" fill="#9F86FF" font-weight="bold" textLength="94.6" lengthAdjust="spacingAndGlyphs">coordinator</text>
 <text x="317.0" y="147.0" fill="#F5D547" textLength="172.0" lengthAdjust="spacingAndGlyphs">waiting · 1m30s left</text>
 <text x="532.0" y="147.0" fill="#6C6C6C" textLength="344.0" lengthAdjust="spacingAndGlyphs">{&#34;job&#34;:&#34;nightly-rebuild&#34;,&#34;op&#34;:&#34;approve&#34;}</text>
-<text x="16.0" y="183.0" fill="#9F86FF" font-weight="bold" textLength="490.2" lengthAdjust="spacingAndGlyphs">request 59663b56d0e6993ccd68340bafac0b9b from coordinator</text>
+<text x="16.0" y="183.0" fill="#9F86FF" font-weight="bold" textLength="490.2" lengthAdjust="spacingAndGlyphs">request 9b5b395222cc86d13d8ef08043ab971d from coordinator</text>
 <text x="16.0" y="201.0" fill="#E4E4E4" textLength="8.6" lengthAdjust="spacingAndGlyphs">{</text>
 <text x="33.2" y="219.0" fill="#9F86FF" font-weight="bold" textLength="43.0" lengthAdjust="spacingAndGlyphs">&#34;job&#34;</text>
 <text x="76.2" y="219.0" fill="#E4E4E4" textLength="172.0" lengthAdjust="spacingAndGlyphs">: &#34;nightly-rebuild&#34;,</text>
@@ -47,6 +48,6 @@
 <text x="67.6" y="237.0" fill="#E4E4E4" textLength="94.6" lengthAdjust="spacingAndGlyphs">: &#34;approve&#34;</text>
 <text x="16.0" y="255.0" fill="#E4E4E4" textLength="8.6" lengthAdjust="spacingAndGlyphs">}</text>
 <text x="24.6" y="417.0" fill="#3DD68C" font-weight="bold" textLength="473.0" lengthAdjust="spacingAndGlyphs">✓ request from coordinator waiting in the Inbox tab (5)</text>
-<text x="24.6" y="435.0" fill="#6C6C6C" textLength="963.2" lengthAdjust="spacingAndGlyphs">↑/↓ select · enter inspect · a answer · x refuse · h hold on/off · r message sender · 1-6 tabs · ? keys · q quit</text>
+<text x="24.6" y="435.0" fill="#6C6C6C" textLength="963.2" lengthAdjust="spacingAndGlyphs">↑/↓ select · enter inspect · a answer · x refuse · h hold on/off · r message sender · 1-7 tabs · ? keys · q quit</text>
 </g>
 </svg>

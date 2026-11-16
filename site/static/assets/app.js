@@ -251,12 +251,22 @@
     "console-compose": "Send a request, task, send or emit, and keep each reply with its message.",
     "console-inbox": "Requests sent to the console wait for you to answer or refuse them.",
     "config-client": "Add an agent and the console shows where its token is and how to start it.",
+    "console-map": "Every message drawn moving through the broker, in braille: tasks tagged, events rippling, refusals stamped.",
   };
-  const shot = $("#shot"), screen = $("#screen");
+  const shot = $("#shot"), screen = $("#screen"), live = $("#live");
+  const liveCaption = $("#shot-caption").textContent;
+  // Without the recording (a local build), show the Map screenshot instead.
+  live.addEventListener("error", () => { live.hidden = true; shot.hidden = false; }, true);
   for (const tab of $$("#console .tabs button")) {
     tab.addEventListener("click", () => {
       $$("#console .tabs button").forEach((b) => b.setAttribute("aria-selected", b === tab));
       const name = tab.dataset.shot;
+      if (tab.dataset.video && live.readyState > 0) {
+        shot.hidden = true; live.hidden = false; live.play().catch(() => {});
+        $("#shot-caption").textContent = liveCaption;
+        return;
+      }
+      live.pause(); live.hidden = true; shot.hidden = false;
       shot.classList.add("swap");
       setTimeout(() => {
         shot.src = `r/docs/images/${name}.svg`; shot.alt = `agentbus console, ${tab.textContent.slice(2)} tab`;
@@ -301,6 +311,18 @@
     });
   }
   for (const b of $$("[data-copy-text]")) b.addEventListener("click", () => copy(b, b.dataset.copyText));
+
+  // The lab video comes from the lab-video release at build time. A local
+  // build without it gets a link to the release instead of a dead player.
+  for (const v of $$(".video-card video")) {
+    v.addEventListener("error", () => {
+      const a = document.createElement("a");
+      a.className = "video-missing"; a.href = "https://github.com/jefflaplante/agentbus/releases/tag/lab-video";
+      a.textContent = "Watch the lab video on GitHub →";
+      v.parentNode.insertBefore(a, v);
+      v.hidden = true;
+    }, true);
+  }
 
   // ============================== TYPED TERMINAL ==============================
   const SESSION = [

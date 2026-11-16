@@ -6,7 +6,7 @@
 <circle cx="40" cy="15" r="6" fill="#FEBC2E"/>
 <circle cx="60" cy="15" r="6" fill="#28C840"/>
 <text x="532" y="20" fill="#9A9AAA" text-anchor="middle">agentbus config  →  c</text>
-<clipPath id="term-ca6bb4df"><rect x="16.0" y="44" width="1032.0" height="626"/></clipPath><g clip-path="url(#term-ca6bb4df)">
+<clipPath id="term-2f98da70"><rect x="16.0" y="44" width="1032.0" height="626"/></clipPath><g clip-path="url(#term-2f98da70)">
 <rect x="16.0" y="44.0" width="8.6" height="18" fill="#9F86FF"/>
 <rect x="24.6" y="44.0" width="146.2" height="18" fill="#9F86FF"/>
 <text x="24.6" y="57.0" fill="#FFFFFF" font-weight="bold" textLength="146.2" lengthAdjust="spacingAndGlyphs">agentbus · config</text>
@@ -52,7 +52,7 @@
 <text x="24.6" y="561.0" fill="#6C6C6C" textLength="696.6" lengthAdjust="spacingAndGlyphs">  Unset AGENTBUS_URL, AGENTBUS_AGENT and AGENTBUS_TOKEN_FILE afterwards, or later</text>
 <text x="24.6" y="579.0" fill="#6C6C6C" textLength="404.2" lengthAdjust="spacingAndGlyphs">  commands in this shell keep acting as worker.</text>
 <text x="24.6" y="615.0" fill="#9F86FF" font-weight="bold" textLength="206.4" lengthAdjust="spacingAndGlyphs">Start it on another host</text>
-<text x="16.0" y="633.0" fill="#6C6C6C" textLength="258.0" lengthAdjust="spacingAndGlyphs"> lines 1-25 of 36 · ↑/↓ scroll</text>
+<text x="16.0" y="633.0" fill="#6C6C6C" textLength="258.0" lengthAdjust="spacingAndGlyphs"> lines 1-25 of 38 · ↑/↓ scroll</text>
 <text x="24.6" y="651.0" fill="#6C6C6C" textLength="550.4" lengthAdjust="spacingAndGlyphs">↑/↓ scroll · tab switch · y copy · w write worker.env · esc back</text>
 </g>
 </svg>
