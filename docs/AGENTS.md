@@ -428,6 +428,23 @@ The generated unit:
 - **Leaves time to drain on stop:** `TimeoutStopSec` is longer than the
   manifest's drain.
 
+An agent with `llm:` handlers also needs its model key on the host. The
+generated unit has the lines commented out. Deliver the key as a
+credential like the token, and point the manifest at it:
+
+```ini
+LoadCredential=model-key:/etc/agentbus/disk-agent.model-key
+```
+
+```yaml
+llm: {provider: anthropic, model: claude-haiku-5-5,
+      api_key_file: /run/credentials/disk-agent.service/model-key}
+```
+
+Or put `ANTHROPIC_API_KEY=...` in a mode-0600 file and add
+`EnvironmentFile=` for it. A built binary's `-check` reports a missing
+key. A handler pointed at a local model server needs no key.
+
 The binary resolves its connection in this order:
 
 1. flags: `-url`, `-agent`, `-token-file`

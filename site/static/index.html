@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>agentbus · a message bus for AI agents</title>
-<meta name="description" content="agentbus is an agent-to-agent message bus over MQTT: one Go binary that runs a broker which enforces the contract, a CLI, a full-screen console, and a runtime for small agents.">
+<meta name="description" content="agentbus is an agent-to-agent message bus over MQTT: one Go binary that runs a broker which enforces the contract, a CLI, a full-screen console, and a runtime for small agents, which can put a model in charge.">
 <meta name="theme-color" content="#07090f">
 <meta property="og:title" content="agentbus · a message bus for AI agents">
 <meta property="og:description" content="Inboxes, task queues and events for AI agents, over MQTT, with a broker that checks every message.">
@@ -25,6 +25,7 @@
   <nav class="nav-links" aria-label="Main">
     <a href="#/home/patterns">How it talks</a>
     <a href="#/home/console">Console</a>
+    <a href="#/home/models">Models</a>
     <a href="#/home/languages">Code</a>
     <a href="#/home/labs">Labs</a>
     <a href="#/docs/overview">Docs</a>
@@ -52,7 +53,7 @@
           <span class="line">The broker</span>
           <span class="line"><span class="shimmer">keeps them honest.</span></span>
         </h1>
-        <p class="hero-sub">agentbus gives AI agents inboxes, shared task queues and broadcast events over MQTT. Every message passes a broker that checks who sent it, who may receive it, and whether it is still worth delivering.</p>
+        <p class="hero-sub">agentbus gives AI agents inboxes, shared task queues and broadcast events over MQTT. Every message passes a broker that checks who sent it, who may receive it, and whether it is still worth delivering. Small agents built on it can hand their messages to a model.</p>
         <div class="hero-cta">
           <a class="btn primary" href="#/docs/overview">Get started <span aria-hidden="true">→</span></a>
           <a class="btn ghost" href="#/docs/contract">Read the contract</a>
@@ -219,10 +220,97 @@
     </div>
   </section>
 
+  <!-- ============================== MODELS ============================== -->
+  <section class="section" id="models">
+    <div class="section-head reveal">
+      <p class="kicker">04 · agents that think</p>
+      <h2>A model decides. Your scripts do the work.</h2>
+      <p class="lede">Give a standalone agent an <code>llm:</code> handler and a model answers its messages. It decides what to check, calls the agent's own scripts and Go functions as tools, asks other agents on the bus when it needs to, and replies. Use Claude, or any OpenAI-compatible server, local models included. It's still one binary, and the API key comes from each host.</p>
+    </div>
+    <div class="envelope run reveal">
+      <div class="run-figure">
+        <svg class="diagram run-diagram" viewBox="0 0 540 250" role="img" aria-label="A request reaches the hostdoc agent's model, which calls the disk and top tools, hands a task to the weather agent over the bus, and replies.">
+          <rect class="agent-box" x="150" y="18" width="250" height="196" rx="16"/>
+          <text class="box-label" x="275" y="40">hostdoc · one binary</text>
+          <path id="l-in" class="track" d="M48 125 L222 125"/>
+          <path id="l-out" class="track" d="M222 125 C170 175 100 175 48 125"/>
+          <path id="l-t1" class="track" d="M252 113 L345 78 L252 113"/>
+          <path id="l-t2" class="track" d="M260 125 L345 150 L260 125"/>
+          <path id="l-bus" class="track" d="M252 140 C330 205 420 205 488 168 C420 205 330 205 252 140"/>
+          <circle class="node" cx="40" cy="125" r="16"/><text x="40" y="160">caller</text>
+          <circle class="node model" cx="240" cy="125" r="24"/><text class="strong" x="240" y="129">model</text>
+          <rect class="node tool" x="335" y="62" width="50" height="30" rx="8"/><text class="strong" x="360" y="81">disk</text>
+          <rect class="node tool" x="335" y="136" width="50" height="30" rx="8"/><text class="strong" x="360" y="155">top</text>
+          <circle class="node" cx="496" cy="160" r="16"/><text x="496" y="196">weather</text>
+          <text x="455" y="240">bus_task · hops 1</text>
+          <circle class="dot req" r="5" opacity="0"><animateMotion dur="7s" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;0.0;0.14;1" calcMode="linear"><mpath href="#l-in"/></animateMotion><animate attributeName="opacity" dur="7s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.0;0.01;0.13;0.14;1"/></circle>
+          <circle class="dot evt" r="5" opacity="0"><animateMotion dur="7s" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;0.18;0.36;1" calcMode="linear"><mpath href="#l-t1"/></animateMotion><animate attributeName="opacity" dur="7s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.18;0.19;0.35;0.36;1"/></circle>
+          <circle class="dot evt" r="5" opacity="0"><animateMotion dur="7s" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;0.38;0.56;1" calcMode="linear"><mpath href="#l-t2"/></animateMotion><animate attributeName="opacity" dur="7s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.38;0.39;0.55;0.56;1"/></circle>
+          <circle class="dot req" r="5" opacity="0"><animateMotion dur="7s" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;0.58;0.82;1" calcMode="linear"><mpath href="#l-bus"/></animateMotion><animate attributeName="opacity" dur="7s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.58;0.59;0.81;0.82;1"/></circle>
+          <circle class="dot resp" r="5" opacity="0"><animateMotion dur="7s" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;0.85;0.99;1" calcMode="linear"><mpath href="#l-out"/></animateMotion><animate attributeName="opacity" dur="7s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.85;0.86;0.98;0.99;1"/></circle>
+        </svg>
+        <div class="legend run-legend"><span class="k req">request</span><span class="k evt">tool call</span><span class="k resp">reply</span></div>
+      </div>
+      <pre class="code envelope-code"><code data-lang="yaml">agent: hostdoc
+llm: {provider: anthropic, model: claude-haiku-5-5}
+handlers:
+  - task: hostdoc.ask
+    timeout: 120s
+    llm:
+      system: |
+        You look after this host. Check with the
+        tools before you answer; never guess.
+      tools: [disk, top]           # handlers below
+      bus: {task: [weather.forecast]}
+      reply: json
+  - name: disk                     # no trigger: a tool
+    run: df -Ph
+  - name: top
+    script: scripts/top.py
+    params: {type: object, properties: {limit: {type: integer}}}</code></pre>
+    </div>
+    <div class="patterns guards">
+      <article class="pattern reveal" style="--accent: var(--evt)">
+        <h3>Tools are your handlers</h3>
+        <p>A handler with no trigger runs only when the model calls it. Each call runs as a request from the original sender, so the tool's <code>allow_from</code> still holds. Commands never see the model key.</p>
+        <code class="topic">tools: [disk, top]</code>
+      </article>
+      <article class="pattern reveal" style="--accent: var(--req)">
+        <h3>The bus, within limits</h3>
+        <p>The model can reach only the agents and capabilities you list, and the broker's grants still apply on top. Each call carries a <code>hops</code> count, so agents asking agents stop at <code>max_hops</code>.</p>
+        <code class="topic">bus: {task: [weather.forecast]}</code>
+      </article>
+      <article class="pattern reveal" style="--accent: var(--resp)">
+        <h3>Any model</h3>
+        <p>Anthropic, or anything that speaks the OpenAI API: OpenRouter, Ollama, vLLM, llama.cpp, LM Studio. Point <code>base_url</code> at a local server and no key is needed. The standard library is the only dependency.</p>
+        <code class="topic">provider: openai</code>
+      </article>
+    </div>
+    <div class="run-proof">
+      <div class="term run-term reveal" aria-label="A real request to hostdoc and its reply">
+        <div class="term-bar"><i></i><i></i><i></i><span>a real run · claude-haiku-5-5 · evidence trimmed</span></div>
+        <pre class="term-body"><span class="p">$</span> <span class="c">agentbus task -c hostdoc.ask --body '{"question":"Will it rain in Seattle, WA tomorrow?"}'</span>
+<span class="o">{"answer": "I can't say whether it will rain in Seattle, WA tomorrow. No agent</span>
+<span class="o">   on the bus serves weather.forecast, so the forecast request could not be fulfilled.",</span>
+<span class="o"> "evidence": ["bus_task weather.forecast {\"location\": \"Seattle, WA\"} -&gt; $broker refused: no_consumer: …"],</span>
+<span class="o"> "action": "Someone should start a weather.forecast agent on the bus, or check a weather</span>
+<span class="o">   service directly, before asking again."}</span>
+<span class="dim">level=INFO msg="model run" handler=hostdoc.ask turns=2 tokens_in=2785 tokens_out=462 ms=2956 ok=true</span></pre>
+      </div>
+      <div class="run-copy reveal">
+        <h3>A sender can't change it</h3>
+        <p>The model, prompt, tools and bus permissions come from the manifest. The message reaches the model marked as untrusted input. When something fails, the requester gets a code such as <code>model_gave_up</code> or <code>bad_model_output</code>, and API errors stay in the agent's log.</p>
+        <p>A message can still talk the model into calling the tools you gave it, so keep tools read-only and check their input.</p>
+        <a class="more" href="#/docs/agents/model-backed-handlers">Model-backed handlers →</a>
+        <a class="more" href="#/docs/llm-agent">The hostdoc example →</a>
+      </div>
+    </div>
+  </section>
+
   <!-- ============================== LANGUAGES ============================== -->
   <section class="section" id="languages">
     <div class="section-head reveal">
-      <p class="kicker">04 · bring any agent</p>
+      <p class="kicker">05 · bring any agent</p>
       <h2>Go, Python, a shell script, or Claude</h2>
       <p class="lede"><a href="#/docs/contract">CONTRACT.md</a> is language-neutral: any MQTT client that follows it can join. These are ready-made.</p>
     </div>
@@ -293,7 +381,7 @@ handlers:
   - task: disk.usage                    # trigger
     script: scripts/disk.sh             # action
     timeout: 10s</code></pre>
-        <p class="pane-note"><code>agentbus agent build --target linux/amd64</code> turns the manifest into one static binary, about 6.5 MiB. <a href="#/docs/agents">Standalone agents →</a></p>
+        <p class="pane-note"><code>agentbus agent build --target linux/amd64</code> turns the manifest into one static binary, about 6.5 MiB. Add an <code>llm:</code> handler and a model answers, with these handlers as its tools. <a href="#/docs/agents">Standalone agents →</a></p>
       </div>
       <div class="pane" data-pane="mcp">
         <pre class="code"><code data-lang="json">{
@@ -315,7 +403,7 @@ handlers:
   <!-- ============================== LABS ============================== -->
   <section class="section labs" id="labs">
     <div class="section-head reveal">
-      <p class="kicker">05 · learn it hands-on</p>
+      <p class="kicker">06 · learn it hands-on</p>
       <h2>Two hours, one weather agent</h2>
       <p class="lede">A workshop with a teaching script: start a broker, build and deploy a weather agent, then ask Claude Code for the forecast in Seattle and watch the request cross the bus. <code>labs/check.sh</code> runs all of it unattended, in CI on every push.</p>
     </div>
@@ -327,7 +415,7 @@ handlers:
         <li><a href="#/docs/lab-3"><b>3</b><span>The weather agent</span><em>two public weather services</em></a></li>
         <li><a href="#/docs/lab-4"><b>4</b><span>Build and deploy</span><em>one binary, one systemd unit</em></a></li>
         <li><a href="#/docs/lab-5"><b>5</b><span>Claude Code</span><em>an LLM on the bus via MCP</em></a></li>
-        <li><a href="#/docs/lab-6"><b>6</b><span>Extend it</span><em>your own handlers</em></a></li>
+        <li><a href="#/docs/lab-6"><b>6</b><span>Extend it</span><em>your own handlers, then a model</em></a></li>
       </ol>
       <div class="video-card reveal">
         <video controls playsinline preload="metadata" poster="media/agentbus-lab-poster.png" src="media/agentbus-lab.mp4"></video>
@@ -339,7 +427,7 @@ handlers:
   <!-- ============================== DOCS ============================== -->
   <section class="section" id="docs-index">
     <div class="section-head reveal">
-      <p class="kicker">06 · read the manual</p>
+      <p class="kicker">07 · read the manual</p>
       <h2>Documentation</h2>
       <p class="lede">Every page here is the repository's own markdown, rebuilt on each push to main.</p>
     </div>

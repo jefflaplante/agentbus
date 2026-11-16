@@ -11,7 +11,10 @@ its setup commands.
 | [counter-python.service](counter-python.service) | the same agent in Python: [examples/python](../python/worker.py) | any host |
 
 Standalone agents made with `agentbus agent init` get their own unit in
-`deploy/NAME.service`. See [docs/AGENTS.md](../../docs/AGENTS.md).
+`deploy/NAME.service`. See [docs/AGENTS.md](../../docs/AGENTS.md). Agents
+with `llm:` handlers also need a model key. The generated unit shows how to
+pass it as a credential, the same way as the token; see
+[Deploying](../../docs/AGENTS.md#deploying).
 
 ## Install the binary
 

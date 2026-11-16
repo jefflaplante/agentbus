@@ -131,6 +131,27 @@ err = c.Emit(ctx, "jobs/finished", result)          // broadcast
 From Python, see [examples/python](examples/python): an `Agent` class on
 paho-mqtt, a worker and a command-line client.
 
+Or let a model answer. A standalone agent's `llm:` handler hands each
+message to Claude, or to any OpenAI-compatible server, local ones
+included. The agent's other handlers are the model's tools:
+
+```yaml
+agent: hostdoc
+llm: {provider: anthropic, model: claude-haiku-5-5}   # key from ANTHROPIC_API_KEY
+handlers:
+  - task: hostdoc.ask
+    llm:
+      system: You look after this host. Check with the tools before you answer.
+      tools: [disk]
+      bus: {task: [weather.forecast]}   # agents the model may hand work to
+  - name: disk                          # no trigger: only the model runs it
+    run: df -Ph
+```
+
+[examples/llm-agent](examples/llm-agent) is the whole agent, and
+[docs/AGENTS.md](docs/AGENTS.md#model-backed-handlers) covers every
+setting.
+
 Before writing an agent that serves requests or tasks, read
 [docs/SERVICES.md](docs/SERVICES.md). It covers which topic to serve, the
 grants it needs, and how to reply: errors, deadlines, long jobs,
@@ -240,14 +261,15 @@ From conduit at `5626e55`:
 a2a/              contract types and validation (stdlib only)
 broker/           contract-enforcing broker on mochi-mqtt
 client/           Go client (paho, MQTT 3.1.1)
-agent/            standalone agent runtime: manifest, command runner, Go handler registry
+agent/            standalone agent runtime: manifest, command runner, Go handler registry, llm handlers
+agent/llm/        model clients (Anthropic, OpenAI-compatible) and the tool loop, stdlib only
 cmd/agentbus/     the binary: Cobra commands (serve, client, TUIs, agent generator)
 internal/tui/     Bubble Tea views: the console, feeds, config editor, request spinner
 demo/agents/      worker and coordinator agents (library)
 demo/cmd/         their binaries
 test/e2e/         functional tests over real processes
 scripts/demo.sh   the demo
-examples/         sample broker config; service agents in Go and Python; systemd units for the broker and agents; skill and wrappers for coding agents
+examples/         sample broker config; service agents in Go and Python; a model-backed agent; systemd units for the broker and agents; skill and wrappers for coding agents
 labs/             workshop: labs, teaching script, the weather agent, check.sh
 CONTRACT.md       the spec; contract/envelope.schema.json
 docs/             CLI; how it works; writing services; standalone agents; security; retention; desktop clients; integrations
@@ -261,13 +283,14 @@ site/             the documentation website, built from this markdown for GitHub
 | [CONTRACT.md](CONTRACT.md) | The a2a/v1 contract: topics, envelope, request/reply, presence, rejections |
 | [docs/CLI.md](docs/CLI.md) | Every command, the terminal UIs, usage recipes |
 | [demo/README.md](demo/README.md) | The demo, step by step |
-| [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md) | Diagrams: layers, publish checks, request/reply, task queues, status, retention |
+| [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md) | Diagrams: layers, publish checks, request/reply, task queues, model-backed agents, status, retention |
 | [docs/SECURITY.md](docs/SECURITY.md) | Threat model, guarantees, limits, operator checklist, review history |
 | [docs/RETENTION.md](docs/RETENTION.md) | `data_dir` persistence and the JSONL audit log |
 | [docs/DESKTOP-CLIENTS.md](docs/DESKTOP-CLIENTS.md) | MQTT Explorer, MQTTX and mosquitto against the bus |
 | [docs/SERVICES.md](docs/SERVICES.md) | Writing agents that serve inboxes, task queues and events, and how they should reply |
 | [labs/](labs/README.md) | Hands-on labs and a teaching script: broker, a weather agent, and Claude Code asking it for a forecast |
-| [docs/AGENTS.md](docs/AGENTS.md) | Generating standalone agents for remote hosts: manifest, shell/Python/Go handlers, build, deploy |
+| [docs/AGENTS.md](docs/AGENTS.md) | Generating standalone agents for remote hosts: manifest, shell/Python/Go handlers, model-backed (`llm:`) handlers, build, deploy |
+| [examples/llm-agent](examples/llm-agent/README.md) | hostdoc: a model that answers questions about its host, with scripts as its tools; Anthropic or a local model |
 | [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) | conduit, Claude Code, OpenCode and OpenChamber on the bus; `agentbus mcp` |
 
 ## Testing

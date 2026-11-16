@@ -17,6 +17,11 @@ Wants=network-online.target
 ExecStart=/usr/local/bin/{{.Name}}
 LoadCredential=token:/etc/agentbus/{{.Name}}.token
 Environment=AGENTBUS_TOKEN_FILE=%d/token
+# With llm: handlers, the model key too. Either as a credential, with
+# api_key_file: /run/credentials/{{.Name}}.service/model-key in agent.yaml:
+# LoadCredential=model-key:/etc/agentbus/{{.Name}}.model-key
+# or as ANTHROPIC_API_KEY=... (or OPENAI_API_KEY) in a mode-0600 file:
+# EnvironmentFile=/etc/agentbus/{{.Name}}.env
 # Environment=AGENTBUS_URL=ssl://bus.example.com:8883
 DynamicUser=yes
 NoNewPrivileges=yes

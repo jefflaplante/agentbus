@@ -241,6 +241,15 @@ Show terminal 3 logging `from=claude-code`.
 **Ask:** "What would you alert on?" A capability's `expired` count rising
 means no worker answered in time.
 
+**If there's time, and you have an API key (step 6, optional):**
+- **An `llm:` handler puts a model in front of the same script.** The
+  model picks the location and days; `forecast.py` still does the work.
+- **The model can only call the handlers the manifest lists,** and each
+  call runs as the original sender, so `allow_from` still holds.
+- **Show** the `handled handler=forecast_tool` line, then the `model run`
+  line with its token counts. Contrast it with lab 5: there, Claude Code
+  was the caller; here, the model is inside the agent.
+
 ## Wrap-up (5 min)
 
 Recap the three participants: a person, a deployed agent, and Claude.
@@ -252,10 +261,13 @@ Ask what they would put on the bus at work. Typical answers:
 - a cost reporter
 - a GPU health probe
 
-Each one is an `agent init`, a handler and a build.
+Each one is an `agent init`, a handler and a build. The ones that need
+judgment, like a deploy approver, can add an `llm:` handler with the
+other handlers as its tools.
 
 **Further reading in this repository:**
-- [docs/AGENTS.md](../docs/AGENTS.md): building agents
+- [docs/AGENTS.md](../docs/AGENTS.md): building agents, with or without a model
+- [examples/llm-agent](../examples/llm-agent): a model-backed agent
 - [docs/SERVICES.md](../docs/SERVICES.md): how to serve requests well
 - [docs/INTEGRATIONS.md](../docs/INTEGRATIONS.md): Claude Code, OpenCode,
   conduit
@@ -274,3 +286,5 @@ Each one is an `agent init`, a handler and a build.
 | `/mcp` shows agentbus failed | `claude` started without the exports, or `agentbus` isn't on PATH |
 | Claude ignores the bus | Add `CLAUDE.md` (lab 5, step 4), or ask it to "use the agentbus tools" |
 | `agent build` says a Go handler isn't in the binary | The manifest names a `go:` function that no file in `handlers/` registers |
+| Lab 6 step 6: `no API key: set ANTHROPIC_API_KEY` | Start the binary with the key in its environment, or skip the step |
+| Lab 6 step 6: `handler_error: model call failed` | The key is wrong or out of credit; the agent's log (`-v`) has the API's answer |
