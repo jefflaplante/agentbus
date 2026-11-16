@@ -482,3 +482,83 @@ func (ib *Inbox) peekLen() (int, int) {
 	defer ib.mu.Unlock()
 	return len(ib.msgs), len(ib.pending)
 }
+
+// A request whose tool call is cut short (here, cancelled by the client,
+// as a dropped HTTP stream would) still gets its answer: the reply lands in
+// the inbox as a late reply.
+func TestMCPLateReplyLandsInInbox(t *testing.T) {
+	b := startTestBus(t)
+	release := make(chan struct{})
+	asked := make(chan struct{}, 1)
+	b.bob(t, func(ctx context.Context, e *a2a.Envelope) (any, error) {
+		asked <- struct{}{}
+		<-release
+		return map[string]string{"answer": "slow but sure"}, nil
+	})
+	cs := mcpSession(t, b)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "request",
+			Arguments: map[string]any{"to": "bob", "body": "question", "timeout_seconds": 30}})
+		done <- err
+	}()
+	select {
+	case <-asked:
+	case <-time.After(5 * time.Second):
+		t.Fatal("bob never got the request")
+	}
+	cancel() // the client gives up, as when its HTTP stream drops
+	<-done
+	close(release)
+
+	var text string
+	for deadline := time.Now().Add(5 * time.Second); !strings.Contains(text, "late reply") && time.Now().Before(deadline); {
+		out, _ := call(t, cs, "inbox", map[string]any{"wait_seconds": 1})
+		text += out
+	}
+	if !strings.Contains(text, "slow but sure") || !strings.Contains(text, "late reply to the request") {
+		t.Fatalf("inbox:\n%s", text)
+	}
+}
+
+// Only the agent that was asked can put a late reply in the inbox, once.
+func TestMCPLateReplyOnlyFromTheAgentAsked(t *testing.T) {
+	ib := NewInbox()
+	ib.ask("q1", "bob", time.Now().Add(time.Minute))
+	reply := func(from, corr string) *a2a.Envelope {
+		return &a2a.Envelope{V: 1, ID: a2a.NewID(), Type: a2a.TypeResponse, From: from, To: "cli", TS: time.Now(), CorrelationID: corr}
+	}
+	if ib.lateReply(reply("bob", "q1")) {
+		t.Error("taken while the tool was still waiting; the client delivers that one")
+	}
+	ib.doneAsking("q1", true)
+	if ib.lateReply(reply("mallory", "q1")) {
+		t.Error("a reply from an agent that wasn't asked was taken")
+	}
+	if ib.lateReply(reply("bob", "nope")) {
+		t.Error("a reply to a request never sent was taken")
+	}
+	if !ib.lateReply(reply("bob", "q1")) {
+		t.Error("the real late reply was dropped")
+	}
+	if ib.lateReply(reply("bob", "q1")) {
+		t.Error("a second reply to the same request was taken")
+	}
+	// A task may be answered by any worker.
+	ib.ask("t1", "", time.Now().Add(time.Minute))
+	ib.doneAsking("t1", true)
+	if !ib.lateReply(reply("worker-7", "t1")) {
+		t.Error("a task's late reply from a worker was dropped")
+	}
+	// Answered in time: forgotten.
+	ib.ask("q2", "bob", time.Now().Add(time.Minute))
+	ib.doneAsking("q2", false)
+	if ib.lateReply(reply("bob", "q2")) {
+		t.Error("a duplicate of an answered request was taken")
+	}
+	if msgs, _ := ib.take(context.Background(), 0); len(msgs) != 2 {
+		t.Errorf("inbox holds %d messages, want 2", len(msgs))
+	}
+}
