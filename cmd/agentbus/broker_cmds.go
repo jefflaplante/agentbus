@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -98,10 +99,26 @@ apply at once; listener, TLS, storage and limit changes need a restart.`,
 				log.Info("metrics, health and readiness over HTTP", "metrics", "http://"+m+"/metrics",
 					"healthz", "http://"+m+"/healthz", "readyz", "http://"+m+"/readyz")
 			}
-			stopMCP, _, err := startMCPGateway(b, cfg, log)
+			// The join endpoint shares the MCP server when both name one
+			// address, and gets its own otherwise.
+			join := newJoinServer(loc, b.Addr(), cfg.TLSCert != "", log)
+			var mounts []func(*http.ServeMux)
+			if cfg.JoinListen != "" && cfg.JoinListen == cfg.MCPListen {
+				mounts = append(mounts, join.mount)
+				log.Info("join requests over HTTP", "addr", cfg.JoinListen, "path", "/join", "tls", cfg.TLSCert != "")
+			}
+			stopMCP, _, err := startMCPGateway(b, cfg, log, mounts...)
 			if err != nil {
 				_ = b.Close()
 				return err
+			}
+			stopJoin := func() {}
+			if cfg.JoinListen != "" && cfg.JoinListen != cfg.MCPListen {
+				if stopJoin, _, err = startJoinEndpoint(join, cfg, log); err != nil {
+					stopMCP()
+					_ = b.Close()
+					return err
+				}
 			}
 			printServeHelp(a, loc, cfg, created)
 
@@ -120,6 +137,7 @@ apply at once; listener, TLS, storage and limit changes need a restart.`,
 				case <-hup:
 					_, _ = b.ReloadFrom(loc.Path)
 				case <-ctx.Done():
+					stopJoin()
 					stopMCP() // before the broker, so its agents disconnect cleanly
 					return b.Close()
 				}
@@ -182,6 +200,9 @@ func printServeHelp(a *app, loc confstore.Location, cfg *broker.Config, created 
 	}
 	cmd("config", "add agents, client setup, edit settings")
 	cmd("config agent add NAME", "the same, from a script")
+	if cfg.JoinListen != "" {
+		cmd("config join", "approve or deny agents that asked to join (join_listen "+cfg.JoinListen+")")
+	}
 	if !confstore.Loopback(cfg.Listen) && cfg.TLSCert == "" {
 		lipgloss.Fprintln(out, tui.WarnStyle.Render("  ! listening beyond loopback without TLS: set tls_cert and tls_key"))
 	}

@@ -54,6 +54,14 @@ type Config struct {
 	// or DNS name fronts it; `agentbus config mcp` prints it. Default: built
 	// from mcp_listen.
 	MCPURL string `json:"mcp_url,omitempty"`
+	// JoinListen, if set, makes `agentbus serve` accept join requests over
+	// HTTP on this address, at /join: a client that isn't configured yet
+	// sends the ID it wants, the SHA-256 of a token it made, and the
+	// capabilities it would like. Nothing is granted until an operator
+	// approves the request ("agentbus config join", or the config editor),
+	// which adds the agent to this file. It may equal mcp_listen, and
+	// follows the same rule: loopback, or TLS, or allow_insecure.
+	JoinListen string `json:"join_listen,omitempty"`
 	// ConnectTimeout is how long a new connection may take to send CONNECT.
 	ConnectTimeout Duration `json:"connect_timeout"`
 	// MaxConnections and MaxConnectionsPerIP cap open sockets, including
@@ -240,6 +248,10 @@ func (c *Config) Validate() error {
 	if c.MCPListen != "" && c.TLSCert == "" && !c.AllowInsecure && !isLoopback(c.MCPListen) {
 		return fmt.Errorf("mcp_listen %q is not loopback and TLS is off: tokens would cross the network in clear; "+
 			"set tls_cert/tls_key, bind to 127.0.0.1, or set allow_insecure", c.MCPListen)
+	}
+	if c.JoinListen != "" && c.TLSCert == "" && !c.AllowInsecure && !isLoopback(c.JoinListen) {
+		return fmt.Errorf("join_listen %q is not loopback and TLS is off: a join request could be altered on the way; "+
+			"set tls_cert/tls_key, bind to 127.0.0.1, or set allow_insecure", c.JoinListen)
 	}
 	if c.MCPURL != "" {
 		if u, err := url.Parse(c.MCPURL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {

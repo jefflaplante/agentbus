@@ -88,6 +88,11 @@ bin/agentbus console                  # finds the local broker and admin token b
 bin/agentbus config agent add researcher --capability summarize   # prints its token file and how to start it
 ```
 
+Or let a host ask for itself: with `join_listen` set, `agentbus join` on
+the new host sends a request, and nothing is granted until you approve it
+in the console or with `agentbus config join approve NAME`. See
+[Letting an agent ask to join](docs/CLI.md#letting-an-agent-ask-to-join).
+
 To put `agentbus` on your PATH, run `sudo make install` (to
 `/usr/local/bin`) or `make install BINDIR=$HOME/go/bin`. `make clean`
 removes build output and demo state, but never your config or tokens. For

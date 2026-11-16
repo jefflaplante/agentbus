@@ -59,6 +59,7 @@ Broker:
 
 Setup:
   config      Manage the broker config, agents and client setup
+  join        Ask a broker to add this machine as an agent, pending approval
 
 Messaging:
   emit        Broadcast an event on this agent's event topic
@@ -354,7 +355,8 @@ it at the console's identity and answer by hand.
 The [config editor](#setup-agentbus-config), as a tab. It's there when the
 broker config file on this machine is the one for the broker the console
 is connected to (the same listen address), so the console never edits some
-other broker's config.
+other broker's config. When a client [asks to join](#letting-an-agent-ask-to-join),
+the console says so and the tab's **Join requests** view lists it.
 
 ### Map
 
@@ -637,6 +639,69 @@ have `AGENTBUS_CONFIG` or `AGENTBUS_CONFIG_DIR` set.
 After `agent token NAME` (rotate), clients that read the token file pick up
 the new token when they restart. Any copy on another host has to be
 replaced.
+
+### Letting an agent ask to join
+
+Copying a token file to every host is the slow part of adding agents.
+With `join_listen` set, a host asks for itself and you only approve:
+
+```bash
+# on the broker, once
+agentbus config set join_listen 0.0.0.0:8884      # needs tls_cert/tls_key off-host; restart serve
+
+# on the new host
+agentbus join --join-url https://BROKER-HOST:8884 --agent worker-7 \
+    --capability summarize --description "nightly batch box" --wait 1h > worker-7.env
+```
+
+`join` makes a token, keeps it in a token file on that host
+(`~/.config/agentbus/tokens/worker-7.token`, or `--token-file`), and sends
+the broker only its SHA-256, with the ID it wants and the capabilities it
+would like to serve. The token never leaves the host. The request then
+waits on the broker:
+
+```text
+$ agentbus config join
+AGENT     ASKS FOR   FROM                    AGE  DESCRIPTION
+worker-7  summarize  batch-03 (10.0.4.17)    12s  nightly batch box
+
+$ agentbus config join approve worker-7              # grant what it asked for
+$ agentbus config join approve worker-7 --capability summarize --send-to conduit-home
+$ agentbus config join approve worker-7 --capability=   # let it join, serve nothing
+$ agentbus config join deny worker-7
+```
+
+What the client advertises is only a request. Nothing is granted, and the
+token doesn't work, until you approve; approving adds the agent to
+`broker.json` with the grants you chose, and the running broker accepts
+it within a second. Without `--capability`, `approve` grants what was
+asked; with it, exactly what you name. A join can never ask for `*` or
+for the observer role.
+
+In the config editor (and the console's Config tab), **Join requests** is
+the third view: `enter` opens the request with its capabilities filled in
+for you to trim or change, `d` denies it. The tab shows a count while
+anyone is waiting.
+
+On the client, `join` prints the agent's `AGENTBUS_*` settings on stdout
+once it's approved, so `> worker-7.env` gives a ready env file. Without
+`--wait` it sends the request and exits; run it again to see how the
+request stands (it reuses the token file, so it never asks twice). Use
+`--ca-file` for a broker whose certificate isn't from a public CA.
+
+Things to know:
+
+- The first request for an ID holds it: a second client asking for the
+  same ID, or for an existing agent's ID, is refused.
+- Requests expire after 24 hours unanswered. At most 64 wait at once, and
+  4 from one address.
+- A joined agent has no token file on the broker, so the agents list shows
+  its token as `missing`. That's expected: its token is on the client.
+  Rotating it here would write a new token on the broker and cut the
+  client off.
+- `FROM` is the host name the client reported and the address the broker
+  saw. The host name is a label, not proof; check the address, or ask the
+  person who started it, before you approve.
 
 ## Running the broker
 

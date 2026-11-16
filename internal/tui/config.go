@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
@@ -33,6 +34,21 @@ const (
 	modeClient
 )
 
+// The editor's tabs.
+const (
+	tabAgents = iota
+	tabSettings
+	tabJoins
+	numConfigTabs
+)
+
+// pendingTickMsg makes the editor look for new join requests.
+type pendingTickMsg struct{}
+
+func pendingTick() tea.Cmd {
+	return tea.Tick(2*time.Second, func(time.Time) tea.Msg { return pendingTickMsg{} })
+}
+
 // liveSettings take effect on a running broker without a restart.
 var liveSettings = map[string]bool{"rate_per_second": true, "rate_burst": true, "max_clock_skew": true}
 
@@ -51,10 +67,12 @@ type ConfigModel struct {
 	// the console handles leaving.
 	Tabbed bool
 
-	tab      int // 0 agents, 1 broker settings
+	tab      int // tabAgents, tabSettings or tabJoins
 	agents   table.Model
 	settings table.Model
-	keys     []string // setting keys, in table order
+	joins    table.Model
+	pending  []confstore.JoinRequest // join requests waiting, in table order
+	keys     []string                // setting keys, in table order
 
 	mode    configMode
 	form    *huh.Form
@@ -88,10 +106,13 @@ func NewConfigEditor(loc confstore.Location, focus string) (*ConfigModel, error)
 	m := &ConfigModel{loc: loc, cfg: cfg, stamp: tx.Stamp(), width: 110, height: 30, dark: true}
 	m.agents = table.New(table.WithColumns(m.agentColumns()), table.WithFocused(true), table.WithHeight(12))
 	m.settings = table.New(table.WithColumns(m.settingColumns()), table.WithHeight(12))
+	m.joins = table.New(table.WithColumns(m.joinColumns()), table.WithHeight(12))
 	restyleTable(&m.agents)
 	restyleTable(&m.settings)
+	restyleTable(&m.joins)
 	m.agents.SetWidth(m.width)
 	m.settings.SetWidth(m.width)
+	m.joins.SetWidth(m.width)
 	m.refresh()
 	if i := confstore.Find(cfg, focus); i >= 0 {
 		m.agents.SetCursor(i)
@@ -116,6 +137,88 @@ func (m *ConfigModel) agentColumns() []table.Column {
 
 func (m *ConfigModel) settingColumns() []table.Column {
 	return []table.Column{{Title: "SETTING", Width: 24}, {Title: "VALUE", Width: max(20, m.width-24-12-6)}, {Title: "APPLIES", Width: 12}}
+}
+
+func (m *ConfigModel) joinColumns() []table.Column {
+	w := []int{16, 24, 28, 6} // AGENT ASKS-FOR FROM AGE
+	if m.width < 110 {
+		w = []int{12, 18, 20, 5}
+	}
+	used := 5 * 2
+	for _, n := range w {
+		used += n
+	}
+	return []table.Column{
+		{Title: "AGENT", Width: w[0]}, {Title: "ASKS FOR", Width: w[1]}, {Title: "FROM", Width: w[2]},
+		{Title: "AGE", Width: w[3]}, {Title: "DESCRIPTION", Width: max(11, m.width-used)},
+	}
+}
+
+// refreshPending rereads the join requests waiting beside the config.
+func (m *ConfigModel) refreshPending() {
+	var sel string
+	if r := m.joins.SelectedRow(); len(r) > 0 {
+		sel = r[0]
+	}
+	m.pending, _ = confstore.Pending(m.loc)
+	rows := make([]table.Row, 0, len(m.pending))
+	cursor := -1
+	for i, r := range m.pending {
+		if r.ID == sel {
+			cursor = i
+		}
+		asks := strings.Join(r.Capabilities, ",")
+		if asks == "" {
+			asks = "-"
+		}
+		rows = append(rows, table.Row{r.ID, asks, Clean(r.From()), shortAge(time.Since(r.RequestedAt)), Clean(r.Description)})
+	}
+	m.joins.SetRows(rows)
+	// Stay on the same request as rows come and go; an empty table leaves
+	// the cursor at -1, so put it back on the first row when one arrives.
+	switch {
+	case cursor >= 0:
+		m.joins.SetCursor(cursor)
+	case m.joins.Cursor() < 0:
+		m.joins.SetCursor(0)
+	case m.joins.Cursor() >= len(rows):
+		m.joins.SetCursor(max(0, len(rows)-1))
+	}
+}
+
+func shortAge(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
+	return fmt.Sprintf("%dh", int(d.Hours()))
+}
+
+func (m *ConfigModel) selectedJoin() (confstore.JoinRequest, bool) {
+	i := m.joins.Cursor()
+	if i < 0 || i >= len(m.pending) {
+		return confstore.JoinRequest{}, false
+	}
+	return m.pending[i], true
+}
+
+// setTab shows tab and gives its table the keyboard.
+func (m *ConfigModel) setTab(tab int) {
+	m.tab = tab
+	m.agents.Blur()
+	m.settings.Blur()
+	m.joins.Blur()
+	switch tab {
+	case tabAgents:
+		m.agents.Focus()
+	case tabSettings:
+		m.settings.Focus()
+	case tabJoins:
+		m.joins.Focus()
+		m.refreshPending()
+	}
 }
 
 // AgentRole summarizes what an agent may do.
@@ -186,6 +289,7 @@ func (m *ConfigModel) refresh() {
 		srows = append(srows, table.Row{k, raw[k], applies})
 	}
 	m.settings.SetRows(srows)
+	m.refreshPending()
 }
 
 // settingOrder is the order settings appear in the editor.
@@ -193,7 +297,7 @@ var settingOrder = []string{
 	"listen", "tls_cert", "tls_key", "allow_insecure", "data_dir", "audit_file", "audit_max_bytes", "audit_keep",
 	"rate_per_second", "rate_burst", "max_clock_skew", "max_envelope_bytes", "max_queued", "session_expiry",
 	"dedupe_window", "max_connections", "max_connections_per_ip", "connect_timeout", "status_interval",
-	"metrics_listen", "mcp_listen", "mcp_url",
+	"metrics_listen", "mcp_listen", "mcp_url", "join_listen",
 }
 
 func settingValues(c *broker.Config) map[string]string {
@@ -207,6 +311,7 @@ func settingValues(c *broker.Config) map[string]string {
 		"max_connections": strconv.Itoa(c.MaxConnections), "max_connections_per_ip": strconv.Itoa(c.MaxConnectionsPerIP),
 		"connect_timeout": dur(c.ConnectTimeout), "status_interval": dur(c.StatusInterval),
 		"metrics_listen": c.MetricsListen, "mcp_listen": c.MCPListen, "mcp_url": c.MCPURL,
+		"join_listen": c.JoinListen,
 	}
 }
 
@@ -267,9 +372,7 @@ func (m *ConfigModel) selectedAgent() (broker.AgentConfig, bool) {
 // Focus selects agent id in the agents table.
 func (m *ConfigModel) Focus(id string) {
 	if i := confstore.Find(m.cfg, id); i >= 0 {
-		m.tab = 0
-		m.agents.Focus()
-		m.settings.Blur()
+		m.setTab(tabAgents)
 		m.agents.SetCursor(i)
 	}
 }
@@ -279,7 +382,7 @@ func (m *ConfigModel) say(format string, a ...any) {
 }
 func (m *ConfigModel) fail(err error) { m.flash, m.flashErr = err.Error(), true }
 
-func (m *ConfigModel) Init() tea.Cmd { return tea.RequestBackgroundColor }
+func (m *ConfigModel) Init() tea.Cmd { return tea.Batch(tea.RequestBackgroundColor, pendingTick()) }
 
 func (m *ConfigModel) quit() tea.Cmd {
 	if m.Embedded {
@@ -294,16 +397,32 @@ func (m *ConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		SetDark(m.dark)
 		restyleTable(&m.agents)
 		restyleTable(&m.settings)
+		restyleTable(&m.joins)
 		return m, nil
+	}
+	if _, ok := msg.(pendingTickMsg); ok {
+		// A request can arrive at any time, and an approval elsewhere
+		// (the CLI) both removes one and changes the config.
+		if m.mode == modeList {
+			if confstore.Stamp(m.loc.Path) != m.stamp {
+				m.reload()
+			} else {
+				m.refreshPending()
+			}
+		}
+		return m, pendingTick()
 	}
 	if ws, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width, m.height = ws.Width, ws.Height
 		m.agents.SetColumns(m.agentColumns())
 		m.settings.SetColumns(m.settingColumns())
+		m.joins.SetColumns(m.joinColumns())
 		m.agents.SetWidth(ws.Width)
 		m.settings.SetWidth(ws.Width)
+		m.joins.SetWidth(ws.Width)
 		m.agents.SetHeight(max(4, ws.Height-9))
 		m.settings.SetHeight(max(4, ws.Height-9))
+		m.joins.SetHeight(max(4, ws.Height-9))
 	}
 
 	switch m.mode {
@@ -353,22 +472,33 @@ func (m *ConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch k.String() {
 	case "q", "esc", "ctrl+c":
 		return m, m.quit()
-	case "tab", "shift+tab":
-		m.tab = 1 - m.tab
-		if m.tab == 0 {
-			m.agents.Focus()
-			m.settings.Blur()
-		} else {
-			m.settings.Focus()
-			m.agents.Blur()
-		}
+	case "tab":
+		m.setTab((m.tab + 1) % numConfigTabs)
+		return m, nil
+	case "shift+tab":
+		m.setTab((m.tab + numConfigTabs - 1) % numConfigTabs)
 		return m, nil
 	}
-	if m.tab == 1 {
+	switch m.tab {
+	case tabSettings:
 		if k.String() == "enter" || k.String() == "e" {
 			return m, m.editSetting()
 		}
 		return m, m.forwardTable(msg)
+	case tabJoins:
+		switch k.String() {
+		case "enter", "a", "y":
+			if r, ok := m.selectedJoin(); ok {
+				return m, m.approveForm(r)
+			}
+		case "d", "x", "delete", "backspace":
+			if r, ok := m.selectedJoin(); ok {
+				m.askDeny(r.ID)
+			}
+		default:
+			return m, m.forwardTable(msg)
+		}
+		return m, nil
 	}
 	switch k.String() {
 	case "a", "n":
@@ -397,10 +527,13 @@ func (m *ConfigModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *ConfigModel) forwardTable(msg tea.Msg) tea.Cmd {
 	var cmd tea.Cmd
-	if m.tab == 0 {
+	switch m.tab {
+	case tabAgents:
 		m.agents, cmd = m.agents.Update(msg)
-	} else {
+	case tabSettings:
 		m.settings, cmd = m.settings.Update(msg)
+	default:
+		m.joins, cmd = m.joins.Update(msg)
 	}
 	return cmd
 }
@@ -549,6 +682,53 @@ func (m *ConfigModel) agentForm(a *broker.AgentConfig) tea.Cmd {
 		m.say("saved %s · applied to the running broker", next.ID)
 		return nil
 	})
+}
+
+// approveForm answers a join request: the operator sees what the client
+// asked for and chooses what to grant before the agent is added.
+func (m *ConfigModel) approveForm(r confstore.JoinRequest) tea.Cmd {
+	m.fCaps, m.fSendTo = strings.Join(r.Capabilities, ", "), ""
+	asked := "It asked for no capabilities."
+	if len(r.Capabilities) > 0 {
+		asked = "It asked for: " + strings.Join(r.Capabilities, ", ") + "."
+	}
+	from := ""
+	if f := r.From(); f != "" {
+		from = " from " + Clean(f)
+	}
+	fields := []huh.Field{
+		huh.NewInput().Title("Grant capabilities").
+			Description(asked + " Edit to grant fewer or others, comma-separated; * for all; blank for none.").
+			Value(&m.fCaps).Validate(validList(true)),
+		huh.NewInput().Title("May send to").Description("agents whose inboxes it may message, comma-separated; blank for anyone").
+			Value(&m.fSendTo).Validate(validList(true)),
+	}
+	return m.startForm("Approve "+r.ID+from, fields, func() error {
+		if err := errors.Join(validList(true)(m.fCaps), validList(true)(m.fSendTo)); err != nil {
+			return err
+		}
+		ag := broker.AgentConfig{Capabilities: splitList(m.fCaps), SendTo: splitList(m.fSendTo)}
+		if err := m.change(func(tx *confstore.Tx) error { return tx.ApproveJoin(r.ID, ag) }); err != nil {
+			return err
+		}
+		ag.ID = r.ID
+		m.say("approved %s · %s · applied to the running broker; its token stays on the client", r.ID, AgentRole(ag))
+		return nil
+	})
+}
+
+func (m *ConfigModel) askDeny(id string) {
+	m.mode = modeConfirm
+	m.confirm = fmt.Sprintf("Deny %s's request to join? Nothing is added, and it can ask again.", id)
+	m.onYes = func() error {
+		if err := confstore.RemovePending(m.loc, id); err != nil {
+			m.refreshPending()
+			return err
+		}
+		m.refreshPending()
+		m.say("denied %s", id)
+		return nil
+	}
 }
 
 func (m *ConfigModel) askDelete(id string) {
@@ -717,7 +897,16 @@ func (m *ConfigModel) render() string {
 		}
 		return SubtleStyle.Render(name)
 	}
-	tabLine := " " + tabs("Agents", m.tab == 0) + "   " + tabs("Broker settings", m.tab == 1)
+	joinTab := "Join requests"
+	if n := len(m.pending); n > 0 {
+		joinTab = fmt.Sprintf("Join requests (%d)", n)
+	}
+	tabLine := " " + tabs("Agents", m.tab == tabAgents) + "   " + tabs("Broker settings", m.tab == tabSettings) + "   "
+	if len(m.pending) > 0 && m.tab != tabJoins {
+		tabLine += WarnStyle.Render(joinTab) // someone is waiting
+	} else {
+		tabLine += tabs(joinTab, m.tab == tabJoins)
+	}
 
 	var body, help string
 	switch m.mode {
@@ -734,12 +923,19 @@ func (m *ConfigModel) render() string {
 		if m.Tabbed {
 			leave = "1-7 other tabs"
 		}
-		if m.tab == 0 {
+		switch m.tab {
+		case tabAgents:
 			body = m.agents.View()
 			help = "↑/↓ select · enter edit · a add · c client setup · r rotate token · d remove · tab settings · " + leave
-		} else {
+		case tabSettings:
 			body = m.settings.View()
-			help = "↑/↓ select · enter edit · tab agents · " + leave
+			help = "↑/↓ select · enter edit · tab join requests · " + leave
+		default:
+			body = m.joins.View()
+			help = "↑/↓ select · enter approve · d deny · tab agents · " + leave
+			if len(m.pending) == 0 {
+				body += "\n" + SubtleStyle.Render(m.noJoinsHint())
+			}
 		}
 	}
 	if m.mode == modeConfirm {
@@ -755,6 +951,15 @@ func (m *ConfigModel) render() string {
 		flash = "\n" + ansi.Truncate(" "+style.Render(mark+m.flash), max(m.width, 20), "…")
 	}
 	return header + "\n" + tabLine + "\n\n" + body + flash + "\n" + ansi.Truncate(HelpStyle.Render(help), max(m.width, 20), "…")
+}
+
+// noJoinsHint explains an empty join tab.
+func (m *ConfigModel) noJoinsHint() string {
+	if m.cfg.JoinListen == "" {
+		return " Nobody is waiting, and nobody can ask: join_listen is not set. Set it under Broker settings\n" +
+			" (say 0.0.0.0:8884) and restart the broker; clients then run \"agentbus join\"."
+	}
+	return " Nobody is waiting. Clients ask with: agentbus join --join-url ... --agent NAME --capability ..."
 }
 
 func (m *ConfigModel) renderClient() (string, string) {
