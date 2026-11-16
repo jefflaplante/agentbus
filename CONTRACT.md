@@ -229,6 +229,47 @@ to choose the receiver's model, skills, tools or permissions.
 `a2a.UntrustedPreamble(env)` returns text to put in front of an envelope
 before an LLM sees it.
 
+## Canonical form
+
+End-to-end signatures (see [docs/SECURITY.md](docs/SECURITY.md)) need a
+byte-exact answer to *what exactly is signed*. The canonical form is that
+answer. No envelope carries a signature yet; when one does, signer and
+verifier both serialize the envelope to these bytes and sign them.
+
+The canonical form is a function of the **parsed envelope**, not of the
+wire bytes it arrived on. The broker re-encodes every accepted envelope,
+so a signature over the sender's original serialization would not survive
+the hop: `Canonical(Parse(m)) == Canonical(Parse(Parse(m).Marshal()))`.
+Go: [`a2a.Envelope.Canonical`](a2a/canonical.go).
+
+1. One JSON object, compact separators `,` and `:`, no trailing newline.
+2. Every present envelope field, keyed by its wire name, `sig` excluded
+   (when one exists). Absent optional fields stay absent.
+3. Object keys sorted by raw UTF-8 byte order, recursively, including
+   `headers` and every object inside `body`.
+4. `ts` normalized to UTC RFC 3339 with a `Z` suffix and no added
+   fractional digits: `2026-11-15T16:04:05.123Z`. `Z` and `+00:00`
+   spellings of one instant canonicalize identically.
+5. Numbers in `body` per RFC 8785 (JCS) §3.2.2.3: IEEE-754 double
+   precision, shortest round-trip decimal digits, ECMAScript
+   number-to-string layout (`0.000001` plain, `1e-7` exponent; `1e20`
+   plain, `1e+21` exponent; `-0` collapses to `0`; integer-valued
+   doubles carry no `.0`). A number literal that does not fit a double
+   (`1e400`) is refused, not rounded. Envelope integers outside `body`
+   (`v`, `ttl_ms`) are within double-exact range by construction. Keep
+   body integers within ±(2^53−1); a sender that exceeds it signs the
+   double the verifier will parse.
+6. Strings byte-exact: no Unicode normalization, case folding or
+   trimming. Two canonically-equivalent but byte-distinct strings
+   canonicalize differently, by design — a signature covers exact bytes,
+   not intended meaning. (Non-normative: emitting NFC keeps
+   human-equivalent payloads comparable *before* signing.)
+7. No HTML escaping: `<`, `>`, `&` appear raw, never `\u003c` &c.
+
+Two envelopes canonicalize identically if and only if their parsed
+fields agree — a receiver can compare canonical bytes instead of
+re-deriving field-by-field equality.
+
 ## Versioning
 
 The version is part of every topic (`a2a/v1`) and envelope (`v`). Adding an

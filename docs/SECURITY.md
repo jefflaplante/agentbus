@@ -165,8 +165,10 @@ features) found the following, fixed with regression tests in
   topic string each time, so a torn read is very unlikely to matter, but
   it needs a fix in mochi (taking the index lock in `Messages`).
 
-- **End-to-end signatures** (Ed25519 `sig` over canonical header fields plus
-  a body hash). Until then, authenticity rests on the broker.
+- **End-to-end signatures** (Ed25519 `sig`). The canonical bytes to sign
+  are now specified (CONTRACT.md, "Canonical form") and implemented
+  (`a2a.Envelope.Canonical`); the signature field and key use are not.
+  Until then, authenticity rests on the broker.
 - **Sealed bodies** (X25519 + HKDF + AES-256-GCM with header fields as
   associated data), using pinned `kex` keys. `enc` is only a label today.
 - **mTLS client authentication.**
