@@ -157,7 +157,7 @@ func TestPresenceRestoredOffline(t *testing.T) {
 func TestDedupeAndAuditAcrossRestart(t *testing.T) {
 	p := newPersistBus(t)
 	bobInbox := newRecorder()
-	p.connect("bob", bobInbox.handler)
+	bob := p.connect("bob", bobInbox.handler)
 	alice := p.connect("alice", nil)
 
 	env, _ := a2a.New(a2a.TypeEvent, "alice", map[string]string{"secret": "do-not-log-me"})
@@ -166,6 +166,22 @@ func TestDedupeAndAuditAcrossRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	bobInbox.next(t)
+	// The handler sees the message before bob acknowledges it. Restarting
+	// before the broker has the acknowledgement leaves the message in
+	// flight in bob's persistent session, and it is redelivered after the
+	// restart, as QoS 1 allows; that is not the duplicate this test is
+	// about. So wait for the acknowledgement, and close both clients so
+	// they don't reconnect alongside the new ones.
+	waitFor(t, func() bool {
+		for _, a := range p.srv.Status().Agents {
+			if a.ID == "bob" {
+				return a.Queued == 0
+			}
+		}
+		return false
+	}, "bob's acknowledgement of the first delivery")
+	bob.Close()
+	alice.Close()
 
 	p.restart()
 	bobInbox = newRecorder()
