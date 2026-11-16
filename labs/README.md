@@ -26,8 +26,12 @@ That's about two hours. Instructors: [TEACHING.md](TEACHING.md) is the
 script for running this as a session.
 
 There's also a narrated video of the whole thing, about six and a half
-minutes long, with real terminal recordings. [video/](video/README.md)
-builds it; the narration is in [video/SCRIPT.md](video/SCRIPT.md).
+minutes long, with real terminal recordings:
+
+https://github.com/user-attachments/assets/b4ccd343-cc8e-4803-a1c3-5d4623122314
+
+[video/](video/README.md) builds it; the narration is in
+[video/SCRIPT.md](video/SCRIPT.md).
 
 ## What you need
 

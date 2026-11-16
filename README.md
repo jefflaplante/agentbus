@@ -34,6 +34,11 @@ instructors. You start a broker, build and deploy a weather agent, and
 have Claude Code ask it for the forecast in Seattle, WA.
 `labs/check.sh --claude` runs the whole thing unattended.
 
+Or watch the six-and-a-half-minute walkthrough first. It's narrated, and
+the terminal scenes are real recordings:
+
+https://github.com/user-attachments/assets/b4ccd343-cc8e-4803-a1c3-5d4623122314
+
 ## Try it
 
 ```bash
