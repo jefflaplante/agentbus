@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1220"/><stop offset="1" stop-color="#16213a"/>
+    </linearGradient>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#2dd4bf"/>
+    </marker>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#bg)"/>
+  <text x="960" y="120" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial" font-weight="700"
+        font-size="56" fill="#f8fafc">Why a bus, and why this one</text>
+
+  <!-- left: point to point -->
+  <text x="480" y="230" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial" font-size="34"
+        fill="#94a3b8">Point to point</text>
+  <g stroke="#f87171" stroke-width="3" opacity="0.8">
+    <line x1="300" y1="380" x2="660" y2="380"/><line x1="300" y1="380" x2="300" y2="700"/>
+    <line x1="300" y1="380" x2="660" y2="700"/><line x1="660" y1="380" x2="300" y2="700"/>
+    <line x1="660" y1="380" x2="660" y2="700"/><line x1="300" y1="700" x2="660" y2="700"/>
+    <line x1="480" y1="540" x2="300" y2="380"/><line x1="480" y1="540" x2="660" y2="380"/>
+    <line x1="480" y1="540" x2="300" y2="700"/><line x1="480" y1="540" x2="660" y2="700"/>
+  </g>
+  <g font-family="Helvetica Neue, Helvetica, Arial" font-size="22" fill="#e2e8f0" text-anchor="middle">
+    <circle cx="300" cy="380" r="46" fill="#1e293b" stroke="#64748b" stroke-width="3"/><text x="300" y="388">gateway</text>
+    <circle cx="660" cy="380" r="46" fill="#1e293b" stroke="#64748b" stroke-width="3"/><text x="660" y="388">coder</text>
+    <circle cx="300" cy="700" r="46" fill="#1e293b" stroke="#64748b" stroke-width="3"/><text x="300" y="708">worker</text>
+    <circle cx="660" cy="700" r="46" fill="#1e293b" stroke="#64748b" stroke-width="3"/><text x="660" y="708">worker</text>
+    <circle cx="480" cy="540" r="46" fill="#1e293b" stroke="#64748b" stroke-width="3"/><text x="480" y="548">probe</text>
+  </g>
+  <text x="480" y="830" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial" font-size="28"
+        fill="#fca5a5">10 links, each with its own address, auth and retries</text>
+
+  <!-- right: bus -->
+  <text x="1440" y="230" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial" font-size="34"
+        fill="#94a3b8">One broker that checks identity</text>
+  <g stroke="#2dd4bf" stroke-width="4">
+    <line x1="1440" y1="540" x2="1260" y2="380"/><line x1="1440" y1="540" x2="1620" y2="380"/>
+    <line x1="1440" y1="540" x2="1260" y2="700"/><line x1="1440" y1="540" x2="1620" y2="700"/>
+    <line x1="1440" y1="540" x2="1440" y2="740"/>
+  </g>
+  <rect x="1350" y="490" width="180" height="100" rx="18" fill="#0f172a" stroke="#2dd4bf" stroke-width="5"/>
+  <text x="1440" y="550" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial" font-weight="700"
+        font-size="30" fill="#e2e8f0">broker</text>
+  <g font-family="Helvetica Neue, Helvetica, Arial" font-size="22" fill="#e2e8f0" text-anchor="middle">
+    <circle cx="1260" cy="380" r="46" fill="#1e293b" stroke="#a78bfa" stroke-width="3"/><text x="1260" y="388">gateway</text>
+    <circle cx="1620" cy="380" r="46" fill="#1e293b" stroke="#a78bfa" stroke-width="3"/><text x="1620" y="388">coder</text>
+    <circle cx="1260" cy="700" r="46" fill="#1e293b" stroke="#a78bfa" stroke-width="3"/><text x="1260" y="708">worker</text>
+    <circle cx="1620" cy="700" r="46" fill="#1e293b" stroke="#a78bfa" stroke-width="3"/><text x="1620" y="708">worker</text>
+    <circle cx="1440" cy="760" r="46" fill="#1e293b" stroke="#a78bfa" stroke-width="3"/><text x="1440" y="768">probe</text>
+  </g>
+  <g font-family="Helvetica Neue, Helvetica, Arial" font-size="27" fill="#99f6e4">
+    <text x="1120" y="870">✓ each agent: own ID and token</text>
+    <text x="1120" y="915">✓ broker stamps who sent every message</text>
+    <text x="1120" y="960">✓ grants: who may reach whom, who takes which work</text>
+  </g>
+</svg>

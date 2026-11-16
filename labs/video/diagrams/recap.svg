@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1220"/><stop offset="1" stop-color="#16213a"/>
+    </linearGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#bg)"/>
+  <text x="960" y="140" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial" font-weight="700"
+        font-size="60" fill="#f8fafc">Recap</text>
+  <g font-family="Helvetica Neue, Helvetica, Arial">
+    <rect x="160" y="230" width="500" height="420" rx="22" fill="#0f172a" stroke="#2dd4bf" stroke-width="4"/>
+    <text x="410" y="310" text-anchor="middle" font-size="40" font-weight="700" fill="#ccfbf1">A broker</text>
+    <text x="410" y="380" text-anchor="middle" font-size="28" fill="#99f6e4">checks every identity</text>
+    <text x="410" y="425" text-anchor="middle" font-size="28" fill="#99f6e4">and every grant</text>
+    <text x="410" y="560" text-anchor="middle" font-family="SF Mono, Menlo, monospace" font-size="26" fill="#5eead4">agentbus serve</text>
+
+    <rect x="710" y="230" width="500" height="420" rx="22" fill="#2a1a05" stroke="#f59e0b" stroke-width="4"/>
+    <text x="960" y="310" text-anchor="middle" font-size="40" font-weight="700" fill="#fef3c7">An agent</text>
+    <text x="960" y="380" text-anchor="middle" font-size="28" fill="#fde68a">a manifest, scripts and</text>
+    <text x="960" y="425" text-anchor="middle" font-size="28" fill="#fde68a">Go functions, in one file</text>
+    <text x="960" y="560" text-anchor="middle" font-family="SF Mono, Menlo, monospace" font-size="26" fill="#fcd34d">agentbus agent build</text>
+
+    <rect x="1260" y="230" width="500" height="420" rx="22" fill="#1e1b4b" stroke="#a78bfa" stroke-width="4"/>
+    <text x="1510" y="310" text-anchor="middle" font-size="40" font-weight="700" fill="#ede9fe">Claude Code</text>
+    <text x="1510" y="380" text-anchor="middle" font-size="28" fill="#c4b5fd">one more agent, once</text>
+    <text x="1510" y="425" text-anchor="middle" font-size="28" fill="#c4b5fd">it knows the bus is there</text>
+    <text x="1510" y="560" text-anchor="middle" font-family="SF Mono, Menlo, monospace" font-size="26" fill="#a5b4fc">agentbus mcp</text>
+  </g>
+  <rect x="160" y="740" width="1600" height="200" rx="22" fill="#0d1117" stroke="#30363d" stroke-width="3"/>
+  <text x="960" y="810" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial" font-size="34"
+        font-weight="700" fill="#e2e8f0">Do it yourself: labs/ in the repository</text>
+  <text x="960" y="870" text-anchor="middle" font-family="SF Mono, Menlo, monospace" font-size="27"
+        fill="#94a3b8">seven labs · a teaching script · the weather agent · labs/check.sh</text>
+  <text x="960" y="1010" text-anchor="middle" font-family="SF Mono, Menlo, monospace" font-size="26"
+        fill="#64748b">github.com/jefflaplante/agentbus</text>
+</svg>

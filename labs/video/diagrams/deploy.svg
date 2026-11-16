@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1220"/><stop offset="1" stop-color="#16213a"/>
+    </linearGradient>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#bg)"/>
+  <text x="960" y="120" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial" font-weight="700"
+        font-size="56" fill="#f8fafc">One binary. No token inside.</text>
+  <text x="960" y="175" text-anchor="middle" font-family="SF Mono, Menlo, monospace" font-size="28"
+        fill="#64748b">agentbus agent build --target linux/amd64,linux/arm64</text>
+
+  <g font-family="Helvetica Neue, Helvetica, Arial">
+    <!-- project -->
+    <rect x="120" y="290" width="460" height="420" rx="20" fill="#0d1117" stroke="#30363d" stroke-width="3"/>
+    <text x="350" y="345" text-anchor="middle" font-size="32" font-weight="700" fill="#e2e8f0">project</text>
+    <g font-family="SF Mono, Menlo, monospace" font-size="27" fill="#cbd5e1">
+      <text x="160" y="410">agent.yaml</text>
+      <text x="160" y="460">scripts/forecast.py</text>
+      <text x="160" y="510">handlers/current.go</text>
+      <text x="160" y="560">main.go · go.mod</text>
+    </g>
+    <text x="350" y="660" text-anchor="middle" font-size="24" fill="#64748b">plus the agentbus client</text>
+
+    <!-- binary -->
+    <rect x="760" y="290" width="400" height="420" rx="20" fill="#2a1a05" stroke="#f59e0b" stroke-width="5"/>
+    <text x="960" y="345" text-anchor="middle" font-size="32" font-weight="700" fill="#fef3c7">weather</text>
+    <text x="960" y="385" text-anchor="middle" font-size="24" fill="#fcd34d">static · ~6.5 MiB</text>
+    <g font-size="26" fill="#fde68a">
+      <text x="800" y="460">✓ manifest</text>
+      <text x="800" y="505">✓ scripts</text>
+      <text x="800" y="550">✓ Go handlers</text>
+      <text x="800" y="595">✓ agentbus client</text>
+      <text x="800" y="660" fill="#fca5a5">✗ token</text>
+    </g>
+
+    <!-- hosts -->
+    <g font-size="26">
+      <rect x="1340" y="260" width="460" height="130" rx="16" fill="#0f172a" stroke="#64748b" stroke-width="3"/>
+      <text x="1370" y="313" fill="#e2e8f0" font-weight="700">build host · linux/amd64</text>
+      <text x="1370" y="355" fill="#94a3b8" font-family="SF Mono, Menlo, monospace" font-size="22">/etc/agentbus/weather.token</text>
+      <rect x="1340" y="440" width="460" height="130" rx="16" fill="#0f172a" stroke="#64748b" stroke-width="3"/>
+      <text x="1370" y="493" fill="#e2e8f0" font-weight="700">edge box · linux/arm64</text>
+      <text x="1370" y="535" fill="#94a3b8" font-family="SF Mono, Menlo, monospace" font-size="22">/etc/agentbus/weather.token</text>
+      <rect x="1340" y="620" width="460" height="130" rx="16" fill="#0f172a" stroke="#64748b" stroke-width="3"/>
+      <text x="1370" y="673" fill="#e2e8f0" font-weight="700">laptop · darwin/arm64</text>
+      <text x="1370" y="715" fill="#94a3b8" font-family="SF Mono, Menlo, monospace" font-size="22">AGENTBUS_TOKEN_FILE=…</text>
+    </g>
+  </g>
+  <g stroke="#94a3b8" stroke-width="4" fill="none">
+    <path d="M580 500 L 760 500" marker-end="url(#a)"/>
+    <path d="M1160 440 C 1250 440, 1250 325, 1340 325" marker-end="url(#a)"/>
+    <path d="M1160 500 L 1340 505" marker-end="url(#a)"/>
+    <path d="M1160 560 C 1250 560, 1250 685, 1340 685" marker-end="url(#a)"/>
+  </g>
+  <text x="960" y="850" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial" font-size="32"
+        fill="#cbd5e1">Each host brings its own token, so the same file can go anywhere.</text>
+  <text x="960" y="905" text-anchor="middle" font-family="SF Mono, Menlo, monospace" font-size="26"
+        fill="#64748b">./weather -check   ·   systemd unit included   ·   SIGTERM drains</text>
+</svg>

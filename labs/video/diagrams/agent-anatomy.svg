@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1220"/><stop offset="1" stop-color="#16213a"/>
+    </linearGradient>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#bg)"/>
+  <text x="960" y="120" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial" font-weight="700"
+        font-size="56" fill="#f8fafc">An agent is a manifest</text>
+  <text x="960" y="175" text-anchor="middle" font-family="SF Mono, Menlo, monospace" font-size="28"
+        fill="#64748b">agent.yaml · each handler = one trigger + one action</text>
+
+  <g font-family="Helvetica Neue, Helvetica, Arial">
+    <text x="420" y="270" text-anchor="middle" font-size="34" font-weight="700" fill="#5eead4">Trigger</text>
+    <text x="1500" y="270" text-anchor="middle" font-size="34" font-weight="700" fill="#fcd34d">Action</text>
+    <g font-size="28">
+      <rect x="160" y="310" width="520" height="100" rx="16" fill="#0f2a2a" stroke="#2dd4bf" stroke-width="3"/>
+      <text x="190" y="352" fill="#ccfbf1" font-weight="700">task: weather.forecast</text>
+      <text x="190" y="390" fill="#99f6e4" font-size="23">work for whoever serves the capability</text>
+      <rect x="160" y="440" width="520" height="100" rx="16" fill="#0f2a2a" stroke="#2dd4bf" stroke-width="3"/>
+      <text x="190" y="482" fill="#ccfbf1" font-weight="700">inbox: true · op: forecast</text>
+      <text x="190" y="520" fill="#99f6e4" font-size="23">a request to this agent, by body.op</text>
+      <rect x="160" y="570" width="520" height="100" rx="16" fill="#0f2a2a" stroke="#2dd4bf" stroke-width="3"/>
+      <text x="190" y="612" fill="#ccfbf1" font-weight="700">event: a2a/v1/events/…</text>
+      <text x="190" y="650" fill="#99f6e4" font-size="23">another agent's broadcast; no reply</text>
+
+      <rect x="1240" y="310" width="520" height="100" rx="16" fill="#2a1a05" stroke="#f59e0b" stroke-width="3"/>
+      <text x="1270" y="352" fill="#fef3c7" font-weight="700">run: COMMAND</text>
+      <text x="1270" y="390" fill="#fde68a" font-size="23">a shell one-liner</text>
+      <rect x="1240" y="440" width="520" height="100" rx="16" fill="#2a1a05" stroke="#f59e0b" stroke-width="3"/>
+      <text x="1270" y="482" fill="#fef3c7" font-weight="700">script: scripts/forecast.py</text>
+      <text x="1270" y="520" fill="#fde68a" font-size="23">sh, bash, python3, or any shebang</text>
+      <rect x="1240" y="570" width="520" height="100" rx="16" fill="#2a1a05" stroke="#f59e0b" stroke-width="3"/>
+      <text x="1270" y="612" fill="#fef3c7" font-weight="700">go: current</text>
+      <text x="1270" y="650" fill="#fde68a" font-size="23">a Go function, compiled in</text>
+    </g>
+  </g>
+  <g stroke="#94a3b8" stroke-width="4" fill="none" opacity="0.8">
+    <path d="M680 490 L 1240 490" marker-end="url(#a)"/>
+  </g>
+
+  <!-- script contract -->
+  <rect x="160" y="740" width="1600" height="250" rx="20" fill="#0d1117" stroke="#30363d" stroke-width="3"/>
+  <text x="200" y="795" font-family="Helvetica Neue, Helvetica, Arial" font-size="30" font-weight="700"
+        fill="#e2e8f0">The script contract</text>
+  <g font-family="SF Mono, Menlo, monospace" font-size="27">
+    <text x="200" y="850" fill="#7dd3fc">stdin  ←  the whole message, as JSON envelope</text>
+    <text x="200" y="895" fill="#86efac">stdout →  the reply body</text>
+    <text x="200" y="940" fill="#fca5a5">exit 3 + {"code": "not_found", "reason": "…"}  →  an error the caller sees</text>
+  </g>
+</svg>

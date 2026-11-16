@@ -25,6 +25,10 @@ WA. By the end you have built every piece of this:
 That's about two hours. Instructors: [TEACHING.md](TEACHING.md) is the
 script for running this as a session.
 
+There's also a narrated video of the whole thing, about six and a half
+minutes long, with real terminal recordings. [video/](video/README.md)
+builds it; the narration is in [video/SCRIPT.md](video/SCRIPT.md).
+
 ## What you need
 
 - **Go 1.26 or newer**, git and python3.
@@ -44,6 +48,7 @@ labs/
   check.sh                     runs every lab unattended; use it to check a machine
   weather-agent/               the finished weather agent (the solution)
   claude/                      .mcp.json and CLAUDE.md for lab 5
+  video/                       the narrated lab video: storyboard, diagrams, build pipeline
 ```
 
 ## Check a machine first
