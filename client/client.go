@@ -181,7 +181,8 @@ func Connect(ctx context.Context, opts Options) (*Client, error) {
 		SetPassword(opts.Token).
 		SetProtocolVersion(4).
 		SetCleanSession(opts.CleanSession).
-		SetOrderMatters(false). // handlers may run long (LLM calls)
+		SetStore(newCopyStore()). // works around a paho race; see store.go
+		SetOrderMatters(false).   // handlers may run long (LLM calls)
 		SetAutoReconnect(true).
 		SetMaxReconnectInterval(time.Minute).
 		SetKeepAlive(30 * time.Second).

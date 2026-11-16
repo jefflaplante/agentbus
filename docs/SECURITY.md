@@ -187,6 +187,15 @@ features) found the following, fixed with regression tests in
   topic string each time, so a torn read is very unlikely to matter, but
   it needs a fix in mochi (taking the index lock in `Messages`).
 
+- **A worked-around upstream data race in paho 1.5.1**
+  ([eclipse-paho/paho.mqtt.golang#703](https://github.com/eclipse-paho/paho.mqtt.golang/issues/703)).
+  On a persistent-session connect, paho's `resume()` sets `Dup` on stored
+  PUBLISH packets while the connection writer may be serializing the same
+  packet. The client package gives paho a store that copies PUBLISH packets
+  in and out (`client/store.go`), so the two never share one. The upstream
+  fix (paho PR #800) is merged but not released; drop the wrapper once a
+  tagged paho release includes it.
+
 - **End-to-end signatures** (Ed25519 `sig`). The canonical bytes to sign
   are specified (CONTRACT.md, "Canonical form": RFC 8785 over the parsed
   envelope) and implemented in Go and Python against shared vectors; the
