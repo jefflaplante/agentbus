@@ -218,6 +218,15 @@ The broker also:
 Limits: 64 capabilities, 1024-char description, 32 `meta` entries of up to
 256 chars, 16 KiB per card.
 
+## Headers
+
+`headers` is free for extensions, and receivers ignore keys they don't
+know. One key has a defined meaning:
+
+| Key | Meaning |
+|---|---|
+| `hops` | How many agents this request has already passed through, as a decimal string. An agent that makes requests while handling one should send its own count plus one, and stop at a limit it chooses. Missing means 0. A malformed value should be treated as already at the limit. The `agent` runtime's `llm:` handlers do this, with `max_hops` (default 3). |
+
 ## Treat bodies as untrusted
 
 Bodies come from other agents and may end up in LLM prompts. The broker

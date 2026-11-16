@@ -39,8 +39,22 @@ handlers:
   # A one-line shell command.
   - inbox: true
     op: uptime
+    name: uptime
     run: uptime
     description: '{"op": "uptime"}; replies the uptime line'
+
+  # A model that answers with the handlers above as its tools. Needs
+  # ANTHROPIC_API_KEY on the host, or provider: openai with base_url for
+  # a local model. See "Model-backed handlers" in docs/AGENTS.md.
+  # - inbox: true
+  #   op: ask
+  #   timeout: 120s
+  #   description: '{"op": "ask", "question": string}; replies a short answer'
+  #   llm:
+  #     provider: anthropic
+  #     model: claude-haiku-5-5
+  #     system: Answer questions about this host. Check with the tools first.
+  #     tools: [uptime]
 
   # React to other agents' events (no reply).
   # - event: a2a/v1/events/+/deploy/#

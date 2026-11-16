@@ -53,12 +53,21 @@ func Run(ctx context.Context, cfg Config) error {
 	if cfg.SkipMissingGo {
 		kept := *m
 		kept.Handlers = nil
+		skipped := map[string]bool{}
 		for _, h := range m.Handlers {
 			if _, ok := lookup(h.Go); h.Go != "" && !ok {
 				log.Warn("skipping Go handler: it only exists in a built agent (agentbus agent build)", "handler", h.Name, "go", h.Go)
+				skipped[h.Name] = true
 				continue
 			}
 			kept.Handlers = append(kept.Handlers, h)
+		}
+		for i, h := range kept.Handlers { // models lose the tools that were skipped
+			if h.LLM != nil && slices.ContainsFunc(h.LLM.Tools, func(t string) bool { return skipped[t] }) {
+				l := *h.LLM
+				l.Tools = slices.DeleteFunc(slices.Clone(l.Tools), func(t string) bool { return skipped[t] })
+				kept.Handlers[i].LLM = &l
+			}
 		}
 		if len(kept.Handlers) == 0 {
 			return errors.New("no handlers left to run: every handler is a Go function; build the agent")
@@ -79,7 +88,7 @@ func Run(ctx context.Context, cfg Config) error {
 		dir = tmp
 	}
 
-	rt := &runtime{m: m, log: log, self: cfg.AgentID}
+	rt := &runtime{m: m, log: log, self: cfg.AgentID, tools: map[string]client.Handler{}, dropEnv: keyEnvs(m)}
 	tasks := map[string]client.Handler{}
 	var inbox []routed
 	type watch struct {
@@ -94,6 +103,7 @@ func Run(ctx context.Context, cfg Config) error {
 			return err
 		}
 		fn = rt.guard(h, fn)
+		rt.tools[h.Name] = fn // an llm handler's tools; Validate made the names it uses unique
 		switch {
 		case h.Task != "":
 			tasks[h.Task] = fn
@@ -122,6 +132,7 @@ func Run(ctx context.Context, cfg Config) error {
 	if err != nil {
 		return fmt.Errorf("connect to %s as %s: %w", cfg.URL, cfg.AgentID, err)
 	}
+	rt.client.Store(c)
 	for _, w := range watches {
 		h, name := w.h, w.name
 		err := c.WatchEvents(ctx, w.filter, func(e *a2a.Envelope) {
@@ -157,6 +168,9 @@ type runtime struct {
 	log     *slog.Logger
 	self    string
 	closing atomic.Bool
+	tools   map[string]client.Handler     // every handler by name, guarded; filled before connecting
+	client  atomic.Pointer[client.Client] // set once connected, for llm handlers' bus calls
+	dropEnv []string                      // model key variables commands don't get
 }
 
 type routed struct {
@@ -164,8 +178,11 @@ type routed struct {
 	h        client.Handler
 }
 
-// action builds the handler function for h's run, script or go.
+// action builds the handler function for h's run, script, go or llm.
 func (rt *runtime) action(h Handler, dir string) (client.Handler, error) {
+	if h.LLM != nil {
+		return rt.llmAction(h)
+	}
 	if h.Go != "" {
 		fn, ok := lookup(h.Go)
 		if !ok {
@@ -193,7 +210,7 @@ func (rt *runtime) action(h Handler, dir string) (client.Handler, error) {
 	if workdir == "" {
 		workdir = rt.m.Workdir
 	}
-	return CommandHandler(argv, CommandOptions{Dir: workdir, Env: env, Timeout: rt.m.timeout(h), Log: rt.log}), nil
+	return CommandHandler(argv, CommandOptions{Dir: workdir, Env: env, DropEnv: rt.dropEnv, Timeout: rt.m.timeout(h), Log: rt.log}), nil
 }
 
 // guard wraps a handler with the sender allow-list, drain tracking, a
@@ -209,7 +226,7 @@ func (rt *runtime) guard(h Handler, fn client.Handler) client.Handler {
 		if rt.closing.Load() {
 			return nil, client.Errorf("busy", "agent is shutting down; retry later")
 		}
-		if h.Go != "" && timeout > 0 {
+		if (h.Go != "" || h.LLM != nil) && timeout > 0 {
 			var cancel context.CancelFunc
 			ctx, cancel = context.WithTimeout(ctx, timeout)
 			defer cancel()
@@ -336,6 +353,10 @@ func Check(m *Manifest, files fs.FS, host bool) []string {
 		case h.Run != "" && host:
 			if _, err := exec.LookPath("sh"); err != nil {
 				out = append(out, fmt.Sprintf("handler %s: sh not found on this host", h.Name))
+			}
+		case h.LLM != nil && host:
+			if p := keyProblem(h.LLM); p != "" {
+				out = append(out, fmt.Sprintf("handler %s: %s", h.Name, p))
 			}
 		}
 	}

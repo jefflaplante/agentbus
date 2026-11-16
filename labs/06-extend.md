@@ -95,6 +95,69 @@ curl -s 127.0.0.1:9464/healthz
 A capability whose `expired` count climbs has workers that are slow,
 stuck or offline. That's the alert you'd want on the weather agent.
 
+## 6. Optional: give it a model
+
+Needs an Anthropic API key, or a local model server (see the note at the
+end). It isn't part of `check.sh`.
+
+Add a handler that answers questions in plain words, with the forecast
+script as its tool. **Terminal 2:**
+
+```bash
+cat >> $LAB/weather/agent.yaml <<'EOF'
+  - inbox: true
+    op: ask
+    timeout: 120s
+    description: '{"op": "ask", "question": string}; replies {"answer": string}'
+    llm:
+      provider: anthropic
+      model: claude-haiku-5-5
+      system: |
+        Answer weather questions. Look the forecast up with the forecast
+        tool before you answer; never guess. Reply {"answer": "..."}.
+      tools: [forecast_tool]
+      reply: json
+  - name: forecast_tool
+    script: scripts/forecast.py
+    description: The forecast for a place, from public weather services
+    params:
+      type: object
+      required: [location]
+      properties:
+        location: {type: string, description: '"City, ST" or "City, Country"'}
+        days: {type: integer, minimum: 1, maximum: 7}
+EOF
+agentbus agent build $LAB/weather
+```
+
+`forecast_tool` has no trigger. Only the model can run it, and it runs
+the script you wrote in lab 3. The model reads the question, picks a
+location and the number of days, and calls the script with them as the
+body.
+
+**Terminal 3:** stop the old binary, then start the new one with the key:
+
+```bash
+cp $LAB/weather/dist/weather-$(go env GOOS)-$(go env GOARCH) ./weather
+ANTHROPIC_API_KEY=... ./weather -v
+```
+
+**Terminal 2:**
+
+```bash
+agentbus request --to weather --timeout 2m \
+  --body '{"op": "ask", "question": "Do I need an umbrella in Seattle, WA tomorrow?"}'
+```
+
+Terminal 3 shows a `handled handler=forecast_tool` line for the tool call,
+then a `model run` line with the turns and tokens it took.
+
+For a local model instead, replace the `provider` and `model` lines with
+`provider: openai`, `base_url: http://localhost:11434/v1` and
+`model: qwen3:8b`. Run Ollama first, and leave out the key. See
+[Model-backed handlers](../docs/AGENTS.md#model-backed-handlers) for the
+rest, and [examples/llm-agent](../examples/llm-agent) for a bigger agent.
+
 ## More to try
 
 - Add an event handler to the manifest: `event: a2a/v1/events/+/alerts/#`

@@ -483,8 +483,10 @@ agentbus agent check -f agent.yaml                   # manifest, scripts and int
 
 A manifest (`agent.yaml`) maps topics to handlers. A topic is a task
 queue, an inbox op or an event filter. A handler is a shell command, a
-script (sh, bash, python3, or anything with a shebang) or a Go function
-compiled into a built agent. Scripts use the same contract as `handle`,
+script (sh, bash, python3, or anything with a shebang), a Go function
+compiled into a built agent, or a model (`llm:`) that calls the other
+handlers as tools. `agent check` and a binary's `-check` also report a
+missing model API key. Scripts use the same contract as `handle`,
 and exiting 3 with `{"code", "reason"}` on stdout chooses the error the
 requester sees. The full guide is [AGENTS.md](AGENTS.md).
 

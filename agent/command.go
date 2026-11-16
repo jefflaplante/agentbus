@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"time"
 
@@ -30,6 +31,7 @@ const maxBodyEnv = 32 << 10
 type CommandOptions struct {
 	Dir     string        // working directory; "" for the current one
 	Env     []string      // extra KEY=VALUE pairs, after the scrubbed parent environment
+	DropEnv []string      // more parent variables to leave out, e.g. model API keys
 	Timeout time.Duration // per run; the request's TTL also applies
 	Log     *slog.Logger
 }
@@ -68,7 +70,7 @@ func CommandHandler(argv []string, o CommandOptions) client.Handler {
 		cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 		cmd.Dir = o.Dir
 		cmd.Stdin = bytes.NewReader(in)
-		cmd.Env = append(append(ScrubEnv(os.Environ()), o.Env...), messageEnv(e)...)
+		cmd.Env = append(append(dropVars(ScrubEnv(os.Environ()), o.DropEnv), o.Env...), messageEnv(e)...)
 		setProcessGroup(cmd)
 		cmd.WaitDelay = 2 * time.Second
 		stdout := &capBuffer{max: MaxOutput}
@@ -149,6 +151,17 @@ func ScrubEnv(env []string) []string {
 		out = append(out, kv)
 	}
 	return out
+}
+
+// dropVars removes the named variables from env.
+func dropVars(env, names []string) []string {
+	if len(names) == 0 {
+		return env
+	}
+	return slices.DeleteFunc(env, func(kv string) bool {
+		k, _, _ := strings.Cut(kv, "=")
+		return slices.Contains(names, k)
+	})
 }
 
 // capBuffer collects output up to max bytes. It wraps bytes.Buffer

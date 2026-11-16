@@ -103,6 +103,28 @@ These are what the Go client does. Other clients should do the same.
 - Gate outgoing publishes where a human should approve them
   (`Options.BeforePublish`).
 
+For `llm:` handlers in the `agent` runtime:
+- The model, system prompt, tools and bus permissions come from the
+  manifest. Nothing in an envelope can change them.
+- The message, bus replies and presence descriptions reach the model
+  behind the untrusted-input preamble.
+- A tool call runs as a request from the original sender, so the tool
+  handler's `allow_from` applies. The model can't reach a handler that
+  the sender couldn't.
+- Bus calls are limited to the agents and capabilities in `bus:`, on top
+  of the broker's grants, and carry a `hops` count that stops chains at
+  `max_hops`.
+- Commands run without the model's API key variable, as they run without
+  the agentbus token.
+- API errors and tool stderr stay in the local log. The requester gets a
+  generic error.
+
+None of this solves prompt injection. A message can still talk the model
+into calling the tools it was given, with inputs you didn't expect.
+Treat every tool as reachable by any sender the `llm:` handler allows:
+keep tools read-only where you can, check their input, and give tools
+that change things their own `allow_from`.
+
 For `agentbus handle --exec`:
 - The command runs only for requests by default (`-types`).
 - It runs without the agent's token in its environment.

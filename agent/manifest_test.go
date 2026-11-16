@@ -56,25 +56,69 @@ func TestParseManifest(t *testing.T) {
 
 func TestManifestRejects(t *testing.T) {
 	for want, doc := range map[string]string{
-		"field colour not found":                "agent: a\ncolour: red\nhandlers: [{task: x, run: y}]",
-		"tokens don't belong":                   "agent: a\ntoken: secret\nhandlers: [{task: x, run: y}]",
-		"exactly one of task, inbox or event":   "handlers: [{task: x, inbox: true, run: y}]",
-		"exactly one of run, script or go":      "handlers: [{task: x, run: y, go: z}]",
-		"op \"a\" is handled twice":             "handlers: [{inbox: true, op: a, run: y}, {inbox: true, op: a, run: z}]",
-		"only one inbox handler can have no op": "handlers: [{inbox: true, run: y}, {inbox: true, run: z}]",
-		"must be a relative path":               "handlers: [{task: x, script: ../etc/passwd}]",
-		"not an a2a/v1/events":                  "handlers: [{event: a2a/v1/tasks/x, run: y}]",
-		"op only applies to inbox":              "handlers: [{task: x, op: a, run: y}]",
-		"no handlers":                           "agent: a",
-		"not a duration":                        "timeout: soon\nhandlers: [{task: x, run: y}]",
-		"task \"x\" is handled twice":           "handlers: [{task: x, run: y}, {task: x, run: z}]",
-		"interpreter only applies":              "handlers: [{task: x, run: y, interpreter: python3}]",
-		"is not a valid capability name":        "handlers: [{task: X Y, run: y}]",
+		"field colour not found":                        "agent: a\ncolour: red\nhandlers: [{task: x, run: y}]",
+		"tokens don't belong":                           "agent: a\ntoken: secret\nhandlers: [{task: x, run: y}]",
+		"at most one of task, inbox or event":           "handlers: [{task: x, inbox: true, run: y}]",
+		"exactly one of run, script, go or llm":         "handlers: [{task: x, run: y, go: z}]",
+		"so it never runs":                              "handlers: [{task: x, run: y}, {name: t, run: z}]",
+		"no provider":                                   "handlers: [{inbox: true, llm: {model: m}}]",
+		"no model":                                      "handlers: [{inbox: true, llm: {provider: openai}}]",
+		"provider \"bard\"":                             "handlers: [{inbox: true, llm: {provider: bard, model: m}}]",
+		"only sets defaults":                            "llm: {system: hi}\nhandlers: [{task: x, run: y}]",
+		"no handler named \"nope\"":                     "llm: {provider: openai, model: m}\nhandlers: [{inbox: true, llm: {tools: [nope]}}]",
+		"set name: on it":                               "llm: {provider: openai, model: m}\nhandlers: [{inbox: true, llm: {tools: [\"inbox:a\"]}}, {inbox: true, op: a, run: y}]",
+		"is an llm handler":                             "llm: {provider: openai, model: m}\nhandlers: [{inbox: true, llm: {tools: [b]}}, {name: b, task: b, llm: {}}]",
+		"only run, script and go handlers can be tools": "llm: {provider: openai, model: m}\nhandlers: [{name: b, llm: {}}]",
+		"reserved for the bus tools":                    "llm: {provider: openai, model: m}\nhandlers: [{inbox: true, llm: {tools: [bus_request]}}, {name: bus_request, run: y}]",
+		"reply \"yaml\"":                                "handlers: [{inbox: true, llm: {provider: openai, model: m, reply: yaml}}]",
+		"max_turns must be 1-50":                        "handlers: [{inbox: true, llm: {provider: openai, model: m, max_turns: 99}}]",
+		"is not an agent ID":                            "handlers: [{inbox: true, llm: {provider: openai, model: m, bus: {request: [\"Bad Id\"]}}}]",
+		"max_hops must be at least 1":                   "max_hops: -1\nhandlers: [{task: x, run: y}]",
+		"op \"a\" is handled twice":                     "handlers: [{inbox: true, op: a, run: y}, {inbox: true, op: a, run: z}]",
+		"only one inbox handler can have no op":         "handlers: [{inbox: true, run: y}, {inbox: true, run: z}]",
+		"must be a relative path":                       "handlers: [{task: x, script: ../etc/passwd}]",
+		"not an a2a/v1/events":                          "handlers: [{event: a2a/v1/tasks/x, run: y}]",
+		"op only applies to inbox":                      "handlers: [{task: x, op: a, run: y}]",
+		"no handlers":                                   "agent: a",
+		"not a duration":                                "timeout: soon\nhandlers: [{task: x, run: y}]",
+		"task \"x\" is handled twice":                   "handlers: [{task: x, run: y}, {task: x, run: z}]",
+		"interpreter only applies":                      "handlers: [{task: x, run: y, interpreter: python3}]",
+		"is not a valid capability name":                "handlers: [{task: X Y, run: y}]",
 	} {
 		_, err := ParseManifest([]byte(doc))
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: err = %v, want %q", doc, err, want)
 		}
+	}
+}
+
+func TestLLMDefaults(t *testing.T) {
+	m, err := ParseManifest([]byte(`
+llm: {provider: anthropic, model: claude-haiku-5-5, max_tokens: 1000}
+handlers:
+  - inbox: true
+    llm: {model: claude-sonnet-5-5, tools: [disk], system: be brief}
+  - task: t
+    llm: {provider: openai, base_url: "http://localhost:11434/v1"}
+  - name: disk
+    run: df -h
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, o := m.Handlers[0].LLM, m.Handlers[1].LLM
+	if a.Provider != "anthropic" || a.Model != "claude-sonnet-5-5" || a.MaxTokens != 1000 || a.MaxTurns != DefaultMaxTurns ||
+		a.APIKeyEnv != "ANTHROPIC_API_KEY" || a.System != "be brief" {
+		t.Errorf("handler 1 = %+v", a)
+	}
+	if o.Provider != "openai" || o.Model != "claude-haiku-5-5" || o.APIKeyEnv != "OPENAI_API_KEY" {
+		t.Errorf("handler 2 = %+v", o)
+	}
+	if m.MaxHops != DefaultMaxHops {
+		t.Errorf("max_hops = %d", m.MaxHops)
+	}
+	if d := m.PresenceDescription(); strings.Contains(d, "disk") {
+		t.Errorf("tool-only handlers belong off the presence card: %q", d)
 	}
 }
 
