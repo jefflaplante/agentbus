@@ -59,7 +59,10 @@ type ConsoleOptions struct {
 	// Config opens the config editor; nil when the broker config file
 	// isn't on this machine.
 	Config func() (*ConfigModel, error)
-	Start  Tab
+	// Joining lists the agent IDs with a join request waiting for the
+	// operator; nil when the broker config file isn't on this machine.
+	Joining func() []string
+	Start   Tab
 	// Env names the AGENTBUS_* variables the connection settings came
 	// from, shown in the header so a stale one is noticed.
 	Env []string
@@ -93,6 +96,7 @@ type Console struct {
 	bus      mapTab
 	config   *ConfigModel
 	cfgErr   error
+	joining  map[string]bool // join requests already announced
 
 	inspect *Inspector
 
@@ -192,6 +196,10 @@ func (m *Console) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.agents.reseat(m.rows())
 		if m.flash != "" && time.Since(m.flashAt) > 6*time.Second {
 			m.flash = ""
+		}
+		m.noteJoining()
+		if m.config != nil {
+			m.config.Update(pendingTickMsg{}) // the console's tick drives the editor's
 		}
 		return m, consoleTick()
 	case InboxMsg:
@@ -297,6 +305,21 @@ func (m *Console) switchTab(t Tab) tea.Cmd {
 		return m.startMap()
 	}
 	return nil
+}
+
+// noteJoining announces join requests that arrived since the last tick.
+func (m *Console) noteJoining() {
+	if m.opt.Joining == nil {
+		return
+	}
+	seen := map[string]bool{}
+	for _, id := range m.opt.Joining() {
+		seen[id] = true
+		if !m.joining[id] {
+			m.say(false, "%s asked to join: approve or deny it in the Config tab (%d), under Join requests", Clean(id), int(TabConfig)+1)
+		}
+	}
+	m.joining = seen
 }
 
 // openConfig creates the embedded config editor, focused on id.

@@ -36,6 +36,7 @@ another; "agentbus config path" shows which one is in use.`,
   agentbus config agent add researcher --capability research --send-to conduit-home
   agentbus config env researcher >> ~/.researcher.env
   agentbus config set rate_per_second 50
+  agentbus config join approve worker-7            # answer a host that ran "agentbus join"
   agentbus config set tls_cert cert.pem tls_key key.pem listen 0.0.0.0:8883`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -59,7 +60,7 @@ another; "agentbus config path" shows which one is in use.`,
 		},
 	}
 	c.AddCommand(newConfigInitCmd(a), newConfigPathCmd(a), newConfigShowCmd(a), newConfigSetCmd(a),
-		newConfigAgentCmd(a), newConfigEnvCmd(a), newConfigMCPCmd(a))
+		newConfigAgentCmd(a), newConfigJoinCmd(a), newConfigEnvCmd(a), newConfigMCPCmd(a))
 	return c
 }
 

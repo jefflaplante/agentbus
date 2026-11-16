@@ -99,9 +99,10 @@ plain text for scripts.`,
 		c.GroupID = "broker"
 		root.AddCommand(c)
 	}
-	cfgCmd := newConfigCmd(a)
-	cfgCmd.GroupID = "setup"
-	root.AddCommand(cfgCmd)
+	for _, c := range []*cobra.Command{newConfigCmd(a), newJoinCmd(a)} {
+		c.GroupID = "setup"
+		root.AddCommand(c)
+	}
 	for _, c := range []*cobra.Command{newSendCmd(a), newRequestCmd(a), newTaskCmd(a), newEmitCmd(a), newHandleCmd(a), newMCPCmd(a)} {
 		c.GroupID = "msg"
 		root.AddCommand(c)

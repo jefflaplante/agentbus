@@ -82,6 +82,21 @@ are what remove trust in the broker.
   request against the live config. It connects to the broker as the agent
   that presented the token, so everything the broker enforces still
   applies. See [INTEGRATIONS.md](INTEGRATIONS.md#remote-mcp-over-http).
+- **Read a join request before you approve it** (`join_listen`). The join
+  endpoint takes requests from anyone who can reach it, so it grants
+  nothing by itself: a request is a file in `pending/` beside the config
+  until you approve it with `agentbus config join` or the config editor,
+  and only then is the agent added. The client sends the SHA-256 of a
+  token it generated, never the token. What it asks for is a request:
+  it can't ask for `*` or the observer role, and you choose the grants.
+  The host name shown is the client's own claim; the address is what the
+  broker saw. The endpoint follows the `listen` rule (loopback, or TLS, or
+  `allow_insecure`), because over plain HTTP someone on the path could
+  swap in their own token hash and be the one you approve. It caps what
+  strangers can store: 64 requests waiting, 4 per address, 60 requests a
+  minute per address, 16 KB each, expiring after 24 hours. Leave
+  `join_listen` unset when you aren't adding agents. See
+  [CLI.md](CLI.md#letting-an-agent-ask-to-join).
 - **Keep `metrics_listen` on loopback.** The metrics endpoint has no
   authentication and names every agent. The broker refuses a non-loopback
   address unless `allow_insecure` is set; scrape it locally or through an

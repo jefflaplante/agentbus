@@ -297,6 +297,17 @@ func (a *app) runConsole(ctx context.Context, start tui.Tab) error {
 	}
 	opt := tui.ConsoleOptions{Agent: a.agent, URL: a.url, Scope: scope, Bus: c, Traffic: items,
 		Inbox: inbox, Config: a.configFunc(), Start: start}
+	if opt.Config != nil {
+		loc := a.location()
+		opt.Joining = func() []string {
+			var ids []string
+			reqs, _ := confstore.Pending(loc)
+			for _, r := range reqs {
+				ids = append(ids, r.ID)
+			}
+			return ids
+		}
+	}
 	for _, v := range a.fromEnv() {
 		name, _, _ := strings.Cut(v, "=")
 		opt.Env = append(opt.Env, "$"+name)

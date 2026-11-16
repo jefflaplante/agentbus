@@ -17,7 +17,10 @@ import (
 // startMCPGateway serves MCP over HTTP at mcp_listen, if set, for remote
 // MCP clients (see docs/INTEGRATIONS.md). The gateway reaches the broker
 // over loopback as each agent. The returned stop shuts it down.
-func startMCPGateway(b *broker.Broker, cfg *broker.Config, log *slog.Logger) (stop func(), addr string, err error) {
+//
+// Each mount adds more handlers to the same server: the join endpoint,
+// when join_listen names the same address.
+func startMCPGateway(b *broker.Broker, cfg *broker.Config, log *slog.Logger, mounts ...func(*http.ServeMux)) (stop func(), addr string, err error) {
 	if cfg.MCPListen == "" {
 		return func() {}, "", nil
 	}
@@ -35,6 +38,9 @@ func startMCPGateway(b *broker.Broker, cfg *broker.Config, log *slog.Logger) (st
 	})
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", gw.Handler())
+	for _, mount := range mounts {
+		mount(mux)
+	}
 	srv := &http.Server{
 		Handler: mux,
 		// No WriteTimeout: tool calls stream for up to 10 minutes.
@@ -42,20 +48,10 @@ func startMCPGateway(b *broker.Broker, cfg *broker.Config, log *slog.Logger) (st
 		IdleTimeout:       2 * time.Minute,
 		ErrorLog:          slog.NewLogLogger(glog.Handler(), slog.LevelWarn),
 	}
-	ln, err := net.Listen("tcp", cfg.MCPListen)
+	ln, err := listenHTTP(cfg.MCPListen, cfg, srv)
 	if err != nil {
 		gw.Close()
 		return nil, "", fmt.Errorf("mcp_listen: %w", err)
-	}
-	if cfg.TLSCert != "" {
-		cert, err := tls.LoadX509KeyPair(cfg.TLSCert, cfg.TLSKey)
-		if err != nil {
-			_ = ln.Close()
-			gw.Close()
-			return nil, "", fmt.Errorf("mcp_listen: load TLS key pair: %w", err)
-		}
-		srv.TLSConfig = &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}
-		ln = tls.NewListener(ln, srv.TLSConfig)
 	}
 	go func() {
 		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
@@ -69,6 +65,25 @@ func startMCPGateway(b *broker.Broker, cfg *broker.Config, log *slog.Logger) (st
 		defer cancel()
 		_ = srv.Shutdown(ctx)
 	}, ln.Addr().String(), nil
+}
+
+// listenHTTP listens on addr for srv, one of serve's HTTP endpoints, with
+// TLS when the broker has a certificate.
+func listenHTTP(addr string, cfg *broker.Config, srv *http.Server) (net.Listener, error) {
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.TLSCert == "" {
+		return ln, nil
+	}
+	cert, err := tls.LoadX509KeyPair(cfg.TLSCert, cfg.TLSKey)
+	if err != nil {
+		_ = ln.Close()
+		return nil, fmt.Errorf("load TLS key pair: %w", err)
+	}
+	srv.TLSConfig = &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}
+	return tls.NewListener(ln, srv.TLSConfig), nil
 }
 
 // loopbackBroker is how the gateway, in the broker's own process, reaches

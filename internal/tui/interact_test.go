@@ -268,3 +268,76 @@ func TestNewViewsFitWindow(t *testing.T) {
 		checkFits(t, "config", cm.View().Content, w, h)
 	}
 }
+
+func TestConfigEditorJoinRequests(t *testing.T) {
+	m, loc := editorAt(t)
+	if v := plain(m.View().Content); !strings.Contains(v, "Join requests") || strings.Contains(v, "Join requests (") {
+		t.Errorf("tab line with nobody waiting:\n%s", v)
+	}
+	add := func(id string, caps ...string) {
+		t.Helper()
+		_, hash := broker.NewToken()
+		err := confstore.AddPending(loc, confstore.JoinRequest{ID: id, TokenSHA256: hash, Capabilities: caps,
+			Host: "build\x1b[2Jbox", Remote: "10.0.0.7", Description: "nightly worker", RequestedAt: time.Now()})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	add("worker-7", "summarize", "translate")
+	add("intruder", "summarize")
+
+	// The editor notices requests that arrive while it's open.
+	m.Update(pendingTickMsg{})
+	if v := plain(m.View().Content); !strings.Contains(v, "Join requests (2)") {
+		t.Fatalf("tab line:\n%s", v)
+	}
+	m.Update(key("tab"))
+	m.Update(key("tab"))
+	v := plain(m.View().Content)
+	wantAll(t, "join tab", v, "worker-7", "summarize,translate", "10.0.0.7", "nightly worker", "enter approve")
+	if strings.Contains(m.View().Content, "\x1b[2J") {
+		t.Error("a control sequence from the client reached the screen")
+	}
+
+	// Approving opens a form with what was asked; the operator trims it.
+	m.Update(key("enter"))
+	if m.mode != modeForm || m.fCaps != "summarize, translate" {
+		t.Fatalf("mode %v caps %q", m.mode, m.fCaps)
+	}
+	m.fCaps, m.fSendTo = "summarize", "admin"
+	if err := m.onForm(); err != nil {
+		t.Fatal(err)
+	}
+	m.mode = modeList
+	cfg, _ := confstore.Load(loc.Path)
+	i := confstore.Find(cfg, "worker-7")
+	if i < 0 {
+		t.Fatal("approved agent not in the config")
+	}
+	if a := cfg.Agents[i]; strings.Join(a.Capabilities, ",") != "summarize" || a.SendTo[0] != "admin" || a.Observer {
+		t.Errorf("agent = %+v", a)
+	}
+	if len(m.pending) != 1 || m.pending[0].ID != "intruder" {
+		t.Fatalf("pending after approval = %+v", m.pending)
+	}
+
+	m.Update(key("d"))
+	if m.mode != modeConfirm {
+		t.Fatal("d did not ask before denying")
+	}
+	m.Update(key("y"))
+	if _, ok := confstore.FindPending(loc, "intruder"); ok || len(m.pending) != 0 {
+		t.Error("request not denied")
+	}
+	cfg, _ = confstore.Load(loc.Path)
+	if confstore.Find(cfg, "intruder") >= 0 {
+		t.Error("a denied agent is in the config")
+	}
+	if v := plain(m.View().Content); !strings.Contains(v, "join_listen is not set") {
+		t.Errorf("empty join tab:\n%s", v)
+	}
+	m.Update(key("tab"))
+	if m.tab != tabAgents {
+		t.Errorf("tab = %d, want agents", m.tab)
+	}
+}
