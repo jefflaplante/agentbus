@@ -37,6 +37,8 @@ from urllib.parse import urlparse
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
 
+from canonical import CanonicalError, canonical  # noqa: F401  re-exported: the bytes a signature covers
+
 ROOT = "a2a/v1"
 BROKER_ID = "$broker"
 QOS = 1

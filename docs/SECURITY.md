@@ -165,8 +165,14 @@ features) found the following, fixed with regression tests in
   topic string each time, so a torn read is very unlikely to matter, but
   it needs a fix in mochi (taking the index lock in `Messages`).
 
-- **End-to-end signatures** (Ed25519 `sig` over canonical header fields plus
-  a body hash). Until then, authenticity rests on the broker.
+- **End-to-end signatures** (Ed25519 `sig`). The canonical bytes to sign
+  are specified (CONTRACT.md, "Canonical form": RFC 8785 over the parsed
+  envelope) and implemented in Go and Python against shared vectors; the
+  signature field and key use are not. The broker re-encodes envelopes
+  through its own struct and drops fields it doesn't know, so brokers
+  must learn `sig` before any sender signs; a signature sent to an older
+  broker would be silently removed. Until then, authenticity rests on
+  the broker.
 - **Sealed bodies** (X25519 + HKDF + AES-256-GCM with header fields as
   associated data), using pinned `kex` keys. `enc` is only a label today.
 - **mTLS client authentication.**

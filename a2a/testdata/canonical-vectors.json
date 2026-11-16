@@ -1,0 +1,140 @@
+{
+ "about": "Canonical form vectors (CONTRACT.md, \"Canonical form\"). Each entry is an envelope as it arrives on the wire. An implementation parses it and produces exactly \"canonical\", or refuses it when \"error\" is true. wire_base64 holds bytes that are not valid UTF-8. a2a/canonical_test.go and examples/python/test_canonical.py both run these.",
+ "vectors": [
+  {
+   "name": "fields: key order, omitted empties, headers",
+   "wire": "{\"v\":1,\"id\":\"t1\",\"type\":\"event\",\"from\":\"alice\",\"event\":\"x.y\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"to\":\"bob\",\"priority\":\"high\",\"ttl_ms\":60000,\"correlation_id\":\"\",\"headers\":{\"zz\":\"1\",\"aa\":\"2\"},\"body\":{\"b\":1,\"a\":2}}",
+   "canonical": "{\"body\":{\"a\":2,\"b\":1},\"event\":\"x.y\",\"from\":\"alice\",\"headers\":{\"aa\":\"2\",\"zz\":\"1\"},\"id\":\"t1\",\"priority\":\"high\",\"to\":\"bob\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"ttl_ms\":60000,\"type\":\"event\",\"v\":1}"
+  },
+  {
+   "name": "ts: +00:00 spelling",
+   "wire": "{\"v\":1,\"id\":\"t1\",\"type\":\"event\",\"from\":\"alice\",\"event\":\"x.y\",\"ts\":\"2026-11-15T16:04:05.123+00:00\"}",
+   "canonical": "{\"event\":\"x.y\",\"from\":\"alice\",\"id\":\"t1\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"type\":\"event\",\"v\":1}"
+  },
+  {
+   "name": "ts: other offset, trailing zero trimmed",
+   "wire": "{\"v\":1,\"id\":\"t1\",\"type\":\"event\",\"from\":\"alice\",\"event\":\"x.y\",\"ts\":\"2026-11-15T17:04:05.120+01:00\"}",
+   "canonical": "{\"event\":\"x.y\",\"from\":\"alice\",\"id\":\"t1\",\"ts\":\"2026-11-15T16:04:05.12Z\",\"type\":\"event\",\"v\":1}"
+  },
+  {
+   "name": "ts: whole seconds, nanoseconds",
+   "wire": "{\"v\":1,\"id\":\"t1\",\"type\":\"event\",\"from\":\"alice\",\"event\":\"x.y\",\"ts\":\"2026-11-15T16:04:05.000000001Z\",\"body\":[\"2026\"]}",
+   "canonical": "{\"body\":[\"2026\"],\"event\":\"x.y\",\"from\":\"alice\",\"id\":\"t1\",\"ts\":\"2026-11-15T16:04:05.000000001Z\",\"type\":\"event\",\"v\":1}"
+  },
+  {
+   "name": "numbers: RFC 8785 layout",
+   "wire": "{\"v\":1,\"id\":\"t1\",\"type\":\"event\",\"from\":\"alice\",\"event\":\"x.y\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"body\":[0,-0,1.0,42.30,1e-7,0.000001,1e20,1e21,1E+2,9.999999999999999e20,5e-324,-1.7976931348623157e308,333333333.334,-12.5e-3]}",
+   "canonical": "{\"body\":[0,0,1,42.3,1e-7,0.000001,100000000000000000000,1e+21,100,999999999999999900000,5e-324,-1.7976931348623157e+308,333333333.334,-0.0125],\"event\":\"x.y\",\"from\":\"alice\",\"id\":\"t1\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"type\":\"event\",\"v\":1}"
+  },
+  {
+   "name": "numbers: integers, with one accepted spelling per double beyond ±(2^53-1)",
+   "wire": "{\"v\":1,\"id\":\"t1\",\"type\":\"event\",\"from\":\"alice\",\"event\":\"x.y\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"body\":[9007199254740991,-9007199254740991,9007199254740992,1152921504606847000,999999999999999900000,1000000000000000000000,1e17]}",
+   "canonical": "{\"body\":[9007199254740991,-9007199254740991,9007199254740992,1152921504606847000,999999999999999900000,1e+21,100000000000000000],\"event\":\"x.y\",\"from\":\"alice\",\"id\":\"t1\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"type\":\"event\",\"v\":1}"
+  },
+  {
+   "name": "strings: escapes and raw characters",
+   "wire": "{\"v\":1,\"id\":\"t1\",\"type\":\"event\",\"from\":\"alice\",\"event\":\"x.y\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"body\":{\"s\":\"<&>/  \\u007f\\b\\f\\n\\r\\t\\u0001\\u001f\\\"\\\\ café café 😀 😀\"}}",
+   "canonical": "{\"body\":{\"s\":\"<&>/  \\b\\f\\n\\r\\t\\u0001\\u001f\\\"\\\\ café café 😀 😀\"},\"event\":\"x.y\",\"from\":\"alice\",\"id\":\"t1\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"type\":\"event\",\"v\":1}"
+  },
+  {
+   "name": "keys: sorted by UTF-16 code units",
+   "wire": "{\"v\":1,\"id\":\"t1\",\"type\":\"event\",\"from\":\"alice\",\"event\":\"x.y\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"body\":{\"ﬁ\":1,\"😀\":2,\"a\":3,\"é\":4,\"A\":5,\"\":6}}",
+   "canonical": "{\"body\":{\"\":6,\"A\":5,\"a\":3,\"é\":4,\"😀\":2,\"ﬁ\":1},\"event\":\"x.y\",\"from\":\"alice\",\"id\":\"t1\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"type\":\"event\",\"v\":1}"
+  },
+  {
+   "name": "values: nesting, null, booleans, empties",
+   "wire": "{\"v\":1,\"id\":\"t1\",\"type\":\"event\",\"from\":\"alice\",\"event\":\"x.y\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"body\":{\"o\":{\"z\":[],\"y\":{},\"x\":\"\"},\"n\":null,\"t\":true,\"f\":false,\"a\":[[1,[2]],{\"k\":null}]}}",
+   "canonical": "{\"body\":{\"a\":[[1,[2]],{\"k\":null}],\"f\":false,\"n\":null,\"o\":{\"x\":\"\",\"y\":{},\"z\":[]},\"t\":true},\"event\":\"x.y\",\"from\":\"alice\",\"id\":\"t1\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"type\":\"event\",\"v\":1}"
+  },
+  {
+   "name": "body: null",
+   "wire": "{\"v\":1,\"id\":\"t1\",\"type\":\"event\",\"from\":\"alice\",\"event\":\"x.y\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"body\":null}",
+   "canonical": "{\"body\":null,\"event\":\"x.y\",\"from\":\"alice\",\"id\":\"t1\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"type\":\"event\",\"v\":1}"
+  },
+  {
+   "name": "body: HTML escaped on the wire",
+   "wire": "{\"v\":1,\"id\":\"t1\",\"type\":\"event\",\"from\":\"alice\",\"event\":\"x.y\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"body\":\"<b> &\"}",
+   "canonical": "{\"body\":\"<b> &\",\"event\":\"x.y\",\"from\":\"alice\",\"id\":\"t1\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"type\":\"event\",\"v\":1}"
+  },
+  {
+   "name": "headers: non-ASCII values",
+   "wire": "{\"v\":1,\"id\":\"t1\",\"type\":\"event\",\"from\":\"alice\",\"event\":\"x.y\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"headers\":{\"lang\":\"日本語\",\"b\":\"\\u00e9\"}}",
+   "canonical": "{\"event\":\"x.y\",\"from\":\"alice\",\"headers\":{\"b\":\"é\",\"lang\":\"日本語\"},\"id\":\"t1\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"type\":\"event\",\"v\":1}"
+  },
+  {
+   "name": "refuse: duplicate key",
+   "wire": "{\"v\":1,\"id\":\"t1\",\"type\":\"event\",\"from\":\"alice\",\"event\":\"x.y\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"body\":{\"amount\":1,\"amount\":1000}}",
+   "error": true
+  },
+  {
+   "name": "refuse: duplicate key after unescaping",
+   "wire": "{\"v\":1,\"id\":\"t1\",\"type\":\"event\",\"from\":\"alice\",\"event\":\"x.y\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"body\":{\"a\":1,\"a\":2}}",
+   "error": true
+  },
+  {
+   "name": "refuse: duplicate top-level field",
+   "wire": "{\"v\":1,\"id\":\"t1\",\"type\":\"event\",\"from\":\"alice\",\"event\":\"x.y\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"to\":\"bob\",\"to\":\"mallory\"}",
+   "error": true
+  },
+  {
+   "name": "refuse: lone high surrogate",
+   "wire": "{\"v\":1,\"id\":\"t1\",\"type\":\"event\",\"from\":\"alice\",\"event\":\"x.y\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"body\":\"\\ud800\"}",
+   "error": true
+  },
+  {
+   "name": "refuse: lone low surrogate",
+   "wire": "{\"v\":1,\"id\":\"t1\",\"type\":\"event\",\"from\":\"alice\",\"event\":\"x.y\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"body\":\"\\udc00 x\"}",
+   "error": true
+  },
+  {
+   "name": "refuse: high surrogate then a non-low escape",
+   "wire": "{\"v\":1,\"id\":\"t1\",\"type\":\"event\",\"from\":\"alice\",\"event\":\"x.y\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"body\":\"\\ud800A\"}",
+   "error": true
+  },
+  {
+   "name": "refuse: lone surrogate in a header",
+   "wire": "{\"v\":1,\"id\":\"t1\",\"type\":\"event\",\"from\":\"alice\",\"event\":\"x.y\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"headers\":{\"k\":\"\\ud800\"}}",
+   "error": true
+  },
+  {
+   "name": "refuse: number beyond a double",
+   "wire": "{\"v\":1,\"id\":\"t1\",\"type\":\"event\",\"from\":\"alice\",\"event\":\"x.y\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"body\":1e400}",
+   "error": true
+  },
+  {
+   "name": "refuse: number that underflows to 0",
+   "wire": "{\"v\":1,\"id\":\"t1\",\"type\":\"event\",\"from\":\"alice\",\"event\":\"x.y\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"body\":1e-400}",
+   "error": true
+  },
+  {
+   "name": "refuse: integer beyond 2^53 that is another integer's double",
+   "wire": "{\"v\":1,\"id\":\"t1\",\"type\":\"event\",\"from\":\"alice\",\"event\":\"x.y\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"body\":9007199254740993}",
+   "error": true
+  },
+  {
+   "name": "refuse: negative integer beyond 2^53, not its double's spelling",
+   "wire": "{\"v\":1,\"id\":\"t1\",\"type\":\"event\",\"from\":\"alice\",\"event\":\"x.y\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"body\":[-12345678901234567890]}",
+   "error": true
+  },
+  {
+   "name": "refuse: 2^60 spelled exactly; its one integer spelling is 1152921504606847000",
+   "wire": "{\"v\":1,\"id\":\"t1\",\"type\":\"event\",\"from\":\"alice\",\"event\":\"x.y\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"body\":1152921504606846976}",
+   "error": true
+  },
+  {
+   "name": "refuse: 1e21 plus one: from 1e21 up only the exact value is accepted",
+   "wire": "{\"v\":1,\"id\":\"t1\",\"type\":\"event\",\"from\":\"alice\",\"event\":\"x.y\",\"ts\":\"2026-11-15T16:04:05.123Z\",\"body\":1000000000000000000001}",
+   "error": true
+  },
+  {
+   "name": "refuse: invalid UTF-8 in the body",
+   "wire_base64": "eyJ2IjoxLCJpZCI6InQxIiwidHlwZSI6ImV2ZW50IiwiZnJvbSI6ImFsaWNlIiwiZXZlbnQiOiJ4LnkiLCJ0cyI6IjIwMjYtMTEtMTVUMTY6MDQ6MDUuMTIzWiIsImJvZHkiOiJwYXkg/yBib2IifQ==",
+   "error": true
+  },
+  {
+   "name": "refuse: invalid UTF-8 in a header",
+   "wire_base64": "eyJ2IjoxLCJpZCI6InQxIiwidHlwZSI6ImV2ZW50IiwiZnJvbSI6ImFsaWNlIiwiZXZlbnQiOiJ4LnkiLCJ0cyI6IjIwMjYtMTEtMTVUMTY6MDQ6MDUuMTIzWiIsImhlYWRlcnMiOnsiayI6IsMifX0=",
+   "error": true
+  }
+ ]
+}
