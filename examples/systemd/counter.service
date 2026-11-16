@@ -1,0 +1,53 @@
+# systemd unit for the Go example agent in examples/service: it serves the
+# wordcount task queue as agent "counter". Use this shape for any agent
+# built with the Go client library.
+#
+# On the broker host, create the identity:
+#
+#   agentbus config agent add counter --capability wordcount
+#
+# On the agent's host:
+#
+#   GOOS=linux GOARCH=amd64 go build -o counter ./examples/service
+#   sudo install -m 0755 counter /usr/local/bin/counter
+#   sudo install -D -m 0600 counter.token /etc/agentbus/counter.token
+#   sudo cp counter.service /etc/systemd/system/ && sudo systemctl enable --now counter
+#
+# Set AGENTBUS_URL below to the broker. "systemctl status counter" and
+# "journalctl -u counter" show it running; "agentbus console" on the
+# broker host shows it online in the Agents tab.
+
+[Unit]
+Description=agentbus example agent counter (Go)
+After=network-online.target
+Wants=network-online.target
+# On the broker host, also start after the broker:
+# After=agentbus.service
+
+[Service]
+ExecStart=/usr/local/bin/counter
+LoadCredential=token:/etc/agentbus/counter.token
+Environment=AGENTBUS_AGENT=counter
+Environment=AGENTBUS_TOKEN_FILE=%d/token
+Environment=AGENTBUS_URL=tcp://127.0.0.1:1883
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

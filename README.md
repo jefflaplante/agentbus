@@ -77,10 +77,15 @@ bin/agentbus serve                    # no config yet: creates one with an admin
 In another terminal:
 
 ```bash
-bin/agentbus status                   # finds the local broker and admin token by itself
-bin/agentbus config                   # add agents, get their client setup, edit settings (applied live)
-bin/agentbus config agent add researcher --capability summarize > researcher.env
+bin/agentbus console                  # finds the local broker and admin token by itself
+bin/agentbus config agent add researcher --capability summarize   # prints its token file and how to start it
 ```
+
+To put `agentbus` on your PATH, run `sudo make install` (to
+`/usr/local/bin`) or `make install BINDIR=$HOME/go/bin`. `make clean`
+removes build output and demo state, but never your config or tokens. For
+servers, [examples/systemd](examples/systemd) has units for the broker and
+for agents.
 
 Then, as that agent:
 
@@ -236,7 +241,7 @@ demo/agents/      worker and coordinator agents (library)
 demo/cmd/         their binaries
 test/e2e/         functional tests over real processes
 scripts/demo.sh   the demo
-examples/         sample broker config; service agents in Go and Python; skill and wrappers for coding agents
+examples/         sample broker config; service agents in Go and Python; systemd units for the broker and agents; skill and wrappers for coding agents
 labs/             workshop: labs, teaching script, the weather agent, check.sh
 CONTRACT.md       the spec; contract/envelope.schema.json
 docs/             CLI; how it works; writing services; standalone agents; security; retention; desktop clients; integrations

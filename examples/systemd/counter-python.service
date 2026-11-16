@@ -1,0 +1,55 @@
+# systemd unit for the Python example agent in examples/python: the same
+# "counter" agent as counter.service, written in Python. Run one or the
+# other: they share an identity, and a second connection with the same
+# agent ID replaces the first.
+#
+# On the broker host, create the identity:
+#
+#   agentbus config agent add counter --capability wordcount
+#
+# On the agent's host:
+#
+#   sudo install -d /opt/agentbus
+#   sudo cp -r examples/python /opt/agentbus/python
+#   sudo python3 -m venv /opt/agentbus/venv
+#   sudo /opt/agentbus/venv/bin/pip install -r /opt/agentbus/python/requirements.txt
+#   sudo install -D -m 0600 counter.token /etc/agentbus/counter.token
+#   sudo cp counter-python.service /etc/systemd/system/
+#   sudo systemctl enable --now counter-python
+#
+# Set AGENTBUS_URL below to the broker.
+
+[Unit]
+Description=agentbus example agent counter (Python)
+After=network-online.target
+Wants=network-online.target
+# On the broker host, also start after the broker:
+# After=agentbus.service
+
+[Service]
+WorkingDirectory=/opt/agentbus/python
+ExecStart=/opt/agentbus/venv/bin/python -u worker.py
+LoadCredential=token:/etc/agentbus/counter.token
+Environment=AGENTBUS_AGENT=counter
+Environment=AGENTBUS_TOKEN_FILE=%d/token
+Environment=AGENTBUS_URL=tcp://127.0.0.1:1883
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

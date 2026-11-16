@@ -68,6 +68,8 @@ func Guide(loc Location, cfg *broker.Config, id string) string {
 		remoteURL(cfg, url), shellQuote(id), remote, cmds[0][0])
 	line("     Standalone agents (agentbus agent run, and programs made with agentbus agent init)")
 	line("     find %s without the flag.", remote)
+	line("  3. To keep it running, use a systemd unit: examples/systemd/agentbus-handle@.service")
+	line("     in the agentbus repository runs it as agentbus-handle@%s.", id)
 	if Loopback(cfg.Listen) {
 		line("  ! The broker listens on %s, this machine only. Before another host can", orDefault(cfg.Listen))
 		line("    connect, set listen, tls_cert and tls_key (agentbus config set ...), then restart it.")

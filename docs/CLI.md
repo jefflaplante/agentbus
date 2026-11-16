@@ -623,10 +623,10 @@ sudo useradd --system --home-dir /var/lib/agentbus --shell /usr/sbin/nologin age
 sudo install -d -o agentbus -g agentbus -m 0700 /etc/agentbus /var/lib/agentbus
 sudo -u agentbus env AGENTBUS_CONFIG_DIR=/etc/agentbus AGENTBUS_STATE_DIR=/var/lib/agentbus \
   agentbus config init
-sudo cp deploy/agentbus.service /etc/systemd/system/ && sudo systemctl enable --now agentbus
+sudo cp examples/systemd/agentbus.service /etc/systemd/system/ && sudo systemctl enable --now agentbus
 ```
 
-[deploy/agentbus.service](../deploy/agentbus.service) sets both variables
+[examples/systemd/agentbus.service](../examples/systemd/agentbus.service) sets both variables
 and runs the broker hardened: read-only system, no home directories, and
 writes only to `/var/lib/agentbus`. Manage it as the same user:
 
@@ -637,6 +637,14 @@ sudo -u agentbus env AGENTBUS_CONFIG_DIR=/etc/agentbus agentbus config agent add
 
 Before listening beyond loopback, set `tls_cert`, `tls_key` and `listen`
 (see [SECURITY.md](SECURITY.md)).
+
+To install the binary where the units expect it, run `make install` from a
+checkout (`/usr/local/bin/agentbus`; `PREFIX=` or `BINDIR=` to change it).
+Agents on other hosts run under systemd too:
+[examples/systemd](../examples/systemd) has a template unit for agents run
+by `agentbus handle` (`agentbus-handle@NAME`) and units for the Go and
+Python example agents. Each loads the agent's token as a systemd
+credential.
 
 **Live reload.** The broker checks its config file every second (`--watch`;
 `--watch 0` turns file watching off) and reloads on change, or at once on

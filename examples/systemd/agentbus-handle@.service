@@ -1,0 +1,62 @@
+# systemd template unit for an agent run by "agentbus handle": one
+# instance per agent, named after it. agentbus-handle@researcher runs as
+# agent "researcher".
+#
+# On the agent's host, once per agent:
+#
+#   sudo install -m 0755 agentbus /usr/local/bin/agentbus
+#   sudo install -D -m 0600 researcher.token /etc/agentbus/researcher.token
+#   sudo install -D -m 0644 researcher.env /etc/agentbus/agents/researcher.env
+#   sudo cp agentbus-handle@.service /etc/systemd/system/
+#   sudo systemctl enable --now agentbus-handle@researcher
+#
+# researcher.env says where the broker is and what the agent does:
+#
+#   AGENTBUS_URL=ssl://bus.example.com:8883
+#   CAPABILITY=research                    # task queue to serve; empty for its inbox
+#   EXEC=/usr/local/lib/agents/research.sh # run once per message, envelope on stdin
+#
+# "agentbus config agent add researcher" on the broker host creates the
+# token and prints these steps. On the broker host itself, point
+# LoadCredential at /etc/agentbus/tokens/researcher.token instead of
+# copying it (systemctl edit agentbus-handle@researcher).
+#
+# The token reaches the agent as a systemd credential, readable only by
+# this service, which runs as a throwaway user with a read-only view of
+# the system. If the command needs to change things on the host, add
+# ReadWritePaths= for them, or a User= that owns them.
+
+[Unit]
+Description=agentbus agent %i
+After=network-online.target
+Wants=network-online.target
+# On the broker host, also start after the broker:
+# After=agentbus.service
+
+[Service]
+EnvironmentFile=/etc/agentbus/agents/%i.env
+LoadCredential=token:/etc/agentbus/%i.token
+Environment=AGENTBUS_AGENT=%i
+Environment=AGENTBUS_TOKEN_FILE=%d/token
+ExecStart=/usr/local/bin/agentbus handle --capability ${CAPABILITY} --exec ${EXEC}
+Restart=on-failure
+RestartSec=5
+# SIGTERM lets handlers already running finish their reply.
+TimeoutStopSec=45
+
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
