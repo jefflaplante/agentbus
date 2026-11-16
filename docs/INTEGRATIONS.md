@@ -5,6 +5,10 @@ This guide covers four hosts:
 - **conduit** joins in Go, with the `client` package.
 - **Claude Code**, **OpenCode** and **OpenChamber** join through
   `agentbus mcp`, an MCP server that gives the model tools for the bus.
+  The broker can also serve those tools over HTTP, so a client needs only
+  a URL and a token: see [Remote MCP over HTTP](#remote-mcp-over-http).
+  That's also how other harnesses with MCP support, such as Hermes and
+  OpenClaw, join.
   For requests that should be answered without anyone at the keyboard, a
   worker runs the tool headless under `agentbus handle`.
 
@@ -136,6 +140,98 @@ description. In testing, the model first sent a word-count task as a bare
 string. The worker expected `{"text": ...}` and refused it, and the model
 retried in the right shape. A description would have avoided the
 round trip.
+
+## Remote MCP over HTTP
+
+`agentbus mcp` is a local process: each machine that uses it needs the
+binary, the token file and three variables. Instead, the broker can serve
+MCP over HTTP (Streamable HTTP) itself. A client then needs only a URL and
+the agent's token. Claude Code, Hermes and OpenClaw all connect to it the
+same way.
+
+```bash
+agentbus config set mcp_listen 127.0.0.1:8765   # restart serve after this
+agentbus config agent add claude-code            # one identity per client
+agentbus config mcp claude-code                  # paste-ready setup; --client hermes | openclaw | json
+```
+
+`config mcp` prints, for Claude Code:
+
+```bash
+export AGENTBUS_TOKEN="$(cat "$HOME/.config/agentbus/tokens/claude-code.token")"
+claude mcp add --scope user --transport http agentbus http://127.0.0.1:8765/mcp \
+  --header 'Authorization: Bearer ${AGENTBUS_TOKEN}'
+```
+
+The header holds `${AGENTBUS_TOKEN}`, not the token. Claude Code, Hermes
+and OpenClaw each expand it from the environment when they connect, so
+the token stays out of their config files. The single quotes keep the
+shell from expanding it first. Without `mcp_listen`, `config mcp` prints
+the stdio setup instead; `--transport` picks one.
+
+The endpoint serves the same seven tools as `agentbus mcp`. This was
+checked with a live Claude Code: it connected with the printed config,
+listed the agents, and handed a `weather.forecast` task to the lab's
+weather agent.
+
+### How it works
+
+```text
+MCP client ──HTTPS, Bearer <agent token>──▶ agentbus serve: MCP gateway (mcp_listen, /mcp)
+                                              │ token → agent, from the live config
+                                              │ one bus connection per agent, shared by its sessions
+                                              └──loopback MQTT, as that agent──▶ broker (unchanged)
+```
+
+The gateway is a client of the broker, not part of it. It connects as the
+agent, with the token the caller presented, so the broker checks
+identity, `send_to`, grants and rate limits exactly as for any agent.
+
+- **One bus connection per agent.** Two clients with the same token share
+  one connection and one inbox, so they don't knock each other off the
+  bus. Each reads what the other hasn't: an inbox message goes to
+  whichever calls `inbox` first. Give clients that should be separate
+  their own identities.
+- **Don't also use a gateway identity elsewhere.** The broker still allows
+  one connection per agent. Running `agentbus mcp` or the CLI as an agent
+  the gateway serves takes over its connection.
+- **The inbox outlives sessions.** It belongs to the agent's connection,
+  not to an MCP session, so a client that reconnects or opens a new
+  session finds its messages. The connection closes after 15 minutes with
+  no requests, but only when nothing is held for it: no unread message, no
+  request waiting for `reply`, no request of its own still waiting for an
+  answer. After that, the broker queues new messages in the agent's
+  persistent session until a client connects again.
+- **Long waits survive proxies.** `request` and `task` wait up to 10
+  minutes and `inbox` up to 5. While a tool waits, the gateway sends a
+  progress notification every 20 seconds (when the client asks for
+  progress), and pings every 25. A client whose stream is cut anyway can
+  resume it with `Last-Event-ID` and still get the result. A reverse proxy
+  in front should allow streams of 11 minutes or pass the keepalives
+  through.
+- **Late replies aren't lost.** If a `request` or `task` call stops
+  waiting before the answer comes, the answer lands in `inbox` as a late
+  reply. Only the agent that was asked (any worker, for a task) can fill
+  that slot. The same holds for stdio `agentbus mcp`.
+- **Tokens are checked on every request,** against the config as it is
+  now. Rotate or remove an agent and its next request gets `401`; its bus
+  connection closes within a few seconds.
+
+What it refuses:
+- **Observer identities.** They get `403`. Observers can read all
+  traffic, so they stay out of chat clients. Use stdio for those.
+- **Too many bad tokens from one address.** After 20 in a minute, that
+  address gets `429` for a while.
+- **Cross-origin browser requests,** through Go's cross-origin
+  protection.
+- **Plaintext off-host.** Like `listen`, `mcp_listen` must be loopback
+  unless `tls_cert`/`tls_key` are set (then it serves HTTPS with them) or
+  `allow_insecure` is. When a proxy or DNS name fronts it, set `mcp_url`
+  to the public URL, and `config mcp` prints that.
+
+Not over HTTP: taking a capability's tasks (stdio's `--capability`). A
+chat client that comes and goes is the wrong place to take work off a
+queue. Run a worker for that.
 
 ## A coding agent or an llm: handler
 
