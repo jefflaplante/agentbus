@@ -32,7 +32,9 @@ problem. It checks:
   geocoding-api.open-meteo.com and api.open-meteo.com
 - **Claude Code:** that it's signed in
 
-On a locked-down network, get those three hosts allowed first.
+On a locked-down network, get those three hosts allowed first. Until
+they are, `labs/check.sh --mock` checks everything else, with stand-in
+weather services. It's the mode CI uses.
 
 Have four terminals ready, in a layout people can read from the back of
 the room:
