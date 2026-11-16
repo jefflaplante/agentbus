@@ -15,7 +15,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/jefflaplante/mqtt/a2a"
+	"github.com/jefflaplante/agentbus/a2a"
 )
 
 // Config is the broker configuration, loaded from JSON.

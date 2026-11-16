@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jefflaplante/mqtt/a2a"
+	"github.com/jefflaplante/agentbus/a2a"
 )
 
 func runExec(t *testing.T, command string, timeout time.Duration, typ a2a.Type) (any, error) {

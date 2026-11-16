@@ -242,9 +242,9 @@ docs/             CLI; how it works; writing services; security; retention; desk
 `go test` without `-short` includes the functional test. It needs the Go
 toolchain on `PATH` and permission to listen on localhost.
 
-The Makefile sets `GOWORK=off`, because `~/git/claude/go.work` covers this
-directory but doesn't list this module. Set it yourself when running `go`
-directly.
+The Makefile sets `GOWORK=off`, so a `go.work` file in a parent directory
+can't pull this module into a workspace that doesn't list it. If you have
+one, set `GOWORK=off` yourself when running `go` directly.
 
 ## Not done yet
 

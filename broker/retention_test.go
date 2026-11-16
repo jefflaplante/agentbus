@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jefflaplante/mqtt/a2a"
-	"github.com/jefflaplante/mqtt/broker"
-	"github.com/jefflaplante/mqtt/client"
+	"github.com/jefflaplante/agentbus/a2a"
+	"github.com/jefflaplante/agentbus/broker"
+	"github.com/jefflaplante/agentbus/client"
 )
 
 // persistBus runs brokers over one data_dir, so a test can restart the

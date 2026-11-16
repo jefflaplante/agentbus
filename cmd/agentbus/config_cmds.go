@@ -11,9 +11,9 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/spf13/cobra"
 
-	"github.com/jefflaplante/mqtt/broker"
-	"github.com/jefflaplante/mqtt/internal/confstore"
-	"github.com/jefflaplante/mqtt/internal/tui"
+	"github.com/jefflaplante/agentbus/broker"
+	"github.com/jefflaplante/agentbus/internal/confstore"
+	"github.com/jefflaplante/agentbus/internal/tui"
 )
 
 func newConfigCmd(a *app) *cobra.Command {

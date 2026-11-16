@@ -23,8 +23,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/jefflaplante/mqtt/a2a"
-	"github.com/jefflaplante/mqtt/broker"
+	"github.com/jefflaplante/agentbus/a2a"
+	"github.com/jefflaplante/agentbus/broker"
 )
 
 // AdminID is the observer identity created by Bootstrap.

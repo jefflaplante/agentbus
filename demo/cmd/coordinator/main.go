@@ -16,8 +16,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jefflaplante/mqtt/client"
-	"github.com/jefflaplante/mqtt/demo/agents"
+	"github.com/jefflaplante/agentbus/client"
+	"github.com/jefflaplante/agentbus/demo/agents"
 )
 
 func main() {

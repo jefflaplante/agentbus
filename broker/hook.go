@@ -16,7 +16,7 @@ import (
 	mqtt "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/packets"
 
-	"github.com/jefflaplante/mqtt/a2a"
+	"github.com/jefflaplante/agentbus/a2a"
 )
 
 // Limits that aren't worth configuring.

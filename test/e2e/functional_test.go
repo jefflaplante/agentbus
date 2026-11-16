@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jefflaplante/mqtt/demo/agents"
+	"github.com/jefflaplante/agentbus/demo/agents"
 )
 
 // bins holds the paths of the built binaries.

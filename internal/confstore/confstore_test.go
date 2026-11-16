@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jefflaplante/mqtt/broker"
+	"github.com/jefflaplante/agentbus/broker"
 )
 
 func isolate(t *testing.T) string {

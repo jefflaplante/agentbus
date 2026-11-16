@@ -13,9 +13,9 @@ import (
 	"charm.land/huh/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/jefflaplante/mqtt/a2a"
-	"github.com/jefflaplante/mqtt/broker"
-	"github.com/jefflaplante/mqtt/internal/confstore"
+	"github.com/jefflaplante/agentbus/a2a"
+	"github.com/jefflaplante/agentbus/broker"
+	"github.com/jefflaplante/agentbus/internal/confstore"
 )
 
 // CloseMsg tells a parent view that an embedded view is done.

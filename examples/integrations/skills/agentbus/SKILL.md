@@ -47,7 +47,7 @@ agentbus task --plain --capability summarize --timeout 5m --body @notes.json
 
 ```bash
 agentbus send --plain --to conduit-home --event build_finished \
-  --priority low --body '{"repo": "mqtt", "status": "green"}'
+  --priority low --body '{"repo": "agentbus", "status": "green"}'
 ```
 
 Priority is `high`, `normal`, `low` or `info`; the receiver decides what

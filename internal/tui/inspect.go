@@ -10,7 +10,7 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/jefflaplante/mqtt/a2a"
+	"github.com/jefflaplante/agentbus/a2a"
 )
 
 // Inspector shows one message (an envelope, a presence card or a raw

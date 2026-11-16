@@ -15,9 +15,9 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/jefflaplante/mqtt/a2a"
-	"github.com/jefflaplante/mqtt/client"
-	"github.com/jefflaplante/mqtt/internal/confstore"
+	"github.com/jefflaplante/agentbus/a2a"
+	"github.com/jefflaplante/agentbus/client"
+	"github.com/jefflaplante/agentbus/internal/confstore"
 )
 
 // app holds the flags every client command shares.

@@ -11,8 +11,8 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/jefflaplante/mqtt/a2a"
-	"github.com/jefflaplante/mqtt/broker"
+	"github.com/jefflaplante/agentbus/a2a"
+	"github.com/jefflaplante/agentbus/broker"
 )
 
 // StatusMsg delivers a broker status snapshot.

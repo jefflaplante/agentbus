@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jefflaplante/mqtt/broker"
-	"github.com/jefflaplante/mqtt/internal/confstore"
+	"github.com/jefflaplante/agentbus/broker"
+	"github.com/jefflaplante/agentbus/internal/confstore"
 )
 
 func TestConfigCommands(t *testing.T) {

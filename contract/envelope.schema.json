@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/jefflaplante/mqtt/contract/envelope.schema.json",
+  "$id": "https://github.com/jefflaplante/agentbus/contract/envelope.schema.json",
   "title": "a2a/v1 envelope",
   "type": "object",
   "required": ["v", "id", "type", "from", "ts"],

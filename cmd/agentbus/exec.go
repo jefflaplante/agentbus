@@ -12,8 +12,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jefflaplante/mqtt/a2a"
-	"github.com/jefflaplante/mqtt/client"
+	"github.com/jefflaplante/agentbus/a2a"
+	"github.com/jefflaplante/agentbus/client"
 )
 
 // maxExecOutput caps what a handler command may write to stdout or stderr.

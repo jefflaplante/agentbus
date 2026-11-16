@@ -7,8 +7,8 @@ import (
 
 	paho "github.com/eclipse/paho.mqtt.golang"
 
-	"github.com/jefflaplante/mqtt/a2a"
-	"github.com/jefflaplante/mqtt/broker"
+	"github.com/jefflaplante/agentbus/a2a"
+	"github.com/jefflaplante/agentbus/broker"
 )
 
 func TestStatusPublishedToObserversOnly(t *testing.T) {

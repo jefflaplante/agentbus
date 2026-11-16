@@ -11,9 +11,9 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/spf13/cobra"
 
-	"github.com/jefflaplante/mqtt/a2a"
-	"github.com/jefflaplante/mqtt/client"
-	"github.com/jefflaplante/mqtt/internal/tui"
+	"github.com/jefflaplante/agentbus/a2a"
+	"github.com/jefflaplante/agentbus/client"
+	"github.com/jefflaplante/agentbus/internal/tui"
 )
 
 // exitError ends the command with a status code, its message already shown.

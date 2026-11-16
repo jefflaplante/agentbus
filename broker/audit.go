@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jefflaplante/mqtt/a2a"
+	"github.com/jefflaplante/agentbus/a2a"
 )
 
 // AuditRecord is one line of the audit file. Bodies are never recorded:

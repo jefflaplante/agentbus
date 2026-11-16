@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jefflaplante/mqtt/a2a"
-	"github.com/jefflaplante/mqtt/client"
+	"github.com/jefflaplante/agentbus/a2a"
+	"github.com/jefflaplante/agentbus/client"
 )
 
 // DefaultTexts are the documents the coordinator sends as tasks.

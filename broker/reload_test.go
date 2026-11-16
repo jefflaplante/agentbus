@@ -11,9 +11,9 @@ import (
 
 	paho "github.com/eclipse/paho.mqtt.golang"
 
-	"github.com/jefflaplante/mqtt/a2a"
-	"github.com/jefflaplante/mqtt/broker"
-	"github.com/jefflaplante/mqtt/client"
+	"github.com/jefflaplante/agentbus/a2a"
+	"github.com/jefflaplante/agentbus/broker"
+	"github.com/jefflaplante/agentbus/client"
 )
 
 // reloadBus runs a broker from a config file the test can rewrite.

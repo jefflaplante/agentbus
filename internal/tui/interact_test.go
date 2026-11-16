@@ -9,9 +9,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/jefflaplante/mqtt/a2a"
-	"github.com/jefflaplante/mqtt/broker"
-	"github.com/jefflaplante/mqtt/internal/confstore"
+	"github.com/jefflaplante/agentbus/a2a"
+	"github.com/jefflaplante/agentbus/broker"
+	"github.com/jefflaplante/agentbus/internal/confstore"
 )
 
 func key(s string) tea.KeyPressMsg {

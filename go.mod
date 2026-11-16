@@ -1,4 +1,4 @@
-module github.com/jefflaplante/mqtt
+module github.com/jefflaplante/agentbus
 
 go 1.26.2
 

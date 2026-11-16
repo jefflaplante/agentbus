@@ -139,7 +139,7 @@ commit. The new pieces are marked as new.
 ### What conduit already has that applies
 
 - **`paho.mqtt.golang`.** It's the library `client` uses, so importing
-  `github.com/jefflaplante/mqtt/client` adds no new MQTT dependency.
+  `github.com/jefflaplante/agentbus/client` adds no new MQTT dependency.
 - **The `mqtt_events` engine** (`internal/mqttevents`). A rule there maps an
   MQTT message to `spawn`, `queue` or `log`, through `Spawner.Spawn(ctx,
   SpawnRequest, onDone)` and `Queuer.Enqueue(Notice)`. Bus events map onto
