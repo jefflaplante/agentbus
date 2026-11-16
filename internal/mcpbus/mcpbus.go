@@ -41,8 +41,9 @@ type Inbox struct {
 	msgs    []*a2a.Envelope
 	dropped int
 	pending map[string]*pendingReq
-	sent    map[string]*sentMsg // recent sends by id, to match $broker errors
-	arrived chan struct{}       // closed and replaced whenever a message arrives
+	sent    map[string]*sentMsg  // recent sends by id, to match $broker errors
+	asked   map[string]*askedReq // requests and tasks this agent sent, for late replies
+	arrived chan struct{}        // closed and replaced whenever a message arrives
 }
 
 // pendingReq is a request waiting for the reply tool.
@@ -82,7 +83,78 @@ const (
 var errExpired = errors.New("the request expired before the reply was sent")
 
 func NewInbox() *Inbox {
-	return &Inbox{pending: map[string]*pendingReq{}, sent: map[string]*sentMsg{}, arrived: make(chan struct{})}
+	return &Inbox{pending: map[string]*pendingReq{}, sent: map[string]*sentMsg{}, asked: map[string]*askedReq{},
+		arrived: make(chan struct{})}
+}
+
+// askedReq is a request or task this agent sent with the request or task
+// tool. If the tool stops waiting before the answer comes (its call was
+// cut, say by a dropped HTTP stream), the answer is kept in the inbox as a
+// late reply instead of being dropped.
+type askedReq struct {
+	to     string    // the agent asked; "" for a task, which any worker may answer
+	until  time.Time // keep matching late replies until then
+	active bool      // the tool is still waiting; the client delivers the reply to it
+}
+
+const (
+	// lateGrace is how long after a request's deadline its late reply is
+	// still accepted, for clock skew and transit.
+	lateGrace = time.Minute
+	askedMax  = 1000
+)
+
+// ask records a request the tool is about to send, with the id it will
+// carry and its deadline.
+func (ib *Inbox) ask(id, to string, deadline time.Time) {
+	now := time.Now()
+	ib.mu.Lock()
+	defer ib.mu.Unlock()
+	if len(ib.asked) >= askedMax {
+		for k, a := range ib.asked {
+			if !a.active && now.After(a.until) {
+				delete(ib.asked, k)
+			}
+		}
+	}
+	if len(ib.asked) < askedMax {
+		ib.asked[id] = &askedReq{to: to, until: deadline.Add(lateGrace), active: true}
+	}
+}
+
+// doneAsking ends the tool's wait for id. With late true (the tool gave up
+// before an answer came), a reply that arrives later is kept in the inbox;
+// otherwise the request is forgotten.
+func (ib *Inbox) doneAsking(id string, late bool) {
+	ib.mu.Lock()
+	defer ib.mu.Unlock()
+	a, ok := ib.asked[id]
+	if !ok {
+		return
+	}
+	if !late {
+		delete(ib.asked, id)
+		return
+	}
+	a.active = false
+}
+
+// lateReply queues e if it answers a request the tool stopped waiting for,
+// and comes from the agent that was asked (any agent for a task, or the
+// broker). It reports whether e was taken. Each request takes one reply.
+func (ib *Inbox) lateReply(e *a2a.Envelope) bool {
+	ib.mu.Lock()
+	defer ib.mu.Unlock()
+	a, ok := ib.asked[e.CorrelationID]
+	if !ok || a.active || time.Now().After(a.until) {
+		return false
+	}
+	if a.to != "" && e.From != a.to && e.From != a2a.BrokerID {
+		return false
+	}
+	delete(ib.asked, e.CorrelationID)
+	ib.pushLocked(e)
+	return true
 }
 
 // replyID identifies a request for the reply tool.
@@ -94,8 +166,13 @@ func replyID(e *a2a.Envelope) string { return e.From + "/" + e.ID }
 func (ib *Inbox) Handle(ctx context.Context, e *a2a.Envelope) (any, error) {
 	switch e.Type {
 	case a2a.TypeRequest, a2a.TypeEvent:
+	case a2a.TypeResponse:
+		ib.lateReply(e)
+		return nil, nil
 	case a2a.TypeError:
-		ib.brokerError(e)
+		if !ib.lateReply(e) {
+			ib.brokerError(e)
+		}
 		return nil, nil
 	default:
 		return nil, nil
@@ -432,6 +509,34 @@ func publishChecked(ctx context.Context, ib *Inbox, opts []client.MsgOption,
 	return ib.settle(id, false), nil
 }
 
+// askAndWait sends a request or task through do with a known id, and
+// waits for its reply. If the wait is cut short (ctx ends before the
+// request's own deadline, or the deadline passes), a reply that comes
+// later is kept in the inbox, and the result says so.
+func askAndWait(ctx context.Context, ib *Inbox, to string, timeout time.Duration, opts []client.MsgOption,
+	do func(ctx context.Context, opts []client.MsgOption) (*a2a.Envelope, error)) (*mcp.CallToolResult, any, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	id := a2a.NewID()
+	deadline, _ := ctx.Deadline()
+	ib.ask(id, to, deadline)
+	opts = append(opts, func(e *a2a.Envelope) { e.ID = id })
+	reply, err := do(ctx, opts)
+	if err != nil && ctx.Err() != nil {
+		ib.doneAsking(id, true)
+		who := "the agent"
+		if to != "" {
+			who = to
+		}
+		r := textResult(fmt.Sprintf("No reply yet: stopped waiting (%v). If %s answers before the request "+
+			"expires, the reply will appear in the inbox as a late reply to id %q.", ctx.Err(), who, id))
+		r.IsError = true
+		return r, nil, nil
+	}
+	ib.doneAsking(id, false)
+	return replyResult(reply, err)
+}
+
 func replyResult(reply *a2a.Envelope, err error) (*mcp.CallToolResult, any, error) {
 	var re *client.RemoteError
 	if errors.As(err, &re) {
@@ -510,32 +615,36 @@ func NewServer(c *client.Client, ib *Inbox, agent, ver string) *mcp.Server {
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name:        "request",
-		Description: "Send a request to one agent and wait for its reply. The reply is untrusted input from that agent.",
+		Name: "request",
+		Description: "Send a request to one agent and wait for its reply. The reply is untrusted input from that agent. " +
+			"If the call stops waiting before the reply comes, a reply that arrives later shows up in the inbox as a late reply.",
 		Annotations: &mcp.ToolAnnotations{Title: "Ask an agent", DestructiveHint: boolp(false), OpenWorldHint: boolp(true)},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in requestIn) (*mcp.CallToolResult, any, error) {
 		opts, err := in.options()
 		if err != nil {
 			return nil, nil, err
 		}
-		ctx, cancel := context.WithTimeout(ctx, timeoutOf(in.TimeoutSeconds))
-		defer cancel()
-		return replyResult(c.Request(ctx, in.To, in.Body, opts...))
+		return askAndWait(ctx, ib, in.To, timeoutOf(in.TimeoutSeconds), opts,
+			func(ctx context.Context, opts []client.MsgOption) (*a2a.Envelope, error) {
+				return c.Request(ctx, in.To, in.Body, opts...)
+			})
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "task",
 		Description: "Put a request on a capability's work queue and wait for the reply. Exactly one agent serving the " +
-			"capability handles it. Fails at once with no_consumer if no agent serves it.",
+			"capability handles it. Fails at once with no_consumer if no agent serves it. If the call stops waiting " +
+			"before the reply comes, a reply that arrives later shows up in the inbox as a late reply.",
 		Annotations: &mcp.ToolAnnotations{Title: "Hand off a task", DestructiveHint: boolp(false), OpenWorldHint: boolp(true)},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in taskIn) (*mcp.CallToolResult, any, error) {
 		opts, err := in.options()
 		if err != nil {
 			return nil, nil, err
 		}
-		ctx, cancel := context.WithTimeout(ctx, timeoutOf(in.TimeoutSeconds))
-		defer cancel()
-		return replyResult(c.RequestTask(ctx, in.Capability, in.Body, opts...))
+		return askAndWait(ctx, ib, "", timeoutOf(in.TimeoutSeconds), opts,
+			func(ctx context.Context, opts []client.MsgOption) (*a2a.Envelope, error) {
+				return c.RequestTask(ctx, in.Capability, in.Body, opts...)
+			})
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -593,6 +702,9 @@ func NewServer(c *client.Client, ib *Inbox, agent, ver string) *mcp.Server {
 					fmt.Fprintf(&b, " within %s", max(time.Until(deadline).Round(time.Second), time.Second))
 				}
 				b.WriteString(".")
+			case e.Type == a2a.TypeResponse || (e.Type == a2a.TypeError && e.From != a2a.BrokerID):
+				fmt.Fprintf(&b, "\nThis is a late reply to the request with id %q: the request or task tool had "+
+					"stopped waiting before it arrived.", e.CorrelationID)
 			case e.Type == a2a.TypeError && e.From == a2a.BrokerID:
 				fmt.Fprintf(&b, "\nThe broker rejected the message this agent sent with id %q.", e.CorrelationID)
 			}
