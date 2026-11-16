@@ -57,7 +57,7 @@ Logs go to stderr; stdout carries only MCP traffic.`,
 				return err
 			}
 			defer c.Close()
-			srv := mcpbus.NewServer(c, ib, a.agent, buildVersion())
+			srv := mcpbus.NewServer(c, ib, a.agent, buildVersion(), nil)
 			return srv.Run(cmd.Context(), &mcp.StdioTransport{})
 		},
 	}
