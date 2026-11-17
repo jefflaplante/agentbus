@@ -312,6 +312,9 @@ func goVersion() string {
 // moduleVersion is the agentbus version this binary was built from, if it
 // is a real release or pseudo-version; "" for a local build.
 func moduleVersion() string {
+	if strings.HasPrefix(version, "v") {
+		return version
+	}
 	if bi, ok := debug.ReadBuildInfo(); ok && strings.HasPrefix(bi.Main.Version, "v") {
 		return bi.Main.Version
 	}

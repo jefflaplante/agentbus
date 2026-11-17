@@ -65,9 +65,17 @@ Logs go to stderr; stdout carries only MCP traffic.`,
 	return c
 }
 
-// buildVersion is the module version this binary was built from, or
-// "dev" for a local build.
+// version is set at build time with -ldflags "-X main.version=v1.2.3",
+// for builds outside a git checkout or a module download (a container
+// image, say), where the build info carries no version.
+var version string
+
+// buildVersion is the version this binary was built from: the linker
+// flag if set, else the module version from the build info, else "dev".
 func buildVersion() string {
+	if version != "" {
+		return version
+	}
 	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
 		return bi.Main.Version
 	}

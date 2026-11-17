@@ -97,7 +97,9 @@ To put `agentbus` on your PATH, run `sudo make install` (to
 `/usr/local/bin`) or `make install BINDIR=$HOME/go/bin`. `make clean`
 removes build output and demo state, but never your config or tokens. For
 servers, [examples/systemd](examples/systemd) has units for the broker and
-for agents.
+for agents. For containers, the [Containerfile](Containerfile) builds an
+image for Podman, Docker and Kubernetes: see
+[Running in containers](docs/CONTAINERS.md).
 
 Then, as that agent:
 

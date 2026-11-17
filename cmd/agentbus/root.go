@@ -70,7 +70,9 @@ and task are interactive too. Piped, or with --plain, they print JSON or
 plain text for scripts.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		Version:       buildVersion(),
 	}
+	root.SetVersionTemplate("agentbus {{.Version}}\n")
 	root.SetIn(a.stdin)
 	root.SetOut(a.stdout)
 	root.SetErr(a.stderr)
