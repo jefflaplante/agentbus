@@ -96,7 +96,7 @@ are what remove trust in the broker.
   strangers can store: 64 requests waiting, 4 per address, 60 requests a
   minute per address, 16 KB each, expiring after 24 hours. Leave
   `join_listen` unset when you aren't adding agents. See
-  [CLI.md](CLI.md#letting-an-agent-ask-to-join).
+  [Joining the bus](JOINING.md).
 - **Keep `metrics_listen` on loopback.** The metrics endpoint has no
   authentication and names every agent. The broker refuses a non-loopback
   address unless `allow_insecure` is set; scrape it locally or through an

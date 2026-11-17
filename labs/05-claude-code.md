@@ -5,7 +5,7 @@ weather agent, and asks it for the forecast in Seattle, WA.
 
 Claude reaches the bus through `agentbus mcp`, an MCP server with seven
 tools: `agents`, `send`, `request`, `task`, `emit`, `inbox` and `reply`.
-To the broker, Claude is just another agent with an ID and a token.
+To the broker, Claude is one more agent with an ID and a token.
 
 Keep the weather binary from lab 4 running in terminal 3.
 
@@ -47,7 +47,7 @@ and `claude-code`'s token from that config, as every other command has.
 
 ## 3. Ask, without any hints
 
-**Terminal 4** (exports set, then):
+**Terminal 4** (quit the console with `q` first; exports set, then):
 
 ```bash
 cd $LAB/claude
@@ -55,7 +55,14 @@ claude
 ```
 
 Claude Code asks whether to trust the project's MCP server: approve
-`agentbus`. Run `/mcp` to see it connected, with seven tools. Then ask:
+`agentbus`. Run `/mcp` to see it connected, with seven tools.
+
+> If `/mcp` shows `agentbus` as failed, `claude` was started without the
+> lab 0 exports, so `${AGENTBUS_CONFIG}` was empty or `agentbus` wasn't on
+> `PATH`. Exit, paste the exports, and start `claude` again. If you
+> dismissed the trust prompt, `/mcp` lets you approve the server.
+
+Then ask:
 
 > What's the weather forecast for Seattle, WA?
 
@@ -119,8 +126,9 @@ level=INFO msg=handled handler=weather.forecast from=claude-code ... ok=true
 
 ## 5. Watch the conversation
 
-With `agentbus console --tab traffic` (as `admin`) open in another terminal, ask
-Claude for the forecast in another city. You'll see Claude's task go out
+With `agentbus console --tab traffic` open in another terminal (one
+with the lab 0 exports and no `AGENTBUS_AGENT`, so it connects as
+`admin`), ask Claude for the forecast in another city. You'll see Claude's task go out
 and the weather agent's response come back.
 
 Then try these and see how Claude handles each:

@@ -1,8 +1,19 @@
 # How agentbus works
 
-How the broker, the client, and an exchange between two agents fit
-together. [CONTRACT.md](../CONTRACT.md) is the normative spec. This page
-explains the mechanics.
+This page describes how the broker, the client and an exchange between
+two agents fit together. [CONTRACT.md](../CONTRACT.md) is the normative
+spec. This page explains the mechanics behind it.
+
+Terms used below:
+
+- An agent is any program that connects to the broker with an agent ID
+  and a token.
+- An envelope is the JSON object every message is wrapped in: `id`,
+  `type`, `from`, `to`, `ts`, `body` and a few optional fields.
+- A capability is a named kind of work, such as `textstats`. Each
+  capability has one task queue.
+- a2a/v1 is the name of the contract: the topics, the envelope and the
+  rules the broker enforces.
 
 ## Layers
 
@@ -21,8 +32,12 @@ explains the mechanics.
 +--------------------------------------------------------------+
 ```
 
-mochi-mqtt does all the protocol work. agentbus adds one hook that turns a
-generic MQTT broker into one that knows about agents.
+[mochi-mqtt](https://github.com/mochi-mqtt/server) is an embeddable Go
+MQTT broker. It handles the MQTT protocol: sessions, QoS, retained
+messages and topic routing. agentbus adds one hook, `contractHook`, which
+checks every connection, subscription and publish against the a2a/v1
+rules. The agents on the top line are examples of clients; conduit is the
+AI agent agentbus was first written for.
 
 ## Topics
 
@@ -33,7 +48,16 @@ a2a/v1/tasks/{capability}      work queue ($share/{cap}/...) read: granted agent
 a2a/v1/events/{id}/{name...}   broadcasts                    write: owner only
 ```
 
+`{id}` is an agent ID, and the owner is the agent with that ID. The
+right-hand column is the restriction the broker enforces on each topic.
+`$share/{cap}/...` is an MQTT shared subscription: the broker delivers
+each message to one subscriber in the group, so each task goes to one
+worker.
+
 ## Every publish goes through OnPublish
+
+The checks run in the order shown. The first one that fails rejects the
+publish, and the steps under "on any failure" run instead of the rest.
 
 ```text
 OnConnect                              # refuse a CONNECT that carries a Will
@@ -75,16 +99,22 @@ on any failure: reject(code)
 Reads are checked in `OnACLCheck`, at subscribe time and again for each
 delivery. `OnSubscribe` adds two rules the ACL can't express: task queues
 only through the exact `$share/{cap}/...` filter, and at most 256
-subscriptions per client. Observer identities pass every read check except shared
-subscriptions, and `OnSubscribe` grants them QoS 0. That's how MQTT
-Explorer can show the whole bus
-([DESKTOP-CLIENTS.md](DESKTOP-CLIENTS.md)). Writes are authorized in `OnPublish` rather than the ACL hook,
-because mochi disconnects an MQTT 3.1.1 client whose QoS 1 publish fails the
-ACL, and the client would resend that message on every reconnect.
+subscriptions per client.
+
+Observers are identities with `"observer": true` in the config. They pass
+every read check except shared subscriptions, and `OnSubscribe` grants
+them QoS 0. This is how MQTT Explorer can show the whole bus
+([DESKTOP-CLIENTS.md](DESKTOP-CLIENTS.md)).
+
+Writes are authorized in `OnPublish` and not in the ACL hook. mochi
+disconnects an MQTT 3.1.1 client whose QoS 1 publish fails the ACL, and
+the client would then resend that message on every reconnect.
 
 ## Request and reply
 
-What the demo's `ping` step does:
+What the `ping` step of the demo (`make demo`) does. The coordinator
+sends a request to the worker's inbox, and the worker's reply comes back
+to the coordinator's inbox carrying the request's ID as `correlation_id`:
 
 ```text
 coordinator                   broker                        worker
@@ -108,7 +138,10 @@ context carries a deadline taken from the request's `ttl_ms`.
 
 ## Task queues
 
-What the demo's `tasks` step does, here with two workers:
+What the demo's `tasks` step does, here with two workers. Both workers
+subscribe with the same `$share` filter. The coordinator publishes to the
+capability's topic without naming a worker, and the broker picks one
+connected worker for each task:
 
 ```text
 coordinator               broker                    worker      worker-2
@@ -124,16 +157,19 @@ coordinator               broker                    worker      worker-2
   |<------------------------| (coordinator watches events/+/jobs/#) |
 ```
 
-The broker grants a capability per agent (`capabilities` in the config).
-An agent without the grant can send tasks but can't consume them, which is
-what the demo's `acl` step checks.
+The broker grants capabilities per agent (`capabilities` in the config).
+An agent without the grant can send tasks but can't consume them. The
+demo's `acl` step checks this.
 
 ## A model-backed agent
 
 An `llm:` handler in a standalone agent (see
 [AGENTS.md](AGENTS.md#model-backed-handlers)) turns one request into a
 conversation with a model. The broker sees only the bus messages: the
-request, any calls the model makes to other agents, and the reply.
+request, any calls the model makes to other agents, and the reply. In the
+diagram, "fenced" means the other agent's reply is passed to the model
+behind the untrusted-input preamble, which marks it as data and not
+instructions.
 
 ```text
 caller          broker          hostdoc (agent runtime)          model API
@@ -169,7 +205,9 @@ caller          broker          hostdoc (agent runtime)          model API
 ## Retention
 
 With `data_dir` set, mochi's bbolt storage hook saves sessions,
-subscriptions, queued messages and retained presence cards. On startup:
+subscriptions, queued messages and retained presence cards to
+`broker.db`. The broker loads that file before it accepts connections, so
+no agent connects to a half-restored broker:
 
 ```text
 Start
@@ -199,13 +237,16 @@ serve
   so a login that raced the reload can't keep a removed or rotated identity
 ```
 
-Every check reads one immutable snapshot (`hookState`). A reload never
-leaves a check half on the old config and half on the new. Revoked
+Every check reads one immutable snapshot (`hookState`), so a reload
+never leaves a check half on the old config and half on the new. Revoked
 capabilities take effect at the next task: shared-subscription members
 without the grant are pruned before a worker is picked, so a stale stored
 subscription can't receive tasks.
 
 ## Request tracking and metrics
+
+The broker keeps a table of open requests: one entry per accepted request,
+removed when the reply arrives or the request expires.
 
 ```text
 request accepted   -> open entry {requester, id, answerer, start, expiry}
@@ -236,6 +277,8 @@ new series.
 
 ## Broker status
 
+The broker publishes a snapshot of its own state as a retained message:
+
 ```text
 every status_interval (default 2s)
   Broker.Status()                   # mochi traffic counters + the hook's decision counters
@@ -249,6 +292,10 @@ every status_interval (default 2s)
 `client.Observe`. See [CLI.md](CLI.md).
 
 ## Presence
+
+A presence card is a retained JSON message that gives an agent's ID,
+status, capabilities and description. The agent publishes it, and the
+broker sets the status:
 
 ```text
 connect      -> client publishes its card (retained) -> broker stamps it online

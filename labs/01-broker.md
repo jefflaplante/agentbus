@@ -17,6 +17,17 @@ agentbus config init
 agentbus config path
 ```
 
+```text
+✓ created /Users/you/agentbus-lab/broker.json
+  admin token: /Users/you/agentbus-lab/tokens/admin.token
+  listen:      127.0.0.1:1883
+```
+
+`config path` then lists the config, the tokens directory and the
+broker's data and audit files, all under `$LAB`. If any of them is under
+`~/.config/agentbus`, `AGENTBUS_CONFIG` isn't set: paste the lab 0
+`export` lines and run `config init` again.
+
 `config init` writes `$LAB/broker.json` with:
 - a listener on `127.0.0.1:1883`. It's loopback only, so it's safe
   without TLS.
@@ -41,9 +52,19 @@ Note `token_sha256`: the broker stores only a hash of each token.
 agentbus serve
 ```
 
+The last line it prints is:
+
+```text
+level=INFO msg="agentbus broker listening" addr=127.0.0.1:1883 agents=1 tls=false config=...
+```
+
 Leave it running. It logs every connection and message, and it rereads
-`broker.json` within a second of any change, so you won't restart it
-again in these labs.
+`broker.json` within a second of any change, so adding an agent needs no
+restart. Only the listener settings need one: labs 6 and 7 each change
+one and restart the broker.
+
+> `address already in use` means something else has port 1883. Change the
+> port as in step 1 and run `agentbus serve` again.
 
 ## 3. Look inside
 

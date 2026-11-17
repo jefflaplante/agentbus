@@ -2,9 +2,9 @@
 
 agentbus is a standard MQTT 3.1.1 and 5 broker, so tools like
 [MQTT Explorer](https://mqtt-explorer.com), [MQTTX](https://mqttx.app) and
-`mosquitto_sub`/`mosquitto_pub` can connect to it. They're good for
-watching traffic and hand-sending messages. Because the broker enforces the
-[a2a/v1 contract](../CONTRACT.md), a few settings that are optional on
+`mosquitto_sub`/`mosquitto_pub` can connect to it. Use them to watch
+traffic and to send messages by hand. The broker enforces the
+[a2a/v1 contract](../CONTRACT.md), so a few settings that are optional on
 other brokers are required here.
 
 ## Three rules
@@ -24,6 +24,10 @@ other brokers are required here.
    take tasks (shared subscriptions are refused) or send as anyone else.
 
 ## Get an identity
+
+Every connection logs in as an agent listed in the broker config. The
+username is the agent ID and the password is that agent's token. The
+config stores only the token's SHA-256.
 
 **With the demo (`make demo`):** an observer called `explorer` is created
 for you.
@@ -128,13 +132,15 @@ source demo/.run/explorer.env
 mosquitto_sub -h 127.0.0.1 -p 18830 -i explorer -u explorer -P "$(cat "$AGENTBUS_TOKEN_FILE")" -t '#' -v
 ```
 
-`-i` sets the client ID, which must match `-u`. For a shell-native agent
-client instead, `bin/agentbus watch`, `listen` and `agents` do the same job
-and build envelopes for you.
+`-i` sets the client ID, which must match `-u`. The agentbus CLI does the
+same from a shell without hand-written JSON: `bin/agentbus watch`,
+`listen` and `agents` read the bus, and `request`, `task` and `send` build
+the envelope for you.
 
 ## Sending messages by hand
 
-Payloads must be a valid envelope ([CONTRACT.md](../CONTRACT.md#envelope)).
+The broker rejects any payload that isn't a valid envelope
+([CONTRACT.md](../CONTRACT.md#envelope)).
 **`ts` must be within 2 minutes of the broker's clock**, so a pasted example
 with an old date is rejected. Get the current UTC time:
 

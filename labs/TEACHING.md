@@ -24,8 +24,8 @@ students to do the same the day before:
 labs/check.sh --claude
 ```
 
-It runs every lab unattended (about 3 minutes) and stops at the first
-problem. It checks:
+It runs labs 0 to 6 unattended (about 3 minutes) and stops at the first
+problem. Lab 7 isn't in it. It checks:
 - **Go:** the version, and that agentbus builds
 - **Port 1883:** that it's free
 - **The weather APIs:** they need outbound HTTPS to api.weather.gov,
@@ -45,6 +45,7 @@ the room:
 | 2 | your commands, as `me` |
 | 3 | the agent being worked on |
 | 4 | `agentbus console --tab traffic` (as `admin`), and later `claude` |
+| 5 | lab 7 only: the "second host", opened without the lab 0 exports |
 
 ## Timing
 
@@ -56,10 +57,21 @@ the room:
 | 0:45 | 3 | A real handler: validate, call out, reply or refuse |
 | 1:10 | 4 | One file to deploy; the token stays out of it |
 | 1:25 | 5 | Claude as one more agent; discovery needs guidance |
-| 1:45 | 6 | Go handlers, allow-lists, metrics; wrap up |
+| 1:45 | 6 | Go handlers, allow-lists, metrics (as a demo) |
+| 1:55 | Wrap-up | Three participants, one broker |
 
-If time runs short, cut lab 6 to a demo and keep lab 5. Lab 5 is what
+The lab pages give students' times, which add up to two hours without
+the intro and wrap-up. To fit both into two hours, this schedule gives
+labs 0 and 1 fifteen minutes together and runs lab 6 as a ten-minute
+demo. With two and a quarter hours, let students do lab 6 themselves.
+
+If time runs short, keep lab 5 and cut lab 6 further. Lab 5 is what
 people remember.
+
+[Lab 7](07-join.md) is optional and not in this schedule. It takes 10 to
+15 minutes and needs only a running broker. Use it when a group finishes
+early, when the audience will operate a broker for other teams, or as
+homework.
 
 ## Intro (10 min)
 
@@ -97,8 +109,13 @@ agent table.
 **Ask:** "Where did the CLI get the address and the token?" The answer
 is the config, which is the pattern for every later command.
 
-**Watch for:** port 1883 already in use (a local Mosquitto). Fix it with
-`agentbus config set listen 127.0.0.1:1884`; every command follows.
+**Watch for:**
+- **Port 1883 already in use** (a local Mosquitto). Fix it with
+  `agentbus config set listen 127.0.0.1:1884`; every command follows.
+  Lab 4 is the exception: its `AGENTBUS_URL` line names the port.
+- **A config under `~/.config/agentbus`** in the `config init` output.
+  The student skipped the exports; have them paste the exports and run
+  `config init` again.
 
 ## Lab 2: a first agent (20 min)
 
@@ -131,6 +148,13 @@ is safe.
   add`. The broker reloads within a second; run it again.
 - **A missing `export AGENTBUS_AGENT=me`** in terminal 2. Commands then
   run as `admin`, which works but makes the console's traffic confusing.
+- **Pasting the `export` lines that `config agent add` prints.** They
+  are for another host. In terminal 2 they make every command run as
+  that agent; `unset AGENTBUS_URL AGENTBUS_TOKEN_FILE` and set
+  `AGENTBUS_AGENT=me` again.
+- **`AGENTBUS_AGENT=me` exported in terminal 4.** The console then fails
+  with `broker status needs an observer identity`. `unset AGENTBUS_AGENT`
+  there.
 
 ## Lab 3: the weather agent (25 min)
 
@@ -143,7 +167,7 @@ is safe.
 
 **Show:** `forecast.py` top to bottom, using the table in the lab. Then
 run it by hand with `echo '…' | python3 scripts/forecast.py`. Making the
-point that a handler is just a program, testable without the bus, saves
+point that a handler is an ordinary program, testable without the bus, saves
 a lot of debugging later.
 
 **Show:** the Seattle task, then Paris (Open-Meteo), then the three
@@ -225,7 +249,7 @@ Show terminal 3 logging `from=claude-code`.
   `claude` from a terminal with the exports.
 - **The project MCP server prompt dismissed:** run `/mcp` to approve it.
 
-## Lab 6: extend it (15 min, or a demo)
+## Lab 6: extend it (10 min as a demo; 20 hands-on)
 
 **Say:**
 - **A Go handler is a registered function,** and adding one is dropping a
@@ -243,6 +267,13 @@ Show terminal 3 logging `from=claude-code`.
 **Ask:** "What would you alert on?" A capability's `expired` count rising
 means no worker answered in time.
 
+**Watch for:**
+- **`broker status needs an observer identity`** in step 5. Terminal 2
+  runs as `me`; the lab's command starts with `AGENTBUS_AGENT=admin` for
+  that reason.
+- **`curl` to the metrics port refused.** `metrics_listen` needs a broker
+  restart. Agents reconnect on their own afterwards.
+
 **If there's time, and you have an API key (step 6, optional):**
 - **An `llm:` handler puts a model in front of the same script.** The
   model picks the location and days; `forecast.py` still does the work.
@@ -251,6 +282,57 @@ means no worker answered in time.
 - **Show** the `handled handler=forecast_tool` line, then the `model run`
   line with its token counts. Contrast it with lab 5: there, Claude Code
   was the caller; here, the model is inside the agent.
+
+## Lab 7: join (optional, 10 to 15 min)
+
+**Say:**
+- **Until now the operator did two jobs per agent:** add the identity,
+  and get the token file to the host. Copying tokens is the slow part,
+  and each copy is a chance to leak one.
+- **With join, the host makes its own token** and sends the broker only
+  its SHA-256, with the ID and capabilities it would like. The token
+  never leaves the host.
+- **What the client asks for is only a request.** Nothing works until
+  the operator approves, and the operator chooses the grants. A join
+  can't ask for `*` or the observer role, and can't take an ID that
+  exists.
+- **`join_listen` is a separate HTTP port** and needs a broker restart.
+  Loopback is fine for the lab. Off-host it needs `tls_cert` and
+  `tls_key`.
+
+**Show:**
+- terminal 5 with only `PATH` and `AGENTBUS_CONFIG_DIR` set, and why: on
+  one machine, the second config directory is what keeps the client's
+  token out of the broker's `tokens/`
+- the token refused with `not Authorized` before approval
+- `agentbus config join`, then approve with one of the two capabilities,
+  and `not granted: weather.alerts` on the client
+- step 5, if lab 4 was done: the same binary as `weather-2`, and tasks
+  going to both workers
+- the editor's Join requests view (`agentbus config`, `tab` twice) for
+  the deny. Keep the console open in terminal 4 so the room sees the
+  notice when `visitor` asks.
+
+**Ask:** "What do you check before you approve?" The `FROM` column: the
+host name is whatever the client reported, and the address is what the
+broker saw. On a real network the operator confirms the request with
+whoever started the client.
+
+**Watch for:**
+- **The lab 0 exports pasted into terminal 5.** `AGENTBUS_CONFIG` wins
+  over `AGENTBUS_CONFIG_DIR`, so the token lands in the broker's
+  `tokens/`. The lab still works, but the point is lost. Open a fresh
+  terminal.
+- **Terminal 3 reused for the client.** It still has lab 4's
+  `AGENTBUS_TOKEN_FILE`, so `join` would send the hash of `weather`'s
+  token. Use a new terminal.
+- **`connection refused` from `join`:** the broker wasn't restarted after
+  `join_listen` was set.
+- **Step 6 run without the `unset` line.** The commands still work, but
+  the leftover `AGENTBUS_TOKEN_FILE` makes `join` reuse `weather-2`'s
+  token for the new ID.
+- **A denied client that runs `join` again** without `--wait` files a new
+  request. That is by design; deny it again.
 
 ## Wrap-up (5 min)
 
@@ -275,6 +357,8 @@ other handlers as its tools.
   conduit
 - [docs/SECURITY.md](../docs/SECURITY.md): what the broker guarantees and
   what it doesn't
+- [docs/CLI.md](../docs/CLI.md#letting-an-agent-ask-to-join): join, in
+  the CLI reference
 
 ## Common problems, quick reference
 
@@ -288,5 +372,8 @@ other handlers as its tools.
 | `/mcp` shows agentbus failed | `claude` started without the exports, or `agentbus` isn't on PATH |
 | Claude ignores the bus | Add `CLAUDE.md` (lab 5, step 4), or ask it to "use the agentbus tools" |
 | `agent build` says a Go handler isn't in the binary | The manifest names a `go:` function that no file in `handlers/` registers |
+| `broker status needs an observer identity` | The command ran as `me`; prefix it with `AGENTBUS_AGENT=admin`, or `unset AGENTBUS_AGENT` in that terminal |
+| Lab 7: `join` says `connection refused` | Restart `agentbus serve` after setting `join_listen` |
+| Lab 7: `join refused: that agent id is taken` | The ID exists or someone asked first; pick another ID, or use the terminal that asked first |
 | Lab 6 step 6: `no API key: set ANTHROPIC_API_KEY` | Start the binary with the key in its environment, or skip the step |
 | Lab 6 step 6: `handler_error: model call failed` | The key is wrong or out of credit; the agent's log (`-v`) has the API's answer |

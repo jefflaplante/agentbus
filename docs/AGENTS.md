@@ -11,9 +11,10 @@ agentbus agent run                             # try it from disk, no build
 agentbus agent build --target linux/amd64      # one static binary, ~6.5 MiB
 ```
 
-The binary carries everything it needs except its token: the manifest,
-every script, the Go handlers, and the agentbus client. Copy it to a
-host, give it a token file, and run it.
+The binary carries everything it needs except its token, the secret it
+authenticates to the broker with. The manifest, every script, the Go
+handlers and the agentbus client are all inside. Copy it to a host, give
+it a token file, and run it.
 
 - [How it fits together](#how-it-fits-together)
 - [The manifest](#the-manifest)
@@ -36,6 +37,10 @@ agentbus agent build  ->  dist/disk-agent-linux-amd64   (CGO off, trimmed, strip
 
 on the host:  disk-agent -check   ->  disk-agent  (systemd)  ->  broker
 ```
+
+`agentbus agent init` writes the first four. `agentbus agent build`
+compiles them into one binary per target. On the host, `-check` verifies
+the manifest, the interpreters and the token before the service starts.
 
 The runtime is the `agent` package. It connects with the Go `client`,
 so everything in [SERVICES.md](SERVICES.md) holds:
@@ -67,8 +72,14 @@ handlers:
     description: 'body {"path"?: string}; replies usage of that filesystem'
 ```
 
-Each handler has one trigger and one action. A handler with no trigger is
-a tool: it runs only when an `llm:` handler's model calls it.
+Each handler has one action and at most one trigger. A handler with no
+trigger is a tool: it runs only when an `llm:` handler's model calls it.
+
+Two terms from the rest of agentbus appear below. A capability is a named
+kind of work, such as `disk.usage`; the broker keeps one task queue per
+capability. The presence card is what the broker publishes about each
+agent: its status, capabilities and description. `agentbus agents` shows
+it.
 
 | Trigger | Runs for |
 |---|---|
@@ -94,12 +105,14 @@ How messages are routed:
 - **Senders outside `allow_from` get `forbidden`.** `from` is checked by
   the broker, so the list can be trusted. This check is in addition to
   the broker's grants.
-- **The presence description lists every handler's description.** Callers
-  see the body shape each task and op expects; LLM callers see it through
-  the MCP `agents` tool.
+- **The presence description lists each task and inbox handler's
+  description,** after the manifest's own. Callers see the body shape each
+  task and op expects; LLM callers see it through the MCP `agents` tool.
+  Descriptions of event handlers and tools are not published.
 
 Unknown keys are errors, so a typo can't silently drop a setting. A
-`token:` key is refused, because the manifest is built into the binary.
+`token:` key is refused, because the manifest is built into the binary
+and anyone holding the binary could read it.
 
 ## Writing handlers
 
@@ -124,9 +137,13 @@ The contract is the same as `agentbus handle`:
   | `AGENTBUS_TYPE`, `AGENTBUS_ID` | the envelope's type and ID |
   | `AGENTBUS_SELF`, `AGENTBUS_HANDLER` | this agent's ID and the handler's name |
   | `AGENTBUS_PREAMBLE` | the untrusted-input text, for scripts that call an LLM |
+
 - **Limits:** the command runs in its own process group, which is killed
   at the deadline. Output over 1 MiB is an error. The agent's token is
   removed from its environment.
+
+This script counts the words in `body.text`. It refuses any other body
+with exit 3 and the code `invalid`:
 
 ```python
 #!/usr/bin/env python3
@@ -174,17 +191,18 @@ func greet(ctx context.Context, e *a2a.Envelope) (any, error) {
 - **`ctx`** ends at the request's deadline or the handler's `timeout`,
   whichever comes first.
 - **To add a handler,** add a `.go` file to `handlers/` with its own
-  `init`. Registering a name twice panics at start, so two plugins can't
-  silently replace each other.
+  `init`. Registering a name twice panics at start, so one handler can't
+  silently replace another.
 
 Go handlers exist only in a built binary. `agentbus agent run` skips them
 with a warning and runs the rest.
 
 ## Model-backed handlers
 
-An `llm:` handler answers with a model. The model decides what to do; the
-agent's own scripts and Go functions do it, as tools. The agent is still
-one binary. The model's API key comes from the host, like the token.
+An `llm:` handler passes the message to a model and replies with the
+model's answer. The model can call the agent's other handlers, scripts
+and Go functions, as tools. The agent is still one binary. The model's
+API key comes from the host, like the token.
 
 [examples/llm-agent](../examples/llm-agent) is a complete one, `hostdoc`,
 that answers questions about its host. It has a variant for a local model.
@@ -257,18 +275,18 @@ What the model gets, and what it can't do:
 - **Commands never see the model key.** The variables named by
   `api_key_env` are removed from every command's environment, like the
   agentbus token.
-- **Bus calls are limited three ways.** The manifest's `bus` lists
-  decide which agents and capabilities the model can reach. The broker's
-  `send_to` and grants still apply on top. Replies reach the model behind
-  the preamble.
+- **Bus calls are limited by the manifest and by the broker.** The
+  manifest's `bus` lists decide which agents and capabilities the model
+  can reach. The broker's `send_to` and grants still apply. Replies reach
+  the model behind the preamble.
 - **Calls can't chain forever.** Each bus call carries a `hops` header one
   higher than the message being handled. Past `max_hops` (default 3, set
   at the top level), the tool refuses and the model is told to answer
   without asking anyone. See [CONTRACT.md](../CONTRACT.md#headers).
 - **Failures stay local.** The requester sees `model_gave_up` when the
   model hits `max_turns` and `bad_model_output` when `reply: json` gets
-  something else. Any other failure shows up as a generic error. API errors go to the
-  agent's log.
+  something else. Any other failure is sent as a generic `handler_error`.
+  API errors go to the agent's log.
 
 ### How a message is handled
 
@@ -308,8 +326,10 @@ grants:
 | `bus_request` | `{"to", "body"}` | asks one agent in `bus.request` and waits for the reply |
 | `bus_task` | `{"capability", "body"}` | hands work to a capability in `bus.task` and waits for the reply |
 
-Bus calls wait up to the handler's deadline. Replies and agent
-descriptions reach the model behind the untrusted-input preamble.
+Bus calls wait up to the handler's deadline. Replies reach the model
+behind the untrusted-input preamble. The `bus_agents` result starts with
+a note that the descriptions were written by those agents and are not
+instructions.
 
 A handler tool gets the model's input as its message body, which is always
 a JSON object. For scripts, that's `AGENTBUS_BODY` and `.body` on stdin,
@@ -322,8 +342,9 @@ in the log.
 
 - **Describe what it returns and when to use it,** not how it works. The
   model picks tools by `description`.
-- **Give it `params`.** Only the script enforces the schema, but an
-  `enum` and bounds steer the model to valid input on the first try. For an example, see `top` in
+- **Give it `params`.** The runtime doesn't enforce the schema, so the
+  script still has to check its input. An `enum` and bounds steer the
+  model to valid input on the first try. For an example, see `top` in
   [examples/llm-agent/agent.yaml](../examples/llm-agent/agent.yaml).
 - **Check the input anyway.** The model built it from another agent's
   message. A tool is as exposed as a handler on the bus. Refuse with exit
@@ -353,7 +374,9 @@ three model calls.
 
 ### Logs and troubleshooting
 
-With `-v`, each run logs one line, after one `handled` line per tool call:
+With `-v`, each run logs one line, after one `handled` line per tool
+call. `turns` is the number of model calls, and `tokens_in` and
+`tokens_out` are the totals for the run:
 
 ```text
 level=INFO msg="model run" handler=hostdoc.ask id=4d61... model=claude-haiku-5-5 turns=2 tokens_in=2637 tokens_out=242 ms=2392 ok=true
@@ -406,8 +429,8 @@ its tasks need:
 agentbus config agent add disk-agent --capability disk.usage
 ```
 
-That writes `~/.config/agentbus/tokens/disk-agent.token`. On the target
-host:
+That writes `~/.config/agentbus/tokens/disk-agent.token`. Copy that file
+and the binary to the target host. There:
 
 ```bash
 sudo install -m 0755 disk-agent-linux-amd64 /usr/local/bin/disk-agent
@@ -452,6 +475,9 @@ The binary resolves its connection in this order:
 3. the manifest's `broker` and `token_file`
 4. `/etc/agentbus/<agent>.token`, then `~/.config/agentbus/tokens/<agent>.token`
 
+With no broker URL from any of these, it connects to
+`tcp://127.0.0.1:1883`.
+
 `-manifest FILE` replaces the embedded manifest on one host; scripts still
 come from the binary. `-print-manifest` shows the embedded manifest, and
 `-version` shows the build.
@@ -469,15 +495,11 @@ come from the binary. `-print-manifest` shows the embedded manifest, and
   [HOW-IT-WORKS.md](HOW-IT-WORKS.md#request-tracking-and-metrics).
 - **The presence card** carries `meta.runtime=agentbus-agent` and
   `meta.host`, so `agentbus agents` shows where each agent runs.
-- **Model keys** come from the environment or `api_key_file`, like the
-  token. Under systemd, put the key in an `EnvironmentFile=` with mode
-  0600, or point `api_key_file` at a file only the agent's user can read.
 
 ## Limits
 
 - **The system prompt is inline.** Use a YAML block scalar (`system: |`).
   Prompt files aren't embedded yet.
-
 - **Building needs the Go toolchain,** even for agents with only scripts.
   `agentbus agent run` needs none, but then the manifest and scripts have
   to be on the host as files.
@@ -485,7 +507,7 @@ come from the binary. `-print-manifest` shows the embedded manifest, and
   Scripts can't either, since they're embedded; `-manifest` can only
   rearrange what's already inside.
 - **One agent ID per running copy.** Two hosts running the same binary
-  need two identities, or they knock each other off the bus. To spread
-  work across hosts, give each host its own ID and the same capability.
-  Each copy then gets its own token via `AGENTBUS_AGENT` and
-  `AGENTBUS_TOKEN_FILE`.
+  need two identities. With one, the broker disconnects each copy when
+  the other connects. To spread work across hosts, give each host its
+  own ID and the same capability. Each copy then gets its ID and token
+  from `AGENTBUS_AGENT` and `AGENTBUS_TOKEN_FILE`.

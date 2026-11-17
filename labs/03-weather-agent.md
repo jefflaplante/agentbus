@@ -29,12 +29,27 @@ on any host with python3. The parts to notice:
 | `nws_forecast()`, with `open_meteo_forecast()` as the fallback | US places use the National Weather Service, which has written forecasts; anywhere else, or if NWS is down, Open-Meteo |
 | `tls_context()` | Some Python builds ship without CA certificates; it falls back to the OS bundle and never turns verification off |
 
-Try it on its own, with no bus involved. A handler is just a program:
+Try it on its own, with no bus involved. A handler is an ordinary
+program, so you can test it without a broker:
 
 ```bash
 echo '{"from":"me","body":{"location":"Seattle, WA","days":1}}' | python3 scripts/forecast.py
 echo '{"from":"me","body":{"location":"Nowhereville, ZZ"}}' | python3 scripts/forecast.py; echo "exit $?"
 ```
+
+The first prints a forecast as JSON. The second prints the refusal and
+its exit code:
+
+```text
+{"code": "not_found", "reason": "no place called 'Nowhereville, ZZ'"}
+exit 3
+```
+
+> If the first fails with `CERTIFICATE_VERIFY_FAILED` or
+> `upstream_error`, the problem is this machine's Python or network, and
+> the bus is not involved. See
+> [If you get stuck](README.md#if-you-get-stuck). Fix it here before you
+> go on.
 
 ## 3. Write the manifest
 
@@ -65,6 +80,16 @@ EOF
 agentbus agent check
 ```
 
+`agent check` reads the manifest and confirms each script exists. It
+should end with `ok`:
+
+```text
+agent     weather
+tasks     weather.forecast
+handlers  3
+ok
+```
+
 The same script serves two triggers:
 - **A task** (`weather.forecast`) for anyone who wants a forecast and
   doesn't care which agent produces it.
@@ -81,12 +106,18 @@ to send.
 agentbus config agent add weather --capability weather.forecast
 ```
 
+The capability here must match the `task:` name in the manifest. The
+manifest says what the agent serves; the broker config says what it is
+allowed to serve.
+
 **Terminal 3:**
 
 ```bash
 cd $LAB/weather
 agentbus agent run
 ```
+
+It prints `● serving as weather on tcp://127.0.0.1:1883`.
 
 ## 5. Ask for the forecast
 
@@ -97,24 +128,28 @@ export AGENTBUS_AGENT=me
 agentbus task -c weather.forecast --body '{"location":"Seattle, WA","days":2}'
 ```
 
-On a terminal the reply is pretty-printed. Expect something like this;
-the weather will differ:
+Expect something like this; the weather will differ:
 
-```json
+```text
+✓ response from weather in 1.2s
 {
   "location": "Seattle, Washington, US",
-  "source": "National Weather Service (api.weather.gov)",
   "periods": [
     {
+      "detail": "A chance of light rain. Partly cloudy, with a low around 43. ...",
       "name": "Tonight",
+      "summary": "Chance Light Rain",
       "temperature": 43,
       "unit": "F",
-      "summary": "Chance Light Rain",
-      "detail": "A chance of light rain. Partly cloudy, with a low around 43. ...",
       "wind": "3 to 7 mph SSE"
     },
     ...
+  ],
+  "source": "National Weather Service (api.weather.gov)"
+}
 ```
+
+`source` says which service answered.
 
 Now try the other routes, and the failures:
 
@@ -126,8 +161,14 @@ agentbus task -c weather.forecast --body '{"location":"x; rm -rf ~"}'           
 agentbus task -c weather.forecast --body '{"location":"Seattle, WA","days":30}'  # invalid
 ```
 
+The last three print `not_found`, `invalid` and `invalid`, each with the
+script's own reason.
+
 Keep `agentbus console --tab traffic` open in terminal 4 to see each
 request and reply cross the bus.
+
+> A request that ends in `timeout` means the weather services were slow.
+> Run it again, or add `--timeout 45s`.
 
 ## Questions
 
@@ -136,7 +177,7 @@ request and reply cross the bus.
 2. Why does the script need its own User-Agent? (Read the NWS API's
    rules, and look at `USER_AGENT`.)
 3. What happens if two terminals run `agentbus agent run` for `weather` at
-   the same time? Try it, and watch terminal 1.
+   the same time? Try it, watch terminal 1, then stop the second one.
 
 **Done when:** you get a Seattle forecast from the NWS through the bus,
 and a Paris forecast from Open-Meteo.

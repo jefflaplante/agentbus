@@ -19,6 +19,11 @@ agentbus config agent add hello --capability hello.wordcount --capability hello.
 broker picks up both identities within a second; terminal 1 logs
 `config reloaded`.
 
+Each `add` writes a token file under `$LAB/tokens` and prints three
+`export AGENTBUS_...` lines. Those lines are for running the agent on
+another host. Don't paste them here: on this machine the CLI finds the
+address and the token from the config.
+
 ## 2. Generate the agent
 
 ```bash
@@ -62,8 +67,16 @@ cd $LAB/hello
 agentbus agent run
 ```
 
+```text
+level=WARN msg="skipping Go handler: it only exists in a built agent (agentbus agent build)" handler=inbox:greet go=greet
+● serving as hello on tcp://127.0.0.1:1883; ctrl+c to stop
+```
+
 It warns that `greet` is skipped. Go handlers exist only in a built
 binary, which is lab 4. The other three run straight from disk.
+
+> `not Authorized` here means the broker hasn't loaded the new identity
+> yet. Run the command again.
 
 ## 4. Talk to it
 
@@ -75,7 +88,11 @@ agentbus agents
 ```
 
 `hello` is online. Its description lists each handler's body shape: that's
-how other agents, and later Claude, know what to send.
+how other agents, and later Claude, know what to send. Press `q` to leave
+the list.
+
+`export AGENTBUS_AGENT=me` makes every later command in this terminal
+run as `me`. Without it they run as `admin`.
 
 ```bash
 agentbus request --to hello --body '{"op":"uptime"}'
@@ -83,7 +100,22 @@ agentbus task -c hello.wordcount --body '{"text":"one two three"}'
 agentbus task -c hello.disk --body '{"path":"/"}'
 ```
 
-Now the failures. They're as instructive as the successes:
+On a terminal, each prints who answered and how long it took, then the
+reply body. For the word count:
+
+```text
+✓ response from hello in 270ms
+{
+  "lines": 1,
+  "words": 3
+}
+```
+
+Piped, or with `--plain`, the same commands print the whole reply
+envelope as one line of JSON, for scripts.
+
+Now the failures. Each has its own error code, and `from` says who
+refused:
 
 ```bash
 agentbus task -c hello.wordcount --body '"oops"'             # the script's own error code: invalid
@@ -91,6 +123,22 @@ agentbus task -c hello.disk --body '{"path":"/; rm -rf ~"}'  # refused: input is
 agentbus request --to hello --body '{"op":"nope"}'           # unknown_op, with the ops it does handle
 agentbus task -c nobody.home --body '{}'                      # no_consumer: nobody serves that queue
 ```
+
+Each prints the error code, who refused, and the reason, and exits 1:
+
+```text
+✗ invalid from hello after 260ms
+  body must be {"text": "..."}
+✗ invalid from hello after 250ms
+  path may contain only A-Z a-z 0-9 . _ / -
+✗ unknown_op from hello after 240ms
+  this agent handles body.op: uptime
+✗ no_consumer from $broker after 210ms
+  no agent is serving capability "nobody.home"
+```
+
+The first three come from `hello`. The last comes from `$broker`: no
+agent was involved.
 
 ## 5. Watch it
 
@@ -106,7 +154,7 @@ Rerun the requests in terminal 2 and watch them arrive. Use `↑`/`↓` and
 
 You can send from the console too. Press `2` for Agents, select `hello`,
 and press `r`: the Compose tab opens with a request to `hello`. Type
-`{"op": "ping"}` as the body and press `ctrl+s`. The reply shows beside
+`{"op": "uptime"}` as the body and press `ctrl+s`. The reply shows beside
 the form.
 
 ## 6. Stop it

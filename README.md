@@ -88,10 +88,11 @@ bin/agentbus console                  # finds the local broker and admin token b
 bin/agentbus config agent add researcher --capability summarize   # prints its token file and how to start it
 ```
 
-Or let a host ask for itself: with `join_listen` set, `agentbus join` on
-the new host sends a request, and nothing is granted until you approve it
-in the console or with `agentbus config join approve NAME`. See
-[Letting an agent ask to join](docs/CLI.md#letting-an-agent-ask-to-join).
+Or let a host ask for itself. With `join_listen` set, `agentbus join` on
+the new host makes its own token and sends the broker a request. Nothing
+is granted until you approve it in the console or with
+`agentbus config join approve NAME`. A host without the binary can do the
+same with `curl`. See [Joining the bus](docs/JOINING.md).
 
 To put `agentbus` on your PATH, run `sudo make install` (to
 `/usr/local/bin`) or `make install BINDIR=$HOME/go/bin`. `make clean`
@@ -177,11 +178,11 @@ Mosquitto can't do these things on its own:
   each agent may message. Task queues require a granted capability and the
   exact shared subscription, so each task reaches one worker. An agent can
   write only its own presence and events.
-- **Rejections are reported, not just dropped.** A refused publish is
+- **Rejections are reported.** A refused publish is
   acknowledged, so it isn't retried, and the sender gets a correlated
   `error` envelope with a stable code. That includes `no_route` (the
   recipient is offline with no session) and `no_consumer` (nobody serves
-  the task). Pending requests fail fast instead of timing out.
+  the task). A pending request fails at once; it doesn't wait for its timeout.
 - **Limits on everything.** Per-agent rate limits (overridable per agent),
   dedupe by envelope ID, clock-skew and TTL checks, connection caps and a
   CONNECT deadline, and bounded offline queues. These matter when every
@@ -207,8 +208,9 @@ Mosquitto can't do these things on its own:
   log with a hash of each body but never the body itself. See
   [docs/RETENTION.md](docs/RETENTION.md).
 
-`body` is never inspected, so payloads can be end-to-end encrypted (`enc`),
-as conduit-1gkv plans.
+`body` is never inspected, so payloads can be end-to-end encrypted (`enc`).
+The encryption itself is not built yet; see
+[docs/SECURITY.md](docs/SECURITY.md#not-done-yet).
 
 ## Why not port Mosquitto
 
@@ -258,7 +260,7 @@ From conduit at `5626e55`:
   flow there, the way it gates the `mqtt` tool today.
 - **Prompt injection.** Put `a2a.UntrustedPreamble(env)` in front of any
   envelope an LLM sees, matching conduit's MQTT-event preamble.
-- **Federation keys (conduit-1gkv phase 3).** Presence cards carry
+- **Federation keys.** Presence cards carry
   `keys.sign` (Ed25519) and `keys.kex` (X25519), and the broker pins them
   from config. Signing and sealed bodies are the next step; see
   [docs/SECURITY.md](docs/SECURITY.md#not-done-yet).

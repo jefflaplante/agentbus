@@ -34,6 +34,8 @@ short: a system user, `/etc/agentbus` and `/var/lib/agentbus` owned by it,
 `agentbus config init` with `AGENTBUS_CONFIG_DIR` and `AGENTBUS_STATE_DIR`
 set, then `systemctl enable --now agentbus`.
 
+A new config listens on loopback only, and the broker refuses a
+plaintext listener on any other address unless `allow_insecure` is set.
 Before agents on other hosts can connect, set a non-loopback `listen`
 with `tls_cert` and `tls_key`, then restart:
 
