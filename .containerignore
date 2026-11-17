@@ -1,0 +1,13 @@
+# Kept out of the image build context. Docker reads .dockerignore; the
+# Makefile-free way to share this file is: cp .containerignore .dockerignore
+.git
+.github
+.claude
+bin
+_site
+site/static/media
+demo/.run
+docs/images
+*.test
+*.out
+*.db

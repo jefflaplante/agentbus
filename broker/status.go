@@ -242,8 +242,18 @@ func (b *Broker) publishStatus(interval time.Duration, done <-chan struct{}) {
 	}
 }
 
-// buildVersion is the agentbus module version and VCS revision, if known.
+// Version, if set, is the version the broker reports in its Status, in
+// place of the one in the build info. A binary built outside a git
+// checkout (a container image, say) has no version there, so its main
+// package sets this from a linker flag.
+var Version string
+
+// buildVersion is Version, or else the agentbus module version and VCS
+// revision from the build info, if known.
 func buildVersion() string {
+	if Version != "" {
+		return Version
+	}
 	bi, ok := debug.ReadBuildInfo()
 	if !ok {
 		return "unknown"

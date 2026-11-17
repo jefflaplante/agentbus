@@ -92,6 +92,7 @@ Flags:
       --token-file string   file containing this agent's token (env AGENTBUS_TOKEN_FILE)
       --url string          broker URL (env AGENTBUS_URL; default from the local config, else tcp://localhost:1883)
   -v, --verbose             log client activity to stderr
+      --version             version for agentbus
 ```
 
 `agentbus <command> --help` lists every flag of a command, with examples.
@@ -741,6 +742,9 @@ sudo -u agentbus env AGENTBUS_CONFIG_DIR=/etc/agentbus agentbus config agent add
 
 Before listening beyond loopback, set `tls_cert`, `tls_key` and `listen`
 (see [SECURITY.md](SECURITY.md)).
+
+To run the broker in a container instead, with Podman, Docker or
+Kubernetes, see [Running in containers](CONTAINERS.md).
 
 To install the binary where the units expect it, run `make install` from a
 checkout (`/usr/local/bin/agentbus`; `PREFIX=` or `BINDIR=` to change it).

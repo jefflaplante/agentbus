@@ -9,7 +9,12 @@ BINDIR ?= $(PREFIX)/bin
 
 .DEFAULT_GOAL := build
 
-.PHONY: build install uninstall test test-e2e test-all demo demo-once screenshots clean help
+# make image builds the container image with $(CONTAINER) (podman or docker).
+CONTAINER ?= podman
+VERSION ?= $(shell git describe --tags --match 'v*' --always --dirty 2>/dev/null || echo dev)
+IMAGE ?= agentbus:$(VERSION)
+
+.PHONY: build image install uninstall test test-e2e test-all demo demo-once screenshots clean help
 
 help: ## list the targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
@@ -18,6 +23,9 @@ build: ## build bin/agentbus, bin/worker, bin/coordinator
 	go build -o bin/agentbus ./cmd/agentbus
 	go build -o bin/worker ./demo/cmd/worker
 	go build -o bin/coordinator ./demo/cmd/coordinator
+
+image: ## build the container image $(IMAGE) from the Containerfile
+	$(CONTAINER) build -f Containerfile --build-arg VERSION=$(VERSION) -t $(IMAGE) .
 
 install: ## build agentbus and install it in $(BINDIR) (sudo for /usr/local/bin)
 	go build -trimpath -o bin/agentbus ./cmd/agentbus

@@ -1,0 +1,140 @@
+# agentbus broker on Kubernetes: one StatefulSet pod with its config and
+# data on persistent volumes, and a Service in front of it.
+#
+#   kubectl apply -f examples/kubernetes/agentbus.yaml
+#
+# Set the image to one your cluster can pull (see docs/CONTAINERS.md).
+#
+# TLS: create a Secret named agentbus-tls (type kubernetes.io/tls) before
+# the pod starts and the broker listens with TLS on 8883. Without it the
+# broker listens in plaintext on 1883 with allow_insecure, which is for
+# trying it out inside a cluster you trust, not for production.
+#
+# One replica only. The broker keeps sessions, queued messages and the
+# dedupe window on its own disk, so two pods would be two separate buses.
+apiVersion: v1
+kind: Service
+metadata:
+  name: agentbus
+  labels:
+    app.kubernetes.io/name: agentbus
+spec:
+  selector:
+    app.kubernetes.io/name: agentbus
+  ports:
+    - name: mqtts
+      port: 8883
+      targetPort: mqtts
+    - name: mqtt
+      port: 1883
+      targetPort: mqtt
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: agentbus
+  labels:
+    app.kubernetes.io/name: agentbus
+spec:
+  serviceName: agentbus
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agentbus
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentbus
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      # Agents reconnect by themselves; give the broker time to save
+      # sessions and write offline presence before it's killed.
+      terminationGracePeriodSeconds: 30
+      initContainers:
+        # Creates the config on first start, then sets the listener for
+        # how this pod runs. It runs on every start, so adding or
+        # removing the TLS Secret takes effect on the next restart.
+        # Agents, tokens and every other setting are left alone.
+        - name: configure
+          image: agentbus:v0.1.0
+          command: ["sh", "-ec"]
+          args:
+            - |
+              [ -f /config/broker.json ] || agentbus config init
+              if [ -f /tls/tls.crt ]; then
+                agentbus config set listen 0.0.0.0:8883 tls_cert /tls/tls.crt tls_key /tls/tls.key \
+                  allow_insecure false metrics_listen 127.0.0.1:9090
+              else
+                agentbus config set listen 0.0.0.0:1883 tls_cert "" tls_key "" \
+                  allow_insecure true metrics_listen 127.0.0.1:9090
+              fi
+          securityContext: &locked
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts: &mounts
+            - name: config
+              mountPath: /config
+            - name: data
+              mountPath: /data
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+      containers:
+        - name: agentbus
+          image: agentbus:v0.1.0
+          args: ["serve", "--log-format", "json"]
+          ports:
+            - name: mqtts
+              containerPort: 8883
+            - name: mqtt
+              containerPort: 1883
+          # The metrics endpoint has no authentication, so it stays on
+          # loopback and the probes ask it from inside the container.
+          readinessProbe:
+            exec:
+              command: ["wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9090/readyz"]
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9090/healthz"]
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 512Mi
+          securityContext: *locked
+          volumeMounts: *mounts
+      volumes:
+        - name: tls
+          secret:
+            secretName: agentbus-tls
+            optional: true
+            defaultMode: 0440
+  volumeClaimTemplates:
+    # broker.json, tokens/ and pending/ (join requests).
+    - metadata:
+        name: config
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 64Mi
+    # Sessions, queued messages, the dedupe window and the audit log.
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi

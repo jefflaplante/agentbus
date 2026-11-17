@@ -19,6 +19,13 @@ import (
 	"github.com/jefflaplante/agentbus/internal/tui"
 )
 
+// A version given at link time (see version in mcp.go) is the broker's too.
+func init() {
+	if version != "" {
+		broker.Version = version
+	}
+}
+
 func newServeCmd(a *app) *cobra.Command {
 	var format, level string
 	var watch time.Duration
