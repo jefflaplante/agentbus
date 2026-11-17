@@ -65,6 +65,7 @@ var pages = []page{
 	{"CONTRACT.md", "contract", "Reference", "The contract"},
 	{"docs/SECURITY.md", "security", "Reference", "Security"},
 	{"docs/RETENTION.md", "retention", "Reference", "Retention"},
+	{"docs/BENCHMARKS.md", "benchmarks", "Reference", "Benchmarks"},
 	{"examples/python/README.md", "python", "Examples", "Python"},
 	{"examples/systemd/README.md", "systemd", "Examples", "systemd units"},
 	{"examples/kubernetes/README.md", "kubernetes", "Examples", "Kubernetes manifest"},

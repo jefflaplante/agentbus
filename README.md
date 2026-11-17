@@ -302,6 +302,8 @@ site/             the documentation website, built from this markdown for GitHub
 | [docs/AGENTS.md](docs/AGENTS.md) | Generating standalone agents for remote hosts: manifest, shell/Python/Go handlers, model-backed (`llm:`) handlers, build, deploy |
 | [examples/llm-agent](examples/llm-agent/README.md) | hostdoc: a model that answers questions about its host, with scripts as its tools; Anthropic or a local model |
 | [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) | conduit, Claude Code, OpenCode and OpenChamber on the bus; `agentbus mcp`, and MCP over HTTP for any MCP client |
+| [docs/BENCHMARKS.md](docs/BENCHMARKS.md) | `make bench`: what it measures, running it on CI or a cluster, reference results |
+| [docs/adr/](docs/adr/0001-broker-high-availability.md) | Architecture decisions. ADR-0001 (proposed): broker high availability with Raft-replicated storage |
 
 ## Testing
 
@@ -310,6 +312,7 @@ site/             the documentation website, built from this markdown for GitHub
 | `make test` | Unit tests (`a2a`) and in-process broker tests (`broker/e2e_test.go`: auth, ACLs, spoofing, dedupe, TTL, rate limits, task queues, presence) | ~2s |
 | `make test-e2e` | Functional test (`test/e2e`). Builds the three binaries and runs the broker, worker and coordinator as separate processes over TCP. Checks the coordinator's six steps, CLI `task` and `request` against the live worker, a `send_to` rejection, a bad-token login, and the worker showing online then offline in `agentbus agents`. | ~5s |
 | `make test-all` | `go vet` and everything, with `-race` | ~10s |
+| `make bench` | Broker throughput and latency, with `data_dir` off and on (see [docs/BENCHMARKS.md](docs/BENCHMARKS.md)) | ~1-2 min |
 | `make screenshots` | Regenerates `docs/images` from a live in-process bus (see [docs/CLI.md](docs/CLI.md#screenshots)) | ~3s |
 | `make demo-once` | The demo conversation, non-interactive. The exit status is the result. | ~3s |
 

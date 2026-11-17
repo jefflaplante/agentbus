@@ -1,0 +1,64 @@
+# A pod and a volume for running the broker benchmarks on a cluster's
+# own storage. See docs/BENCHMARKS.md.
+#
+# Set storageClassName to the class the broker's volume uses (kubectl
+# get pvc -l app.kubernetes.io/name=agentbus -o wide). Leave it out to
+# use the cluster's default class.
+#
+#   make bench-binary                       # BENCH_GOARCH=arm64 for arm nodes
+#   kubectl apply -f examples/kubernetes/bench.yaml
+#   kubectl wait --for=condition=Ready pod/agentbus-bench
+#   kubectl cp bin/broker-bench.test agentbus-bench:/data/broker-bench.test
+#   kubectl exec agentbus-bench -- env TMPDIR=/data /data/broker-bench.test \
+#     -test.run '^$' -test.bench . -test.benchtime 300x
+#   kubectl delete -f examples/kubernetes/bench.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: agentbus-bench
+spec:
+  accessModes: ["ReadWriteOnce"]
+  # storageClassName: gp3
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: agentbus-bench
+  labels:
+    app.kubernetes.io/name: agentbus-bench
+spec:
+  restartPolicy: Never
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    fsGroup: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: bench
+      # The broker's own image: Alpine, so it has the sh and tar that
+      # kubectl cp needs. The test binary is copied in and run by hand.
+      image: ghcr.io/jefflaplante/agentbus:v0.1.0
+      command: ["sleep", "86400"]
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
+      resources:
+        requests:
+          cpu: 500m
+          memory: 256Mi
+        limits:
+          memory: 512Mi
+      volumeMounts:
+        - name: data
+          mountPath: /data
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: agentbus-bench

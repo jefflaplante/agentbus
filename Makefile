@@ -14,7 +14,7 @@ CONTAINER ?= podman
 VERSION ?= $(shell git describe --tags --match 'v*' --always --dirty 2>/dev/null || echo dev)
 IMAGE ?= agentbus:$(VERSION)
 
-.PHONY: build image install uninstall test test-e2e test-all demo demo-once screenshots clean help
+.PHONY: build image install uninstall test test-e2e test-all bench bench-binary demo demo-once screenshots clean help
 
 help: ## list the targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
@@ -45,6 +45,20 @@ test-e2e: ## functional test: real binaries as separate processes
 test-all: ## everything
 	go vet ./...
 	go test -race -count=1 ./...
+
+# make bench measures broker throughput and latency with data_dir off and
+# on. The data directory goes under $$TMPDIR, so TMPDIR picks the disk.
+# BENCHTIME is messages per case; BENCH filters cases (a go test -bench
+# pattern). See docs/BENCHMARKS.md.
+BENCHTIME ?= 300x
+BENCH ?= .
+BENCH_GOARCH ?= amd64
+
+bench: ## broker throughput and latency, data_dir off and on (~1-2 min)
+	go test -run '^$$' -bench '$(BENCH)' -benchtime $(BENCHTIME) ./broker
+
+bench-binary: ## build bin/broker-bench.test for linux/$(BENCH_GOARCH), to run on another host
+	GOOS=linux GOARCH=$(BENCH_GOARCH) CGO_ENABLED=0 go test -c -o bin/broker-bench.test ./broker
 
 demo: ## run the demo and leave the bus up to explore
 	scripts/demo.sh
