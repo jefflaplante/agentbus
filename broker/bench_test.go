@@ -27,21 +27,30 @@ import (
 
 const benchCapability = "bench"
 
-// benchBus is a broker with nSenders sender agents and two receivers:
-// "sink" for inbox messages and "worker" for tasks.
+// benchSenders is how many sender agents each case runs with.
+var benchSenders = []int{1, 8, 100}
+
+// benchWorkers is how many workers serve the task queue. The cases with
+// more than one worker run with the largest number of senders only.
+var benchWorkers = []int{1, 4, 16}
+
+// benchBus is a broker with nSenders sender agents, the "sink" agent for
+// inbox messages and nWorkers worker agents for tasks.
 type benchBus struct {
 	b      *testing.B
 	url    string
 	tokens map[string]string
 }
 
-func startBenchBus(b *testing.B, persist bool, nSenders int) *benchBus {
+func startBenchBus(b *testing.B, persist bool, nSenders, nWorkers int) *benchBus {
 	b.Helper()
 	bb := &benchBus{b: b, tokens: map[string]string{}}
 	cfg := &broker.Config{
 		Listen: "127.0.0.1:0",
 		// The defaults (20/s, burst 50) would measure the rate limiter.
 		RatePerSecond: 1e6, RateBurst: 1e6,
+		// Every agent connects from 127.0.0.1; the default is 64 per address.
+		MaxConnectionsPerIP: 1024,
 	}
 	if persist {
 		cfg.DataDir = filepath.Join(b.TempDir(), "data")
@@ -53,7 +62,9 @@ func startBenchBus(b *testing.B, persist bool, nSenders int) *benchBus {
 		cfg.Agents = append(cfg.Agents, a)
 	}
 	add(broker.AgentConfig{ID: "sink"})
-	add(broker.AgentConfig{ID: "worker", Capabilities: []string{benchCapability}})
+	for i := range nWorkers {
+		add(broker.AgentConfig{ID: workerID(i), Capabilities: []string{benchCapability}})
+	}
 	for i := range nSenders {
 		add(broker.AgentConfig{ID: senderID(i), SendTo: []string{"sink"}})
 	}
@@ -70,6 +81,7 @@ func startBenchBus(b *testing.B, persist bool, nSenders int) *benchBus {
 }
 
 func senderID(i int) string { return fmt.Sprintf("sender-%d", i) }
+func workerID(i int) string { return fmt.Sprintf("worker-%d", i) }
 
 func (bb *benchBus) connect(id string, inbox client.Handler, tasks map[string]client.Handler) *client.Client {
 	bb.b.Helper()
@@ -78,6 +90,8 @@ func (bb *benchBus) connect(id string, inbox client.Handler, tasks map[string]cl
 	c, err := client.Connect(ctx, client.Options{
 		BrokerURL: bb.url, AgentID: id, Token: bb.tokens[id],
 		Inbox: inbox, Tasks: tasks, Logger: quietLog(),
+		// The default, 64, makes the worker answer "busy" with 100 senders.
+		MaxConcurrent: 256,
 	})
 	if err != nil {
 		bb.b.Fatalf("connect %s: %v", id, err)
@@ -155,7 +169,7 @@ func split(b *testing.B, n, workers int, op func(w int) error) {
 // the time until the receiver's handler runs.
 func BenchmarkInbox(b *testing.B) {
 	for _, persist := range []bool{false, true} {
-		for _, senders := range []int{1, 8} {
+		for _, senders := range benchSenders {
 			b.Run(fmt.Sprintf("data_dir=%v/senders=%d", onOff(persist), senders), func(b *testing.B) {
 				benchInbox(b, persist, senders)
 			})
@@ -164,7 +178,7 @@ func BenchmarkInbox(b *testing.B) {
 }
 
 func benchInbox(b *testing.B, persist bool, nSenders int) {
-	bb := startBenchBus(b, persist, nSenders)
+	bb := startBenchBus(b, persist, nSenders, 0)
 	var ack, delivery latencies
 	var got atomic.Int64
 	want := int64(b.N)
@@ -208,24 +222,32 @@ func benchInbox(b *testing.B, persist bool, nSenders int) {
 	delivery.report(b, "delivery")
 }
 
-// BenchmarkTask sends requests to a task queue served by one worker and
-// waits for each reply. Each round trip is two stored messages: the task
+// BenchmarkTask sends requests to a task queue and waits for each reply.
+// The queue is served by one worker, and with the most senders also by
+// several. Each round trip is two stored messages: the task
 // and the reply.
 func BenchmarkTask(b *testing.B) {
 	for _, persist := range []bool{false, true} {
-		for _, senders := range []int{1, 8} {
-			b.Run(fmt.Sprintf("data_dir=%v/senders=%d", onOff(persist), senders), func(b *testing.B) {
-				benchTask(b, persist, senders)
-			})
+		for _, senders := range benchSenders {
+			for _, workers := range benchWorkers {
+				if workers > 1 && senders != benchSenders[len(benchSenders)-1] {
+					continue
+				}
+				b.Run(fmt.Sprintf("data_dir=%v/senders=%d/workers=%d", onOff(persist), senders, workers), func(b *testing.B) {
+					benchTask(b, persist, senders, workers)
+				})
+			}
 		}
 	}
 }
 
-func benchTask(b *testing.B, persist bool, nSenders int) {
-	bb := startBenchBus(b, persist, nSenders)
-	bb.connect("worker", nil, map[string]client.Handler{
-		benchCapability: func(_ context.Context, env *a2a.Envelope) (any, error) { return env.Body, nil },
-	})
+func benchTask(b *testing.B, persist bool, nSenders, nWorkers int) {
+	bb := startBenchBus(b, persist, nSenders, nWorkers)
+	for i := range nWorkers {
+		bb.connect(workerID(i), nil, map[string]client.Handler{
+			benchCapability: func(_ context.Context, env *a2a.Envelope) (any, error) { return env.Body, nil },
+		})
+	}
 	senders := make([]*client.Client, nSenders)
 	for i := range senders {
 		senders[i] = bb.connect(senderID(i), nil, nil)
