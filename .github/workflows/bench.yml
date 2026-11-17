@@ -1,0 +1,59 @@
+# Runs the broker benchmarks (make bench) on demand.
+#
+# A GitHub runner's disk is virtualized and shared, so these numbers are
+# for comparing one run with another, such as before and after a change.
+# They don't say how the broker performs on your own hosts; see
+# docs/BENCHMARKS.md for running on the disk the broker will use.
+name: Benchmarks
+
+on:
+  workflow_dispatch:
+    inputs:
+      benchtime:
+        description: Messages per case (go test -benchtime)
+        default: 300x
+      bench:
+        description: Which cases (a go test -bench pattern)
+        default: .
+
+permissions:
+  contents: read
+
+env:
+  GOWORK: "off"
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: make bench
+        env:
+          BENCHTIME: ${{ inputs.benchtime }}
+          BENCH: ${{ inputs.bench }}
+        run: make bench | tee bench.txt
+
+      - name: Summary
+        env:
+          BENCHTIME: ${{ inputs.benchtime }}
+        run: |
+          {
+            echo '## Broker benchmarks'
+            echo
+            echo "Commit ${GITHUB_SHA::12}, benchtime ${BENCHTIME}"
+            echo
+            echo '```text'
+            cat bench.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-${{ github.sha }}
+          path: bench.txt

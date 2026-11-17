@@ -24,3 +24,7 @@ agents as pods are covered in
 | init container `configure` | creates the config on first start and sets the listener: TLS when the `agentbus-tls` Secret exists, plaintext otherwise |
 | volume `config` | `broker.json`, `tokens/` and `pending/` |
 | volume `data` | sessions, queued messages, the dedupe window and the audit log |
+
+[bench.yaml](bench.yaml) is a separate pod and volume for running the
+broker benchmarks on the cluster's own storage. See
+[docs/BENCHMARKS.md](../../docs/BENCHMARKS.md#on-a-kubernetes-cluster).

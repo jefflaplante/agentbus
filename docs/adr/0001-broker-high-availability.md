@@ -364,9 +364,10 @@ failover gives the requester a wrong answer.
    fsyncs per message on a single node today. Independent of the rest.
 3. [x] **Benchmark Raft writes and check mochi's PUBACK ordering.** See
    [Research findings](#research-findings).
-4. [ ] **Measure on Linux.** Repeat both benchmarks on a Linux host with
-   the kind of disk the broker will run on, and with three separate
-   hosts, before relying on the numbers above.
+4. [ ] **Measure on Linux.** Run `make bench`
+   ([BENCHMARKS.md](../BENCHMARKS.md)) on a Linux host with the kind of
+   disk the broker will run on, and repeat the Raft test across three
+   separate hosts, before relying on the numbers above.
 5. [ ] **Keep the queued-message record in `OnPublish`, on one node
    first.** Store the accepted message before mochi sends the PUBACK,
    and rebuild queues from that record on start. This closes today's
