@@ -302,6 +302,7 @@ site/             the documentation website, built from this markdown for GitHub
 | [docs/AGENTS.md](docs/AGENTS.md) | Generating standalone agents for remote hosts: manifest, shell/Python/Go handlers, model-backed (`llm:`) handlers, build, deploy |
 | [examples/llm-agent](examples/llm-agent/README.md) | hostdoc: a model that answers questions about its host, with scripts as its tools; Anthropic or a local model |
 | [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) | conduit, Claude Code, OpenCode and OpenChamber on the bus; `agentbus mcp`, and MCP over HTTP for any MCP client |
+| [docs/adr/](docs/adr/0001-broker-high-availability.md) | Architecture decisions. ADR-0001 (proposed): broker high availability with Raft-replicated storage |
 
 ## Testing
 
