@@ -18,7 +18,7 @@ it are:
 - the Go handlers in `handlers/`
 - the agentbus client
 
-It prints the path, size (about 6 MiB) and SHA-256. Cross-compiling for
+It prints the path, size (about 7 MiB) and SHA-256. Cross-compiling for
 your servers is one flag:
 
 ```bash
@@ -49,6 +49,8 @@ ls
 
 On a real host the token goes to `/etc/agentbus/weather.token`, and you'd
 copy it there over SSH. The broker host created it in lab 3.
+[Lab 7](07-join.md) shows the other way: the host makes its own token and
+asks to join, and nothing is copied.
 
 ## 3. Check, then run
 
@@ -68,7 +70,26 @@ export AGENTBUS_TOKEN_FILE=$PWD/weather.token
 - the interpreters exist on this host (python3 and sh)
 - the token is readable
 
-`-v` logs a line per message.
+It prints what it found and ends with `ok`:
+
+```text
+agent    weather
+broker   tcp://127.0.0.1:1883
+token    /Users/you/agentbus-lab/remote-host/weather.token
+tasks    weather.forecast
+handlers 3
+go funcs greet
+ok
+```
+
+(`greet` is the template's Go handler, still in `handlers/`. The manifest
+doesn't use it.)
+
+`-v` logs a line per message. The first line is `msg="agent serving"`.
+
+> These exports stay set in terminal 3 for the rest of the labs. If you
+> moved the broker to another port in lab 1, use that port in
+> `AGENTBUS_URL`; `connection refused` means the port is wrong.
 
 **Terminal 2:**
 
@@ -77,10 +98,14 @@ agentbus task -c weather.forecast --body '{"location":"Seattle, WA","days":1}'
 agentbus agents
 ```
 
-The forecast comes from the binary now. In `agentbus agents`, the
-weather card's `meta` shows `runtime: agentbus-agent` and the host name;
-use `agentbus agents` in a terminal and `enter`, then `i`, to inspect
-the card.
+The forecast comes from the binary now, and terminal 3 logs it:
+
+```text
+level=INFO msg=handled handler=weather.forecast from=me ... ok=true
+```
+
+In `agentbus agents`, select `weather` and press `i` to inspect its
+card. Its `meta` shows `runtime: agentbus-agent` and the host name.
 
 ## 4. Stop it like systemd would
 

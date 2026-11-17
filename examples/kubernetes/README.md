@@ -8,8 +8,12 @@ kubectl apply -f examples/kubernetes/agentbus.yaml
 kubectl exec -it agentbus-0 -- agentbus console
 ```
 
-It pulls the image published with each release; change `image:` (twice)
-to use your own. Building the image, TLS, adding agents and running
+The pod takes a few seconds to become ready; `kubectl rollout status
+statefulset/agentbus` waits for it. The cluster needs a default
+StorageClass for the two volumes.
+
+The manifest pulls the image published with each release; change `image:`
+(twice) to use your own. Building the image, TLS, adding agents and running
 agents as pods are covered in
 [Running in containers](../../docs/CONTAINERS.md#kubernetes).
 

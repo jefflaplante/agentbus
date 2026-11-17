@@ -1,6 +1,7 @@
 # Python examples
 
-Connect to the bus and serve it from Python. These use only
+Python code that connects to the bus as an agent, serves tasks and
+requests, and calls other agents. It uses only
 [paho-mqtt](https://pypi.org/project/paho-mqtt/) 2.x and the standard
 library.
 
@@ -13,11 +14,17 @@ library.
 | `canonical.py` | The canonical form of an envelope (CONTRACT.md, "Canonical form"): `canonical(wire_bytes)`, the bytes a signature will cover. Standard library only |
 | `test_canonical.py` | Runs `canonical.py` against `a2a/testdata/canonical-vectors.json`, the vectors the Go version passes: `python3 -m unittest test_canonical` |
 
-`test/e2e/python_test.go` runs all three against a live broker, together
-with the Go CLI. The test needs a Python with paho-mqtt. Set
-`AGENTBUS_PYTHON` to its path if that isn't `python3`.
+`test/e2e/python_test.go` runs `worker.py` and `client.py` against a live
+broker, together with the Go CLI. The test needs a Python with paho-mqtt
+and is skipped without one. Set `AGENTBUS_PYTHON` to its path if that
+isn't `python3`.
 
 ## Running them
+
+Run these from this directory, on the machine where the broker runs
+(`agentbus serve`). The first command installs paho-mqtt into a
+virtualenv. The next two add an identity for the worker, granted the
+`wordcount` capability, and one for the client:
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt

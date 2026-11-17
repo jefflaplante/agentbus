@@ -11,7 +11,7 @@ Two Go agents talk over a running agentbus broker:
   local computation and exits non-zero if any step fails.
 
 Both are thin wrappers around [agents/](agents/), which uses the public
-[`client`](../client/) package the same way conduit would.
+[`client`](../client/) package the way any Go agent would.
 
 ## Run it
 
@@ -55,8 +55,12 @@ conversation, with the coordinator's exit status.
 
 ## Kick the tires
 
+Run these in a second terminal, from the repo root, while `make demo` is
+running.
+
 Look inside the running broker. The demo's `explorer` identity is an
-observer, which the broker status needs:
+observer: it may read all traffic and the broker's status, which the
+console's Overview tab needs:
 
 ```bash
 (source demo/.run/explorer.env && bin/agentbus console)   # 1-7 switch tabs, ? for keys, q to quit
@@ -74,7 +78,7 @@ them while they are set.
 Run the coordinator again in another terminal and watch the traffic and
 counters move.
 
-Every tab drills down. In Agents (2), select an agent and press Enter for
+Each tab has detail views. In Agents (2), select an agent and press Enter for
 its detail and recent traffic, then Enter on a message to inspect it. `t`
 opens Compose with a task for the agent's capability; `ctrl+s` sends it and
 the reply shows beside the form. `e` edits the agent in the Config tab:
@@ -96,7 +100,8 @@ Try this:
 
 [docs/CLI.md](../docs/CLI.md) covers every command.
 
-In a second terminal, from the repo root, while `make demo` is running:
+The demo also creates an agent called `you` for sending messages by
+hand. Source its env file and list the agents:
 
 ```bash
 source demo/.run/you.env     # act as agent "you"
@@ -119,13 +124,14 @@ bin/agentbus request --to worker --body '{"op":"ping"}'
 bin/agentbus request --to worker --body '{"op":"reverse","text":"hello bus"}'
 ```
 
-Send work through the queue (any worker with the capability takes it):
+Send work through the queue. One worker with the capability takes it:
 
 ```bash
 bin/agentbus task --capability textstats --body '{"text":"to be or not to be"}'
 ```
 
-See the broker enforce the rules. `you` may only message the workers:
+See the broker enforce the rules. The demo config's `send_to` for `you`
+lists only the workers, so a request to the coordinator is refused:
 
 ```bash
 bin/agentbus request --to coordinator --body '{}'
@@ -157,24 +163,27 @@ turns. `demo/.run/broker.log` then shows `agent session taken over`.
 Stop a worker with Ctrl-C and run `bin/agentbus agents` again. The broker
 has marked it offline and kept its card.
 
-Write a worker in shell. `handle -exec` runs a command per message, with
-the envelope on stdin and the reply body on stdout:
+Write a worker in shell. `handle --exec` runs a command per message, with
+the envelope on stdin and the reply body on stdout. This uses the
+`worker-2` identity, so stop the second worker from the load-balancing
+step first if it's still running:
 
 ```bash
 source demo/.run/worker-2.env
 bin/agentbus handle --capability textstats \
-  -exec 'jq -c "{words: (.body.text | split(\" \") | length), worker: \"shell\"}"'
+  --exec 'jq -c "{words: (.body.text | split(\" \") | length), worker: \"shell\"}"'
 ```
 
-Watch the bus in a desktop app. The demo creates a read-only observer
-called `explorer`; its token (the password) is in `demo/.run/tokens/explorer.token`. In
-MQTT Explorer, connect to `127.0.0.1:18830` with username **and client ID**
-`explorer` and the token as the password. The full guide, including MQTTX
-and `mosquitto_sub`, is [docs/DESKTOP-CLIENTS.md](../docs/DESKTOP-CLIENTS.md).
+Watch the bus in a desktop app. Use the `explorer` observer; its token
+(the password) is in `demo/.run/tokens/explorer.token`. In MQTT Explorer,
+connect to `127.0.0.1:18830` with username **and client ID** `explorer`
+and the token as the password. The full guide, including MQTTX and
+`mosquitto_sub`, is [docs/DESKTOP-CLIENTS.md](../docs/DESKTOP-CLIENTS.md).
 
 See retention work. The demo's worker keeps a persistent session, so a task
-sent while it's down waits for it instead of failing. Stop the worker the
-demo started:
+sent while it's down waits for it instead of failing. This needs `worker`
+to be the only worker, so stop `worker-2` or the shell worker if either is
+still running. Then stop the worker the demo started:
 
 ```bash
 pkill -f 'bin/worker -delay'

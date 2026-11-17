@@ -21,8 +21,10 @@ WA. By the end you have built every piece of this:
 | [4. Build and deploy](04-build-deploy.md) | Compile the agent to one binary and run it as a remote host would | 15 min |
 | [5. Claude Code](05-claude-code.md) | Connect Claude Code to the bus and ask for the Seattle forecast | 20 min |
 | [6. Extend it](06-extend.md) | Add a Go handler, an allow-list, and look at request metrics; optionally, a model with your script as its tool | 20 min |
+| [7. Join](07-join.md) (optional) | Have a second host ask to join the bus, and approve it as the operator | 10-15 min |
 
-That's about two hours. Instructors: [TEACHING.md](TEACHING.md) is the
+Labs 0 to 6 take about two hours. Lab 7 needs only the broker from lab 1,
+so you can do it any time after that. Instructors: [TEACHING.md](TEACHING.md) is the
 script for running this as a session.
 
 There's also a narrated video of the whole thing, about six and a half
@@ -47,9 +49,9 @@ https://github.com/user-attachments/assets/b4ccd343-cc8e-4803-a1c3-5d4623122314
 
 ```text
 labs/
-  00-setup.md … 06-extend.md   the labs
+  00-setup.md … 07-join.md     the labs
   TEACHING.md                  instructor script
-  check.sh                     runs every lab unattended; use it to check a machine
+  check.sh                     runs labs 0-6 unattended; use it to check a machine
   mock-weather.py              stand-in weather services, for check.sh --mock and CI
   weather-agent/               the finished weather agent (the solution)
   claude/                      .mcp.json and CLAUDE.md for lab 5
@@ -83,4 +85,6 @@ run it without `--mock`.
 | Two agents keep disconnecting each other | Two processes share an agent ID. Stop one (each lab says when). |
 | `CERTIFICATE_VERIFY_FAILED` from the weather agent | A Python with no CA certificates. `forecast.py` falls back to the system bundle; if that's missing too, install certificates (`Install Certificates.command` on macOS). |
 | Claude answers from the web, or says it can't check | It doesn't know about the bus. See lab 5, step 4 (`CLAUDE.md`). |
+| `broker status needs an observer identity` | The terminal has `AGENTBUS_AGENT=me` set, and `status` and `console` need an observer. Prefix the command with `AGENTBUS_AGENT=admin`. |
+| A request ends in `timeout` | The weather services were slow. Run it again, or add `--timeout 45s`. |
 | Lost the workspace variables in a new terminal | Re-run the `export` lines from lab 0. |

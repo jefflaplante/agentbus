@@ -17,7 +17,10 @@ go build -o bin/agentbus ./cmd/agentbus
 `agentbus` is the broker, the CLI client, the terminal UIs, the MCP server
 and the agent generator in one binary.
 
-> No clone needed just for the binary:
+> If the build fails with a message about the Go version, run
+> `go version`. The labs need Go 1.26 or newer.
+
+> For the binary alone, no clone is needed:
 > `go install github.com/jefflaplante/agentbus/cmd/agentbus@latest`.
 > You still need the repository for the lab files.
 
@@ -51,6 +54,9 @@ go version        # go1.26 or newer
 python3 --version
 claude --version  # for lab 5
 ```
+
+> `agentbus: command not found` means `PATH` isn't set in this terminal.
+> Paste the `export` lines from step 2 again.
 
 **Done when:** `agentbus --help` runs, and `echo $AGENTBUS_CONFIG` prints
 a path under `$LAB`.

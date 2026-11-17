@@ -64,6 +64,23 @@ agentbus request --to weather --body '{"op":"current","location":"Seattle, WA"}'
 AGENTBUS_AGENT=hello agentbus request --to weather --body '{"op":"current","location":"Seattle, WA"}'   # forbidden
 ```
 
+The first, as `me`, gets the conditions. The second, as `hello`, is
+refused by the agent:
+
+```text
+✓ response from weather in 600ms
+{
+  "conditions": "Partly cloudy",
+  "location": "Seattle, Washington, US",
+  "source": "Open-Meteo (open-meteo.com)",
+  "temperature_f": 51.8,
+  "time": "2026-11-16T12:00",
+  "wind_mph": 4.6
+}
+✗ forbidden from weather after 250ms
+  hello may not use inbox:current
+```
+
 Ask Claude too, in a new session so it reads the updated description:
 *"What's it like in Seattle right now?"*
 
@@ -73,17 +90,29 @@ Every request the broker routes is tracked: open, answered, errored,
 expired, and how long replies took.
 
 ```bash
-agentbus status
+AGENTBUS_AGENT=admin agentbus status
 ```
+
+Terminal 2 runs as `me`, and only an observer may read the broker's
+status, so this command names `admin`. Without it you get
+`broker status needs an observer identity`.
 
 The console's Overview tab has a `requests` row in the Decisions panel,
 and a "Requests by target" table with latencies. As JSON:
 
 ```bash
-agentbus status --plain | python3 -c 'import json,sys; [print(r) for r in json.load(sys.stdin).get("requests", [])]'
+AGENTBUS_AGENT=admin agentbus status --plain | python3 -c 'import json,sys; [print(r) for r in json.load(sys.stdin).get("requests", [])]'
 ```
 
-For Prometheus, add a metrics listener and restart the broker:
+```text
+{'target': 'agent:weather', 'open': 0, 'answered': 3, 'errored': 2, 'expired': 0, 'evicted': 0, 'p50_seconds': 0.1, 'p95_seconds': 0.5}
+{'target': 'task:weather.forecast', 'open': 0, 'answered': 4, 'errored': 3, 'expired': 0, 'evicted': 0, 'p50_seconds': 0.5, 'p95_seconds': 0.5}
+...
+```
+
+For Prometheus, add a metrics listener and restart the broker. A
+listener address is one of the few settings the broker can't apply live;
+terminal 1 logs `restart_needed=[metrics_listen]` when you set it.
 
 ```bash
 agentbus config set metrics_listen 127.0.0.1:9464
@@ -91,6 +120,9 @@ agentbus config set metrics_listen 127.0.0.1:9464
 curl -s 127.0.0.1:9464/metrics | grep agentbus_requests_total
 curl -s 127.0.0.1:9464/healthz
 ```
+
+The weather agent in terminal 3 reconnects on its own when the broker
+comes back.
 
 A capability whose `expired` count climbs has workers that are slow,
 stuck or offline. That's the alert you'd want on the weather agent.
@@ -170,6 +202,9 @@ rest, and [examples/llm-agent](../examples/llm-agent) for a bigger agent.
   Nothing else changes.
 
 ## Clean up
+
+[Lab 7](07-join.md) is optional and uses this broker. If you're doing
+it, do it before you clean up.
 
 Stop everything with `ctrl+c` in each terminal, then:
 

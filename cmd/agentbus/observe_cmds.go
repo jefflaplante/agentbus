@@ -227,7 +227,8 @@ func newConsoleCmd(a *app) *cobra.Command {
   3 Traffic   live messages, filtered by agent, type or text
   4 Compose   send requests, tasks, events and broadcasts, and see replies
   5 Inbox     messages to this agent; answer or refuse requests
-  6 Config    agents, tokens, client setup and broker settings
+  6 Config    agents, tokens, client setup, join requests and broker settings
+  7 Map       every message drawn moving through the broker
 
 Connected as an observer (admin is one) it sees all traffic and the
 broker's status; otherwise events and its own inbox. Config is

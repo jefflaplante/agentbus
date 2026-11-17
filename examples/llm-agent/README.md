@@ -2,8 +2,9 @@
 
 `hostdoc` answers questions about its host in plain language: "is the disk
 filling up?", "why is this box slow?". Its one bus-facing handler is an
-`llm:` handler. The model reads the question, calls the agent's own
-handlers as tools to check, and replies with JSON:
+`llm:` handler: a handler that answers with a model instead of a script.
+The model reads the question, calls the agent's own handlers as tools to
+check, and replies with JSON:
 
 ```json
 {"answer": "/ is 3% used, with 498 GiB free. Nothing to worry about.",
@@ -33,7 +34,8 @@ hand work to the lab's weather agent if it's running:
 agentbus config agent add hostdoc --capability hostdoc.ask
 ```
 
-Then, from this directory, run it from source:
+Then, from this directory, run it from source. `agent run` reads
+`agent.yaml` here and needs no build:
 
 ```bash
 export ANTHROPIC_API_KEY=...          # or set api_key_file in agent.yaml
@@ -121,7 +123,9 @@ export ANTHROPIC_API_KEY=...                                 # the environment, 
 token. Under systemd, `agentbus agent init`'s unit template shows both
 ways to deliver the key: as a credential, with `api_key_file:
 /run/credentials/hostdoc.service/model-key`, or as an `EnvironmentFile=`.
-See [Deploying](../../docs/AGENTS.md#deploying). To run the local-model variant from a built binary, pass
+See [Deploying](../../docs/AGENTS.md#deploying).
+
+To run the local-model variant from a built binary, pass
 `-manifest agent.local.yaml`. The scripts still come from the binary.
 
 `go.mod` builds against this checkout (`replace ../..`). Outside the

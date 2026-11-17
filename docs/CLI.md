@@ -644,7 +644,10 @@ replaced.
 ### Letting an agent ask to join
 
 Copying a token file to every host is the slow part of adding agents.
-With `join_listen` set, a host asks for itself and you only approve:
+With `join_listen` set, a host asks for itself and you only approve.
+This section is the short version. [Joining the bus](JOINING.md) has the
+whole flow, the HTTP endpoint, and how to join with `curl` or Python from
+a host that doesn't have the `agentbus` binary.
 
 ```bash
 # on the broker, once

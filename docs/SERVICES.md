@@ -2,8 +2,14 @@
 
 This guide covers agents that do work for other agents: what each topic
 is for, how to set up an agent that listens on it, and how to answer what
-arrives. [CONTRACT.md](../CONTRACT.md) is the wire format and stays the
-authority. This guide is about using it well.
+arrives. [CONTRACT.md](../CONTRACT.md) defines the wire format and is the
+authority where the two differ.
+
+Terms used throughout: the broker is the `agentbus serve` process that
+every agent connects to. An envelope is one message, a JSON object with a
+`type` (`request`, `response`, `error` or `event`), `from`, `to`, `id` and
+`body`. A capability is a named kind of work, such as `wordcount`. An
+agent's token is the secret it authenticates to the broker with.
 
 The Go examples use the `client` package. The same rules apply to an
 agent built on `agentbus handle`, `agentbus mcp` or a plain MQTT client;
@@ -27,8 +33,8 @@ How to choose:
   know the agent's ID and be allowed to reach it by `send_to`.
 - **Use a task queue when the sender wants the work done and doesn't care
   by whom:** summarize, review, transcribe. Several workers can serve the
-  same capability. The broker gives each task to one of them and keeps
-  going if one dies.
+  same capability. The broker gives each task to one of them. If a
+  worker dies, the others keep taking tasks.
 - **Use events for facts other agents may want to know about:** a job
   finished, a deploy started. The producer doesn't know or wait for its
   audience.
@@ -55,12 +61,13 @@ Two grants matter to a serving agent:
   then lets exactly one `response` or `error` with that `correlation_id`
   through to the requester's inbox, even if the requester is outside the
   answerer's `send_to`. The answerer has to be the agent the request was
-  addressed to; for a task, any agent granted the capability. A second
-  reply, a reply after the request's TTL, and anything that isn't a reply
-  are still checked against `send_to`. While the request is open, a reply
-  from any other agent is refused, even one `send_to` would allow. Without a TTL, a request stays
-  open for `session_expiry`. Open requests are kept in memory, so after a
-  broker restart, replies to earlier requests need `send_to` again.
+  addressed to or, for a task, any agent granted the capability. While
+  the request is open, a reply from any other agent is refused, even one
+  `send_to` would allow. A second reply, a reply after the request's TTL
+  (its time to live, set by the sender), and anything that isn't a reply
+  are checked against `send_to`. A request without a TTL stays open for
+  `session_expiry`. Open requests are kept in memory, so after a broker
+  restart, replies to earlier requests need `send_to` again.
 
 ## Serving a task queue
 
@@ -73,6 +80,9 @@ c, err := client.Connect(ctx, client.Options{
     Tasks:       map[string]client.Handler{"wordcount": wordcount},
 })
 ```
+
+A client's session is persistent by default: the broker keeps the
+agent's subscriptions and queued messages while it is disconnected.
 
 `ServeTasks` can add a capability after connecting. Don't use it for a
 long-running worker. With a persistent session, the broker redelivers
@@ -168,7 +178,7 @@ serving agent can cause:
 | Code | Sent by | When |
 |---|---|---|
 | `handler_error` | client | The handler returned an error. `reason` is the error's text. |
-| `handler_panic` | client | The handler panicked. `reason` is just "handler failed". |
+| `handler_panic` | client | The handler panicked. `reason` is always "handler failed". |
 | `busy` | client | `MaxConcurrent` handlers were already running. |
 | `no_handler` | client | A request reached an agent with no `Inbox` handler. |
 
@@ -180,8 +190,10 @@ handler. They're listed in [CONTRACT.md](../CONTRACT.md#broker-rejections).
 as the reason, unchanged. Write it for the caller: say what to change, as
 in `body must be {"text": "..."}`. Keep stack traces, file paths, internal
 hostnames and anything secret out of it, and log those locally instead.
-`agentbus handle` does the opposite: every failure is sent as "handler
-failed", and the command's stderr stays in the local log.
+`agentbus handle` does the opposite: a failed command is sent as "handler
+failed" (or "handler timed out"), and its stderr stays in the local log.
+A command chooses its own code and reason by exiting 3; see
+[From the shell](#from-the-shell-agentbus-handle).
 
 To let callers tell kinds of failure apart, choose the code:
 
@@ -279,7 +291,7 @@ they arrived.
 
 `priority` is the sender's statement of urgency: `high`, `normal`, `low`
 or `info`. The receiver decides what each means. A starting point, which
-is how conduit maps it:
+is how the conduit integration maps it:
 
 | Priority | Suggested handling |
 |---|---|
@@ -288,10 +300,10 @@ is how conduit maps it:
 | `low` | Batch it for the next scheduled run |
 | `info` | Record it only |
 
-Treat it as a request from the sender, not a command. An agent that lets
-any sender mark anything `high` can be used to page a person on a loop.
+The sender chooses `priority`, so treat it as a hint. An agent that lets
+any sender mark anything `high` can be used to page a person repeatedly.
 If that matters, decide from `from`, which the broker checks, as well as
-from `priority`, which the sender chooses.
+from `priority`.
 
 ### Untrusted input
 
@@ -321,8 +333,9 @@ agentbus handle --exec ./on-message.sh --types request,event
 ```
 
 For each message, the command gets the envelope as JSON on stdin. It also
-gets `AGENTBUS_FROM`, `AGENTBUS_TYPE`, `AGENTBUS_ID` and
-`AGENTBUS_PREAMBLE` in its environment.
+gets `AGENTBUS_FROM`, `AGENTBUS_TYPE`, `AGENTBUS_ID`, `AGENTBUS_OP`
+(`body.op`), `AGENTBUS_BODY` (bodies up to 32 KiB) and `AGENTBUS_PREAMBLE`
+in its environment.
 
 - **The reply is stdout:** JSON is sent as JSON, and anything else is
   sent as a JSON string.
@@ -363,8 +376,10 @@ and the `hops` limit on bus calls. See [AGENTS.md](AGENTS.md).
 [examples/python](../examples/python) has an `Agent` class on paho-mqtt
 2.x, a worker equivalent to the Go example service, and a command-line
 client. They follow the rules in this guide, and an e2e test runs them
-against a live broker. Unlike the Go client, a Python handler can choose
-its error code: `raise ReplyError("invalid", "...")`.
+against a live broker. A Python handler chooses its error code with
+`raise ReplyError("invalid", "...")`, the counterpart of `client.Errorf`.
+Any other exception is sent as `handler_error` with the reason "handler
+failed". The exception's text is not sent.
 
 ### From any MQTT client
 

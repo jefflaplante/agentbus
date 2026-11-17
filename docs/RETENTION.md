@@ -1,7 +1,8 @@
 # Retention and audit
 
-Two optional settings, both embedded and both pure Go. Neither needs a
-database server:
+Retention and the audit log are two optional settings in the broker
+config. Both are built into the binary, so neither needs a database
+server:
 
 ```json
 {
@@ -13,7 +14,9 @@ database server:
 ## `data_dir`: broker state survives restarts
 
 Without `data_dir`, everything is in memory and a restart starts from
-nothing. With it, the broker keeps:
+nothing. With it, the broker keeps the state below. Most of it is in
+`broker.db`, a [bbolt](https://github.com/etcd-io/bbolt) file. bbolt is
+an embedded key-value store that keeps everything in one file.
 
 | State | Where | After a restart |
 |---|---|---|
@@ -32,18 +35,20 @@ one broker can use a `data_dir` at a time; a second fails at startup
 `session_expiry` (default 7 days), along with its queue.
 
 **What isn't kept.**
-- Sessions of agents that connect with clean session on (the CLI's one-shot
-  commands do). That's what clean session means.
+- Sessions of agents that connect with clean session on, as the CLI's
+  one-shot commands do. Clean session tells the broker to discard the
+  session when the agent disconnects.
 - Rate-limit buckets.
 - Dedupe entries from a crash. `dedupe.json` is only written on a clean
   shutdown. The clients' own dedupe catches most redeliveries anyway.
 
 **Workers must register task handlers at connect time.** When a worker
 with a persistent session reconnects, the broker immediately redelivers the
-tasks queued for it. In Go, pass handlers in `client.Options.Tasks`, not
-`ServeTasks` after connecting: the late call would miss those tasks. They'd
-be dropped with no reply, and their requesters would time out. `agentbus handle --capability` and the
-demo worker already do this.
+tasks queued for it. In Go, pass handlers in `client.Options.Tasks`. A
+`ServeTasks` call after connecting is too late for those tasks: they'd be
+dropped with no reply, and their requesters would time out.
+`agentbus handle --capability` and the demo worker already register at
+connect time.
 
 **Tasks go to connected workers.** A worker that disconnects keeps its
 place in the task queue's share group (its session persists), but the
@@ -64,13 +69,15 @@ in the meantime wait in the TCP backlog.
 
 ### Backups
 
-`broker.db` is a single bbolt file. Copy it while the broker is stopped, or
-use any bbolt-aware backup tool while it runs. Deleting `data_dir` resets
-the broker to an empty state.
+`broker.db` is a single bbolt file. Copy it while the broker is stopped.
+While the broker runs it holds an exclusive lock on the file, so other
+bbolt tools can't open it; take a filesystem or volume snapshot instead.
+Deleting `data_dir` resets the broker to an empty state.
 
 ## `audit_file`: a JSONL decision log
 
-One JSON object per line, for every decision the broker makes:
+The broker writes one JSON object per line for every decision it makes.
+`action` says which kind:
 
 | `action` | When |
 |---|---|
@@ -80,6 +87,7 @@ One JSON object per line, for every decision the broker makes:
 | `accept` | An envelope was delivered |
 | `duplicate` | An envelope was dropped as a repeat |
 | `reject` | An envelope was refused, with `code` and `reason` (throttled per agent, like the error envelopes) |
+| `expire` | A request expired with no reply; `reason` says who didn't answer |
 
 ```json
 {"ts":"2026-11-15T20:41:13.6Z","action":"accept","agent":"coordinator","topic":"a2a/v1/agents/worker/inbox","id":"7aa2…","type":"request","from":"coordinator","to":"worker","priority":"high","event":"doorbell_ring","bytes":231,"body_sha256":"9f2c…"}
@@ -87,8 +95,8 @@ One JSON object per line, for every decision the broker makes:
 ```
 
 **Bodies are never written,** only their SHA-256. Bodies may hold prompts,
-personal data or (once conduit-1gkv lands) ciphertext. The hash lets you
-check that a body you got from somewhere else is the one the broker
+personal data or, when senders encrypt them, ciphertext. The hash lets
+you check that a body you got from somewhere else is the one the broker
 handled.
 
 The file rotates at `audit_max_bytes` (default 64 MiB). The broker keeps
@@ -110,9 +118,10 @@ jq -c 'select(.priority == "high") | {ts, from, to, event}' audit.jsonl
 
 ## Not built: searchable message history
 
-The audit log records that messages happened, not what they said. If you
-later want "show me what agent X sent last week" with bodies, or replay of
-a time range, that's a separate opt-in store. SQLite through
-`modernc.org/sqlite`, the pure-Go driver conduit already uses, would suit
-it. It belongs in its own feature, with its own retention and access
-rules, because it would hold message contents.
+The audit log records each message's metadata and a hash of its body. It
+doesn't record the body, so it can't answer "show me what agent X sent
+last week" or replay a time range. That needs a separate opt-in store.
+SQLite through `modernc.org/sqlite` would suit it: the driver is pure Go,
+and conduit (the AI agent agentbus was first written for) already uses
+it. The store belongs in its own feature, with its own retention and
+access rules, because it would hold message contents.

@@ -285,12 +285,15 @@
     screen.addEventListener("pointerleave", () => (screen.style.transform = ""));
   }
 
-  // language tabs
-  for (const tab of $$("#languages .tabs button")) {
-    tab.addEventListener("click", () => {
-      $$("#languages .tabs button").forEach((b) => b.setAttribute("aria-selected", b === tab));
-      $$("#languages .pane").forEach((p) => p.classList.toggle("active", p.dataset.pane === tab.dataset.pane));
-    });
+  // code tabs: the client languages, and the ways to join
+  for (const box of $$(".code-tabs")) {
+    const tabs = $$(".tabs button", box), panes = $$(".pane", box);
+    for (const tab of tabs) {
+      tab.addEventListener("click", () => {
+        tabs.forEach((b) => b.setAttribute("aria-selected", b === tab));
+        panes.forEach((p) => p.classList.toggle("active", p.dataset.pane === tab.dataset.pane));
+      });
+    }
   }
   for (const code of $$("#home pre.code code")) {
     const text = code.textContent;
