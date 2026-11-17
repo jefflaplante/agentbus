@@ -3,6 +3,8 @@
 #   podman build -f Containerfile --build-arg VERSION=v0.1.0 -t agentbus:v0.1.0 .
 #   (docker build takes the same arguments; "make image" runs this)
 #
+# Releases publish it to ghcr.io (.github/workflows/image.yml).
+#
 # The image runs "agentbus serve" as an unprivileged user. Config and
 # tokens live in /config, the broker's data and audit log in /data; mount
 # a volume on each. See docs/CONTAINERS.md.

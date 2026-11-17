@@ -1,0 +1,83 @@
+# Builds the container image from the Containerfile and publishes it to
+# the GitHub Container Registry when a version is released:
+#
+#   ghcr.io/<owner>/agentbus:<tag>    every v* release
+#   ghcr.io/<owner>/agentbus:latest   also, unless it's a pre-release
+#
+# Releases whose tag doesn't start with "v" (lab-video, console-map: the
+# site's media) are skipped. To publish a tag that was released before
+# this workflow existed, or to rebuild one, run it by hand with the tag;
+# a manual run never moves "latest".
+name: Image
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build and publish, like v0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: image-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ github.event.release.tag_name || inputs.tag }}
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  publish:
+    if: startsWith(github.event.release.tag_name || inputs.tag, 'v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # Build the tag itself, not whatever main is by now.
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.TAG }}
+
+      # The final stage runs commands in the target image, so the arm64
+      # build needs emulation; the Go compile itself cross-compiles.
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=${{ env.TAG }}
+            type=raw,value=latest,enable=${{ github.event_name == 'release' && !github.event.release.prerelease }}
+          labels: |
+            org.opencontainers.image.title=agentbus
+            org.opencontainers.image.description=MQTT agent-to-agent message bus: broker and CLI
+            org.opencontainers.image.version=${{ env.TAG }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Containerfile
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            VERSION=${{ env.TAG }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

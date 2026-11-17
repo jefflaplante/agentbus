@@ -3,7 +3,8 @@
 #
 #   kubectl apply -f examples/kubernetes/agentbus.yaml
 #
-# Set the image to one your cluster can pull (see docs/CONTAINERS.md).
+# The image is the one each release publishes. To use your own build or
+# registry, change the two "image:" lines (see docs/CONTAINERS.md).
 #
 # TLS: create a Secret named agentbus-tls (type kubernetes.io/tls) before
 # the pod starts and the broker listens with TLS on 8883. Without it the
@@ -62,7 +63,7 @@ spec:
         # removing the TLS Secret takes effect on the next restart.
         # Agents, tokens and every other setting are left alone.
         - name: configure
-          image: agentbus:v0.1.0
+          image: ghcr.io/jefflaplante/agentbus:v0.1.0
           command: ["sh", "-ec"]
           args:
             - |
@@ -89,7 +90,7 @@ spec:
               readOnly: true
       containers:
         - name: agentbus
-          image: agentbus:v0.1.0
+          image: ghcr.io/jefflaplante/agentbus:v0.1.0
           args: ["serve", "--log-format", "json"]
           ports:
             - name: mqtts
