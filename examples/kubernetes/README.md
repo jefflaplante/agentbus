@@ -8,8 +8,9 @@ kubectl apply -f examples/kubernetes/agentbus.yaml
 kubectl exec -it agentbus-0 -- agentbus console
 ```
 
-Change `image:` (twice) to an image your cluster can pull first. Building
-the image, TLS, adding agents and running agents as pods are covered in
+It pulls the image published with each release; change `image:` (twice)
+to use your own. Building the image, TLS, adding agents and running
+agents as pods are covered in
 [Running in containers](../../docs/CONTAINERS.md#kubernetes).
 
 | Piece | What it does |

@@ -15,7 +15,18 @@ running agents. It works with Podman, Docker and Kubernetes.
 Keep `/config` and `/data` on volumes. Without them a restart loses every
 agent, token and queued message.
 
-## Build the image
+## Get the image
+
+Each release publishes an image for `linux/amd64` and `linux/arm64` to
+the GitHub Container Registry, tagged with the release and, for the
+newest one, `latest`:
+
+```bash
+podman pull ghcr.io/jefflaplante/agentbus:v0.1.0
+podman tag ghcr.io/jefflaplante/agentbus:v0.1.0 agentbus:v0.1.0   # the short name used below
+```
+
+Or build it from a checkout:
 
 ```bash
 podman build -f Containerfile --build-arg VERSION=v0.1.0 -t agentbus:v0.1.0 .
@@ -170,16 +181,20 @@ broker was down are still there (see [RETENTION.md](RETENTION.md)).
 ## Kubernetes
 
 [examples/kubernetes/agentbus.yaml](../examples/kubernetes/agentbus.yaml)
-runs the broker as a one-pod StatefulSet with a Service. Push the image
-somewhere your cluster can pull it, put that name in the manifest's two
-`image:` lines, and apply it:
+runs the broker as a one-pod StatefulSet with a Service:
+
+```bash
+kubectl apply -f examples/kubernetes/agentbus.yaml
+kubectl rollout status statefulset/agentbus
+```
+
+It pulls `ghcr.io/jefflaplante/agentbus:v0.1.0`. To use your own build or
+a private registry, push the image there and change the manifest's two
+`image:` lines:
 
 ```bash
 podman tag agentbus:v0.1.0 REGISTRY/agentbus:v0.1.0
 podman push REGISTRY/agentbus:v0.1.0
-
-kubectl apply -f examples/kubernetes/agentbus.yaml
-kubectl rollout status statefulset/agentbus
 ```
 
 The pod's init container creates the config on first start and sets the
@@ -255,7 +270,7 @@ spec:
         fsGroup: 65532
       containers:
         - name: worker
-          image: REGISTRY/agentbus:v0.1.0
+          image: ghcr.io/jefflaplante/agentbus:v0.1.0
           args: ["handle", "--capability", "summarize", "--exec", "wc -w"]
           env:
             - {name: AGENTBUS_URL, value: "ssl://agentbus:8883"}   # tcp://agentbus:1883 without TLS
